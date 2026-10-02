@@ -1,5 +1,7 @@
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
-import { auth } from '../config/firebase';
+import { getLocalToken } from './localToken';
+
+export { TOKEN_KEY, getLocalToken, setLocalToken, clearLocalToken } from './localToken';
 
 // Get API base URL from environment variable or default to localhost
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
@@ -42,18 +44,38 @@ export interface PaginatedResponse<T> {
 }
 
 /**
- * Get Firebase ID token for authentication
- * Forces token refresh to ensure we have a valid token
+ * Dual-mode auth token resolver (AUTH_MODE=local, task C2).
+ *
+ * 1. Local JWT first: if `localStorage[TOKEN_KEY]` is present, return it
+ *    directly (no expiry validation here — the backend answers 401).
+ * 2. Firebase fallback: otherwise resolve the Firebase ID token as before.
+ *
+ * Assumption (parallel lane C1): `config/firebase.ts` may be refactored into
+ * lazy exports, so there is NO static `import { auth }` at the top of this
+ * module anymore (it would break module init if firebase.ts changes shape).
+ * The Firebase path below therefore uses a dynamic `import()` wrapped in
+ * try/catch: whether firebase.ts keeps a static `auth` export, turns lazy,
+ * or fails to load, this function degrades to `null` instead of throwing.
  */
 async function getAuthToken(forceRefresh = false): Promise<string | null> {
-  const user = auth.currentUser;
-  if (!user) {
-    return null;
+  const localToken = getLocalToken();
+  if (localToken) {
+    return localToken;
   }
-  
+
   try {
-    return await user.getIdToken(forceRefresh);
-  } catch (error) {
+    const { getFirebaseAuth } = await import('../config/firebase');
+    const auth = getFirebaseAuth();
+    const user = auth?.currentUser;
+    if (!user) {
+      return null;
+    }
+    try {
+      return await user.getIdToken(forceRefresh);
+    } catch {
+      return null;
+    }
+  } catch {
     return null;
   }
 }

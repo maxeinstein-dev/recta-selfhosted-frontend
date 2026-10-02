@@ -11,35 +11,82 @@ interface FirebaseConfig {
   appId: string;
 }
 
-const firebaseConfig: FirebaseConfig = {
-  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
-  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
-  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
-  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
-  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
-  appId: import.meta.env.VITE_FIREBASE_APP_ID,
-};
+function readFirebaseConfig(): FirebaseConfig | null {
+  const env = import.meta.env;
+  const apiKey = env.VITE_FIREBASE_API_KEY;
+  const authDomain = env.VITE_FIREBASE_AUTH_DOMAIN;
+  const projectId = env.VITE_FIREBASE_PROJECT_ID;
+  const storageBucket = env.VITE_FIREBASE_STORAGE_BUCKET;
+  const messagingSenderId = env.VITE_FIREBASE_MESSAGING_SENDER_ID;
+  const appId = env.VITE_FIREBASE_APP_ID;
 
-const app: FirebaseApp = initializeApp(firebaseConfig);
-export const auth: Auth = getAuth(app);
+  if (
+    !apiKey ||
+    !authDomain ||
+    !projectId ||
+    !storageBucket ||
+    !messagingSenderId ||
+    !appId
+  ) {
+    return null;
+  }
+
+  return {
+    apiKey,
+    authDomain,
+    projectId,
+    storageBucket,
+    messagingSenderId,
+    appId,
+  };
+}
+
+function missingFirebaseError(): Error {
+  return new Error(
+    'Firebase not configured (AUTH_MODE=local?). ' +
+      'Set VITE_FIREBASE_* env vars or switch backend /auth/config to authMode "firebase".'
+  );
+}
+
+let app: FirebaseApp | null = null;
+let authInstance: Auth | null = null;
+let analyticsInstance: Analytics | null = null;
+let analyticsInitStarted = false;
 
 // Helper para verificar se está em localhost
 const isLocalhost = () => {
-  if (typeof window === 'undefined') return false;
-  return window.location.hostname === 'localhost' || 
+  if (typeof window === 'undefined') return true;
+  return window.location.hostname === 'localhost' ||
          window.location.hostname === '127.0.0.1' ||
          window.location.hostname === '[::1]';
 };
 
-// Inicializar Analytics apenas no cliente e se não estiver em localhost
-let analytics: Analytics | null = null;
-if (typeof window !== 'undefined' && !isLocalhost()) {
-  isSupported().then((supported) => {
-    if (supported) {
-      analytics = getAnalytics(app);
-    }
-  });
+export function getFirebaseApp(): FirebaseApp {
+  if (app) return app;
+  const config = readFirebaseConfig();
+  if (!config) throw missingFirebaseError();
+  app = initializeApp(config);
+  return app;
 }
 
-export { analytics };
+export function getFirebaseAuth(): Auth {
+  if (authInstance) return authInstance;
+  authInstance = getAuth(getFirebaseApp());
+  return authInstance;
+}
 
+// Inicialização lazy do Analytics (async por causa de isSupported()).
+// Retorna a instância em cache (null até resolver); dispara a init uma vez.
+export function getFirebaseAnalytics(): Analytics | null {
+  if (analyticsInstance) return analyticsInstance;
+  if (analyticsInitStarted) return null;
+  if (typeof window === 'undefined' || isLocalhost()) return null;
+  analyticsInitStarted = true;
+  const firebaseApp = getFirebaseApp();
+  isSupported().then((supported: boolean) => {
+    if (supported) {
+      analyticsInstance = getAnalytics(firebaseApp);
+    }
+  });
+  return null;
+}

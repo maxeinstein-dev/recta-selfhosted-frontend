@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useAuth } from '../context/AuthContext';
+import { getCachedAuthMode } from '../config/authMode';
 import { useI18n } from '../context/I18nContext';
 import { useToastContext } from '../context/ToastContext';
 import { Mail, RefreshCw, Send, LogOut, Check } from 'lucide-react';
@@ -71,10 +72,14 @@ export const VerificationModal = () => {
 
   if (!currentUser || currentUser.emailVerified) return null;
 
+  // Email verification only exists in firebase mode. Local-mode sessions use a
+  // minimal pseudo-user without providerData — never show the modal there.
+  if (getCachedAuthMode() === 'local') return null;
+
   // Only show for email provider
-  const isEmailProvider = currentUser.providerData.some(
+  const isEmailProvider = currentUser.providerData?.some(
     (provider) => provider.providerId === 'password'
-  );
+  ) ?? false;
 
   if (!isEmailProvider) return null;
 

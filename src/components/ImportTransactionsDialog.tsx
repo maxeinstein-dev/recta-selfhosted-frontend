@@ -7,42 +7,11 @@ import { useToastContext } from '../context/ToastContext';
 import { useCurrency } from '../context/CurrencyContext';
 import { formatCurrency, formatDate } from '../utils/format';
 
-// ============================================================================
-// DEPENDÊNCIA DE LANE PARALELO (C1 — hook useImportTransactions):
-// Este dialog importa os hooks abaixo de '../hooks/api/useImportTransactions',
-// que está sendo criado em outro lane em paralelo. NÃO criar esse arquivo
-// neste lane. Os tipos locais ImportPreviewItem / ImportPreviewResult refletem
-// o contrato esperado — o lane do hook deve mantê-los compatíveis.
-// Contrato esperado:
-//   useImportPreview()     -> mutation; mutateAsync({ householdId?, accountId, file: File })
-//                             resolve para ImportPreviewResult
-//   useImportTransactions() -> mutation; mutateAsync({ householdId?, accountId, importId? })
-//                             a invalidação das queries ['transactions'] (e ['accounts'])
-//                             é responsabilidade do hook, no onSuccess.
-// ============================================================================
 import {
   useImportPreview,
   useImportTransactions,
 } from '../hooks/api/useImportTransactions';
-
-/** Linha da pré-visualização — deve ser compatível com o retorno do hook do lane C1. */
-export interface ImportPreviewItem {
-  date: string;
-  description: string;
-  amount: number;
-  type: 'INCOME' | 'EXPENSE';
-  isDuplicate: boolean;
-}
-
-/** Resultado da pré-visualização — deve ser compatível com o retorno do hook do lane C1. */
-export interface ImportPreviewResult {
-  items: ImportPreviewItem[];
-  newCount: number;
-  duplicateCount: number;
-  totalCount: number;
-  /** Token/sessão retornado pelo backend para confirmar a importação (opcional). */
-  importId?: string;
-}
+import type { ImportPreview } from '../hooks/api/useImportTransactions';
 
 interface ImportTransactionsDialogProps {
   open: boolean;
@@ -73,14 +42,13 @@ const ImportTransactionsDialog = ({
   });
   const accounts = accountsData?.accounts ?? [];
 
-  // Hooks do lane paralelo (C1). A invalidação de queries após o sucesso
-  // é feita dentro desses hooks (onSuccess) — o dialog só fecha e toasta.
+  // A invalidação das queries após o sucesso fica nos hooks (onSuccess); o dialog só fecha e mostra o aviso.
   const previewMutation = useImportPreview();
   const confirmMutation = useImportTransactions();
 
   const [accountId, setAccountId] = useState<string>(defaultAccountId ?? '');
   const [file, setFile] = useState<File | null>(null);
-  const [preview, setPreview] = useState<ImportPreviewResult | null>(null);
+  const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -145,11 +113,7 @@ const ImportTransactionsDialog = ({
       return;
     }
     try {
-      const result = (await previewMutation.mutateAsync({
-        householdId,
-        accountId,
-        file,
-      })) as unknown as ImportPreviewResult;
+      const result = await previewMutation.mutateAsync({ householdId, accountId, file });
       setPreview(result);
     } catch (err: unknown) {
       showError(getErrorMessage(err, 'Não foi possível pré-visualizar o arquivo.'));
@@ -163,13 +127,14 @@ const ImportTransactionsDialog = ({
       setFormError('Selecione a conta de destino.');
       return;
     }
+    // Só vão as linhas que o preview marcou como novas; o servidor confere duplicatas de novo ao gravar.
+    const newRows = preview.rows
+      .filter((row) => !row.duplicate)
+      .map(({ date, description, amount, type }) => ({ date, description, amount, type }));
+    if (newRows.length === 0) return;
     try {
-      const result = (await confirmMutation.mutateAsync({
-        householdId,
-        accountId,
-        importId: preview.importId,
-      })) as unknown as { imported?: number };
-      const imported = result?.imported ?? newCount;
+      const result = await confirmMutation.mutateAsync({ householdId, accountId, rows: newRows });
+      const imported = result?.imported ?? newRows.length;
       success(
         imported === 1
           ? '1 transação importada com sucesso.'
@@ -186,11 +151,9 @@ const ImportTransactionsDialog = ({
     setFormError(null);
   };
 
-  const items = preview?.items ?? [];
-  const newCount =
-    preview?.newCount ?? items.filter((item) => !item.isDuplicate).length;
-  const duplicateCount =
-    preview?.duplicateCount ?? items.filter((item) => item.isDuplicate).length;
+  const rows = preview?.rows ?? [];
+  const newCount = preview?.newCount ?? rows.filter((row) => !row.duplicate).length;
+  const duplicateCount = preview?.duplicateCount ?? rows.filter((row) => row.duplicate).length;
 
   return createPortal(
     <div className="fixed inset-0 z-[60] overflow-y-auto">
@@ -280,6 +243,9 @@ const ImportTransactionsDialog = ({
                     <span className="truncate">{file.name}</span>
                   </p>
                 )}
+                <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+                  Extrato do banco ou fatura do cartão. Para a planilha mensal, use o botão Planilha.
+                </p>
               </div>
 
               <div className="flex gap-3 justify-end pt-2">
@@ -312,7 +278,7 @@ const ImportTransactionsDialog = ({
                 </span>
               </div>
 
-              {items.length === 0 ? (
+              {rows.length === 0 ? (
                 <p className="text-sm text-gray-600 dark:text-gray-400">
                   Nenhuma transação encontrada no arquivo.
                 </p>
@@ -339,29 +305,29 @@ const ImportTransactionsDialog = ({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
-                      {items.map((item, index) => (
+                      {rows.map((row) => (
                         <tr
-                          key={`${item.date}-${item.description}-${item.amount}-${index}`}
+                          key={row.index}
                           className={
-                            item.isDuplicate
+                            row.duplicate
                               ? 'bg-yellow-50/50 dark:bg-yellow-900/10'
                               : undefined
                           }
                         >
                           <td className="px-3 py-2 whitespace-nowrap text-gray-900 dark:text-white">
-                            {formatDate(item.date)}
+                            {formatDate(row.date)}
                           </td>
                           <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[220px] truncate">
-                            {item.description}
+                            {row.description}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap text-right text-gray-900 dark:text-white">
-                            {formatCurrency(item.amount, baseCurrency)}
+                            {formatCurrency(row.amount, baseCurrency)}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap text-gray-600 dark:text-gray-400">
-                            {item.type === 'INCOME' ? 'Receita' : 'Despesa'}
+                            {row.type === 'INCOME' ? 'Receita' : 'Despesa'}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap">
-                            {item.isDuplicate ? (
+                            {row.duplicate ? (
                               <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300">
                                 DUPLICADA
                               </span>

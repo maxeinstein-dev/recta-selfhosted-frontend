@@ -17,9 +17,10 @@ import {
   Wallet, Briefcase, TrendingUp, ShoppingBag, Home, DollarSign,
   UtensilsCrossed, Car, House, Heart, GraduationCap, Film, Shirt,
   Zap, CreditCard, ShoppingCart, ShoppingBasket, Utensils, Droplet, Pill, MoreHorizontal, Circle,
-  ArrowLeftRight
+  ArrowLeftRight, Upload
 } from 'lucide-react';
 import TransactionModal from '../components/TransactionModal';
+import ImportTransactionsDialog from '../components/ImportTransactionsDialog';
 import ConfirmModal from '../components/ConfirmModal';
 import { Transaction } from '../types';
 import { PageButton } from '../components/PageButton';
@@ -50,6 +51,7 @@ const Transactions = () => {
   const { data: households } = useHouseholds();
   const [searchParams, setSearchParams] = useSearchParams();
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [isImportOpen, setImportOpen] = useState<boolean>(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [viewingTransaction, setViewingTransaction] = useState<Transaction | null>(null);
   const [searchInput, setSearchInput] = useState<string>(''); // Input value (updates immediately)
@@ -692,6 +694,14 @@ const Transactions = () => {
             CSV
           </PageButton>
           <PageButton
+            onClick={() => setImportOpen(true)}
+            variant="secondary"
+            icon={Upload}
+            aria-label="Importar extrato"
+          >
+            Importar
+          </PageButton>
+          <PageButton
             onClick={handleAdd}
             variant="primary"
             icon={Plus}
@@ -719,6 +729,15 @@ const Transactions = () => {
               className="flex-1"
             >
               CSV
+            </PageButton>
+            <PageButton
+              onClick={() => setImportOpen(true)}
+              variant="secondary"
+              icon={Upload}
+              aria-label="Importar extrato"
+              className="flex-1"
+            >
+              Importar
             </PageButton>
           </div>
         </div>
@@ -862,6 +881,14 @@ const Transactions = () => {
         message={`${t.delete} ${t.transaction?.toLowerCase() || t.transactions.toLowerCase()}?`}
         variant="danger"
       />
+
+      {isImportOpen && (
+        <ImportTransactionsDialog
+          open={isImportOpen}
+          onClose={() => setImportOpen(false)}
+          householdId={householdId ?? undefined}
+        />
+      )}
     </div>
   );
 };

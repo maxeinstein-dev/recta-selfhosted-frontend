@@ -143,7 +143,8 @@ export interface MaxFinPreviewTotals {
 export interface MaxFinPreviewResponse {
   month: MaxFinMonth | null;
   monthKey: string | null;
-  monthSource: 'title' | 'filename' | 'override' | 'none';
+  /** 'sheet': taken from the tab name (it wins over a stale title; the server warns when they disagree). */
+  monthSource: 'title' | 'sheet' | 'filename' | 'override' | 'none';
   householdId: string;
   accounts: MaxFinAccountsInput;
   options: MaxFinImportOptions;
@@ -203,6 +204,61 @@ export interface MaxFinConfirmResponse {
   warnings: string[];
 }
 
+// ---- Workbook (.xlsx with every monthly tab) ----------------------------------
+// POST /transactions/import/maxfin/workbook/preview. Each selected month comes back as a full
+// MaxFinPreviewResponse (with its own options) and is confirmed with the monthly confirm endpoint.
+
+/** Options of the workbook preview; every field is optional (the server fills the defaults). */
+export interface MaxFinWorkbookOptionsInput {
+  /** 'YYYY-MM'; default: every detected month up to the current one. */
+  months?: string[];
+  /** 'YYYY-MM'; months up to it are closed; default: the month before the current one; null = none. */
+  closedThrough?: string | null;
+  /** Default true (only applies to closed months). */
+  payInvoice?: boolean;
+  /** Default true (only the last selected month, and only when it is open). */
+  generateFutureInstallments?: boolean;
+}
+
+/** Options the server applied (the echo of MaxFinWorkbookOptionsInput, defaults resolved). */
+export interface MaxFinWorkbookOptions {
+  months: string[];
+  closedThrough: string | null;
+  payInvoice: boolean;
+  generateFutureInstallments: boolean;
+}
+
+/** The server may add statuses later: the UI treats any other value like `skipped` (never selectable). */
+export type MaxFinWorkbookSheetStatus = 'selected' | 'available' | 'skipped';
+
+export interface MaxFinWorkbookSheet {
+  name: string;
+  /** 'YYYY-MM' */
+  monthKey: string | null;
+  status: MaxFinWorkbookSheetStatus;
+  /** Why the sheet was skipped. */
+  reason: string | null;
+  /** Rows read by the parser (0 when skipped). */
+  rowCount: number;
+  /** Hidden in the workbook: read as any other sheet, informative only. */
+  hidden: boolean;
+}
+
+export interface MaxFinWorkbookPreviewResponse {
+  filename: string;
+  householdId: string;
+  accounts: MaxFinAccountsInput;
+  options: MaxFinWorkbookOptions;
+  /** In workbook order. */
+  sheets: MaxFinWorkbookSheet[];
+  /** Selected months, oldest first, each with its own options. */
+  months: MaxFinPreviewResponse[];
+  /** Merged across the selected months. */
+  categoryMap: MaxFinCategoryMapEntry[];
+  /** Workbook-level warnings (each month carries its own in months[i].warnings). */
+  warnings: string[];
+}
+
 // ============================================================================
 // Mutations
 // ============================================================================
@@ -232,6 +288,39 @@ export function useMaxFinPreview() {
 
       const response = await axiosInstance.post<ApiResponse<MaxFinPreviewResponse>>(
         '/transactions/import/maxfin/preview',
+        formData,
+        {
+          // Remove the instance JSON default so the browser sets multipart + boundary.
+          headers: { 'Content-Type': undefined as unknown as string },
+        },
+      );
+      return response.data.data!;
+    },
+  });
+}
+
+export interface MaxFinWorkbookPreviewParams {
+  accounts: MaxFinAccountsInput;
+  options?: MaxFinWorkbookOptionsInput;
+  file: File;
+}
+
+/**
+ * Upload the whole workbook (.xlsx) and get one preview per selected month. Nothing is persisted.
+ * Same multipart handling as useMaxFinPreview (no manual Content-Type).
+ */
+export function useMaxFinWorkbookPreview() {
+  return useMutation({
+    mutationFn: async ({ accounts, options, file }: MaxFinWorkbookPreviewParams): Promise<MaxFinWorkbookPreviewResponse> => {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('accounts', JSON.stringify(accounts));
+      if (options) {
+        formData.append('options', JSON.stringify(options));
+      }
+
+      const response = await axiosInstance.post<ApiResponse<MaxFinWorkbookPreviewResponse>>(
+        '/transactions/import/maxfin/workbook/preview',
         formData,
         {
           // Remove the instance JSON default so the browser sets multipart + boundary.
@@ -296,6 +385,8 @@ export function monthSourceLabel(source: MaxFinPreviewResponse['monthSource']): 
   switch (source) {
     case 'title':
       return 'pelo título';
+    case 'sheet':
+      return 'pelo nome da aba';
     case 'filename':
       return 'pelo nome do arquivo';
     case 'override':

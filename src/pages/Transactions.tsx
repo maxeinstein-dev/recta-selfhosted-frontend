@@ -17,10 +17,11 @@ import {
   Wallet, Briefcase, TrendingUp, ShoppingBag, Home, DollarSign,
   UtensilsCrossed, Car, House, Heart, GraduationCap, Film, Shirt,
   Zap, CreditCard, ShoppingCart, ShoppingBasket, Utensils, Droplet, Pill, MoreHorizontal, Circle,
-  ArrowLeftRight, Upload
+  ArrowLeftRight, Upload, FileSpreadsheet
 } from 'lucide-react';
 import TransactionModal from '../components/TransactionModal';
 import ImportTransactionsDialog from '../components/ImportTransactionsDialog';
+import ImportMaxFinDialog from '../components/ImportMaxFinDialog';
 import ConfirmModal from '../components/ConfirmModal';
 import { Transaction } from '../types';
 import { PageButton } from '../components/PageButton';
@@ -52,6 +53,7 @@ const Transactions = () => {
   const [searchParams, setSearchParams] = useSearchParams();
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [isImportOpen, setImportOpen] = useState<boolean>(false);
+  const [isMaxFinOpen, setMaxFinOpen] = useState<boolean>(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [viewingTransaction, setViewingTransaction] = useState<Transaction | null>(null);
   const [searchInput, setSearchInput] = useState<string>(''); // Input value (updates immediately)
@@ -702,6 +704,14 @@ const Transactions = () => {
             Importar
           </PageButton>
           <PageButton
+            onClick={() => setMaxFinOpen(true)}
+            variant="secondary"
+            icon={FileSpreadsheet}
+            aria-label="Importar planilha mensal"
+          >
+            Planilha
+          </PageButton>
+          <PageButton
             onClick={handleAdd}
             variant="primary"
             icon={Plus}
@@ -738,6 +748,15 @@ const Transactions = () => {
               className="flex-1"
             >
               Importar
+            </PageButton>
+            <PageButton
+              onClick={() => setMaxFinOpen(true)}
+              variant="secondary"
+              icon={FileSpreadsheet}
+              aria-label="Importar planilha mensal"
+              className="flex-1"
+            >
+              Planilha
             </PageButton>
           </div>
         </div>
@@ -886,6 +905,13 @@ const Transactions = () => {
         <ImportTransactionsDialog
           open={isImportOpen}
           onClose={() => setImportOpen(false)}
+          householdId={householdId ?? undefined}
+        />
+      )}
+      {isMaxFinOpen && (
+        <ImportMaxFinDialog
+          open={isMaxFinOpen}
+          onClose={() => setMaxFinOpen(false)}
           householdId={householdId ?? undefined}
         />
       )}

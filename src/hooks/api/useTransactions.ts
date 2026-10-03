@@ -634,13 +634,22 @@ export interface CreditCardInvoiceParams {
 }
 
 /**
+ * Cache key of one invoice listing. "Load more" appends to the entry of the first page, so both must build
+ * the key here: an array with `undefined` hashes as `null`, and a key that merely omits the cursor is a
+ * different cache entry that nothing renders.
+ */
+function creditCardInvoiceKey({ accountId, month, householdId, limit, cursor }: CreditCardInvoiceParams) {
+  return ['transactions', 'credit-card-invoice', accountId, month, householdId ?? null, limit ?? null, cursor ?? null] as const;
+}
+
+/**
  * Get credit card invoice for a specific month
  */
 export function useCreditCardInvoice(params: CreditCardInvoiceParams) {
   const { accountId, month, householdId, limit, cursor } = params;
   
   return useQuery({
-    queryKey: ['transactions', 'credit-card-invoice', accountId, month, householdId, limit, cursor],
+    queryKey: creditCardInvoiceKey(params),
     queryFn: async () => {
       if (!accountId) return null;
       const queryParams: Record<string, unknown> = {
@@ -695,9 +704,8 @@ export function useLoadMoreCreditCardInvoice() {
       };
     },
     onSuccess: (newData, variables) => {
-      // Append new transactions to existing cache
-      // Build query key without cursor to match the original query
-      const queryKey = ['transactions', 'credit-card-invoice', variables.accountId, variables.month, variables.householdId, variables.limit];
+      // Append to the entry of the first page (same key, no cursor), the one the page renders.
+      const queryKey = creditCardInvoiceKey({ ...variables, cursor: undefined });
       
       queryClient.setQueryData(queryKey, (oldData: any) => {
         if (!oldData) return { data: newData.data, pagination: newData.pagination };

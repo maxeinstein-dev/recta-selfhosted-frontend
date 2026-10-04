@@ -6,6 +6,8 @@ import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
 import { useToastContext } from '../context/ToastContext';
 import { useCurrency } from '../context/CurrencyContext';
 import { formatCurrency, formatDate } from '../utils/format';
+import { isCardOfxHandoff } from '../utils/cardOfx';
+import ImportCardOfxDialog from './ImportCardOfxDialog';
 
 import {
   useImportPreview,
@@ -50,6 +52,8 @@ const ImportTransactionsDialog = ({
   const [file, setFile] = useState<File | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  // Fatura de cartão em .ofx: o fluxo de conciliação (ImportCardOfxDialog) assume a conta e o arquivo.
+  const [cardOfx, setCardOfx] = useState<{ accountId: string; file: File } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Reseta o estado sempre que o dialog abre/fecha.
@@ -59,12 +63,14 @@ const ImportTransactionsDialog = ({
       setFile(null);
       setPreview(null);
       setFormError(null);
+      setCardOfx(null);
     }
   }, [open, defaultAccountId]);
 
   // ESC + trava scroll do body (mesmo padrão de ConfirmModal/TransactionModal).
+  // No fluxo do cartão quem cuida disso é o ImportCardOfxDialog (que não fecha no meio da confirmação).
   useEffect(() => {
-    if (!open) return;
+    if (!open || cardOfx) return;
     const originalStyle = window.getComputedStyle(document.body).overflow;
     document.body.style.overflow = 'hidden';
     const handleEscape = (e: KeyboardEvent) => {
@@ -75,9 +81,21 @@ const ImportTransactionsDialog = ({
       document.body.style.overflow = originalStyle;
       window.removeEventListener('keydown', handleEscape);
     };
-  }, [open, onClose]);
+  }, [open, onClose, cardOfx]);
 
   if (!open) return null;
+
+  if (cardOfx) {
+    return (
+      <ImportCardOfxDialog
+        open
+        onClose={onClose}
+        accountId={cardOfx.accountId}
+        householdId={householdId ?? undefined}
+        initialFile={cardOfx.file}
+      />
+    );
+  }
 
   const isPreviewing = previewMutation.isPending;
   const isConfirming = confirmMutation.isPending;
@@ -110,6 +128,12 @@ const ImportTransactionsDialog = ({
     }
     if (!file) {
       setFormError('Selecione um arquivo .csv ou .ofx.');
+      return;
+    }
+    // Fatura de cartão em .ofx: gravar as linhas cruas duplicaria o que veio da planilha; vai para a conciliação.
+    const account = accounts.find((a) => a.id === accountId);
+    if (account && isCardOfxHandoff(account.type, file.name)) {
+      setCardOfx({ accountId, file });
       return;
     }
     try {
@@ -244,7 +268,8 @@ const ImportTransactionsDialog = ({
                   </p>
                 )}
                 <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
-                  Extrato do banco ou fatura do cartão. Para a planilha mensal, use o botão Planilha.
+                  Extrato do banco ou fatura do cartão. A fatura de um cartão de crédito em .ofx abre a
+                  conciliação com a planilha. Para a planilha mensal, use o botão Planilha.
                 </p>
               </div>
 

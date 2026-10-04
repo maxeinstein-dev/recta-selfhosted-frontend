@@ -54,11 +54,24 @@ function sizeLabel(bytes: number): string {
   return `${(Math.ceil((bytes / MB) * 10 - 1e-9) / 10).toFixed(1).replace('.', ',')} MB`;
 }
 
-/** Message when the file cannot be uploaded (not .csv, or over the 5 MB limit); null when it is fine. */
+/** One monthly tab exported as .csv, or the whole workbook as .xlsx. */
+export type MaxFinFileKind = 'csv' | 'xlsx';
+
+/** Kind of upload, from the file name (case-insensitive); null for anything else (.xls, .ods, ...). */
+export function maxfinFileKind(name: string): MaxFinFileKind | null {
+  const lower = name.toLowerCase();
+  if (lower.endsWith('.csv')) return 'csv';
+  if (lower.endsWith('.xlsx')) return 'xlsx';
+  return null;
+}
+
+/** Message when the file cannot be uploaded (not .csv/.xlsx, or over the 5 MB limit); null when it is fine. */
 export function validateMaxFinFile(file: { name: string; size: number }): string | null {
-  if (!file.name.toLowerCase().endsWith('.csv')) return 'Formato inválido. Exporte a aba da planilha como .csv.';
+  const kind = maxfinFileKind(file.name);
+  if (!kind) return 'Formato inválido. Envie a aba do mês exportada como .csv ou a planilha inteira como .xlsx.';
   if (file.size > MAXFIN_MAX_FILE_BYTES) {
-    return `Arquivo muito grande (${sizeLabel(file.size)}). O limite é ${MAXFIN_MAX_FILE_BYTES / MB} MB: exporte só a aba do mês.`;
+    const hint = kind === 'csv' ? 'exporte só a aba do mês' : 'remova as abas que não são meses ou envie cada mês como .csv';
+    return `Arquivo muito grande (${sizeLabel(file.size)}). O limite é ${MAXFIN_MAX_FILE_BYTES / MB} MB: ${hint}.`;
   }
   return null;
 }
@@ -199,6 +212,21 @@ export function toCents(amount: number): number {
   return Number.isFinite(amount) ? Math.round(Math.abs(amount) * 100 + 1e-6) : 0;
 }
 
+/** Like toCents, keeping the sign (net amounts, such as an invoice whose refunds exceed the purchases). */
+export function toSignedCents(amount: number): number {
+  return amount < 0 ? -toCents(amount) : toCents(amount);
+}
+
+/**
+ * Negative sheet values arrive as credits: in the bills, credit and debit blocks as INCOME rows (a refund, an
+ * estorno), in the income block as an EXPENSE row. 'credit' / 'debit' for those rows, null for the usual ones.
+ */
+export function reversedRowKind(row: Pick<MaxFinPreviewRow, 'section' | 'type'>): 'credit' | 'debit' | null {
+  if (row.section !== 'income' && row.type === 'INCOME') return 'credit';
+  if (row.section === 'income' && row.type === 'EXPENSE') return 'debit';
+  return null;
+}
+
 export interface MaxFinAccountRef {
   id: string;
   type: string;
@@ -217,9 +245,17 @@ export interface MaxFinInvoiceContext {
 }
 
 export interface MaxFinInvoiceSelection {
-  /** Sum of the credit-section rows that will be sent, in integer cents. */
+  /**
+   * Net invoice of the credit-section rows that will be sent, in integer cents: purchases (EXPENSE) minus
+   * refunds (INCOME, negative values of the sheet). Zero or negative when the refunds cover the purchases.
+   */
   cents: number;
   amount: number;
+  /** Credit-section EXPENSE rows that will be sent, in integer cents. */
+  purchaseCents: number;
+  /** Credit-section INCOME rows (refunds) that will be sent, in integer cents. */
+  refundCents: number;
+  /** Credit-section rows that will be sent, purchases and refunds. */
   rowCount: number;
   /** The source account can pay: it exists, is not a credit account and is not the card itself. */
   canPay: boolean;
@@ -235,24 +271,31 @@ export const INVOICE_REASON = {
   alreadyPaid: 'a fatura deste mês já foi paga',
   noInvoice: 'a conta do cartão não é de crédito ou o mês não foi identificado',
   noCardRows: 'nenhuma compra de cartão selecionada',
+  creditsCover: 'os créditos igualam ou superam as compras selecionadas',
   sourceMissing: 'a conta de contas fixas não foi encontrada',
   sourceIsCard: 'a conta de contas fixas é um cartão',
   sourceIsThisCard: 'a conta de contas fixas é o próprio cartão',
 } as const;
 
-/** Credit-section rows among the rows given, in integer cents, plus whether the payment gets recorded. */
+/**
+ * Net invoice of the credit-section rows among the rows given (purchases minus refunds, integer cents), plus
+ * whether the payment gets recorded: only for a positive net.
+ */
 export function invoiceForRows(
   rowsSent: readonly MaxFinPreviewRow[],
   options: MaxFinImportOptions,
   ctx: MaxFinInvoiceContext,
 ): MaxFinInvoiceSelection {
-  let cents = 0;
+  let purchaseCents = 0;
+  let refundCents = 0;
   let rowCount = 0;
   for (const row of rowsSent) {
     if (row.section !== 'credit' || !isSendableStatus(row.status)) continue;
-    cents += toCents(row.amount);
+    if (row.type === 'INCOME') refundCents += toCents(row.amount);
+    else purchaseCents += toCents(row.amount);
     rowCount += 1;
   }
+  const cents = purchaseCents - refundCents;
   const source = ctx.accounts.find((account) => account.id === ctx.sourceAccountId);
   const accountProblem = !source
     ? INVOICE_REASON.sourceMissing
@@ -275,8 +318,8 @@ export function invoiceForRows(
           ? INVOICE_REASON.noInvoice
           : alreadyPaid
             ? INVOICE_REASON.alreadyPaid
-            : accountProblem ?? INVOICE_REASON.noCardRows;
-  return { cents, amount: cents / 100, rowCount, canPay, willPay, reason };
+            : accountProblem ?? (rowCount === 0 ? INVOICE_REASON.noCardRows : INVOICE_REASON.creditsCover);
+  return { cents, amount: cents / 100, purchaseCents, refundCents, rowCount, canPay, willPay, reason };
 }
 
 // ---- Category mapping -------------------------------------------------------------------------------------

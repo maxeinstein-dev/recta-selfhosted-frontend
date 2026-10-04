@@ -102,7 +102,7 @@ Output is in `dist/`. Serve with any static server (Nginx, Vercel, etc.) and set
 - Accounts, transactions, categories
 - Budgets and savings goals
 - Recurring transactions
-- Import of bank statements (OFX/CSV) and of monthly budget sheets ("MaxFin" format) with preview, deduplication and category mapping
+- Import of bank statements (OFX/CSV) and of monthly budget sheets ("MaxFin" format: one tab as .csv or the whole workbook as .xlsx) with preview, deduplication and category mapping
 - Households (share with others)
 - Light/dark theme and multiple languages (PT-BR, EN, ES, FR, etc.)
 

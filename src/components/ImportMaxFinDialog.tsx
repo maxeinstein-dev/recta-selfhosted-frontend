@@ -15,18 +15,27 @@ import { AccountType, CATEGORY_NAME_DISPLAY, CategoryType } from '../lib/enums';
 import {
   MAXFIN_SECTION_LABELS, describeShareHint, groupRowsBySection, installmentLabel, loadSavedAccountIds, loadSavedCategoryChoices,
   monthLabel, monthSourceLabel, prepaidLabel, saveAccountIds, saveCategoryChoices, useMaxFinConfirm, useMaxFinPreview,
+  useMaxFinWorkbookPreview,
 } from '../hooks/api/useImportMaxFin';
 import type {
   MaxFinAccountsInput, MaxFinCategoryMapEntry, MaxFinCategoryTargetInput, MaxFinConfirmResponse, MaxFinImportOptions, MaxFinMonth,
   MaxFinPreviewOptionsInput, MaxFinPreviewResponse, MaxFinPreviewRow, MaxFinSectionKey, MaxFinSkippedRow, MaxFinTransactionType,
+  MaxFinWorkbookOptions, MaxFinWorkbookOptionsInput, MaxFinWorkbookPreviewResponse,
 } from '../hooks/api/useImportMaxFin';
 import {
   MAXFIN_MAX_YEAR, MAXFIN_MIN_YEAR, MAXFIN_SECTION_ORDER, applyOptionPatch, buildConfirmPayload, buildConfirmSummary, categoryChoiceKey,
   confirmBlocker, confirmFailureMessage, confirmResultNeedsReview, countByStatus, countLabel, defaultRowSelected, isSendableStatus,
-  monthToInputValue, parseMonthInput, reconcileSelection, resolveCategoryChoices, rowKey, selectValueToTarget, systemCategoryNames,
-  targetToSelectValue, toCents, validateMaxFinFile,
+  maxfinFileKind, monthToInputValue, parseMonthInput, reconcileSelection, resolveCategoryChoices, reversedRowKind, rowKey,
+  selectValueToTarget, systemCategoryNames, targetToSelectValue, toSignedCents, validateMaxFinFile,
 } from '../utils/maxfinPayload';
 import type { MaxFinBuiltConfirm, MaxFinConfirmBlocker, MaxFinInvoiceSelection } from '../utils/maxfinPayload';
+import {
+  buildWorkbookPlan, closedThroughChoices, isSelectableSheet, monthKeyLabel, nextWorkbookOptions, pickDetailMonth, reconcileWorkbookSelection,
+  rowsByMonth, summarizeWorkbookRun, toggleWorkbookMonth, workbookConfirmBlocker, workbookProgressLabel, workbookRunToast, workbookStopMessage,
+} from '../utils/maxfinWorkbook';
+import type {
+  MaxFinWorkbookBlocker, MaxFinWorkbookPlan, MaxFinWorkbookRowsByMonth, MaxFinWorkbookRunSummary, MaxFinWorkbookSelection,
+} from '../utils/maxfinWorkbook';
 
 // ---------------------------------------------------------------------------
 // Shared styles (mirrors ImportTransactionsDialog)
@@ -131,11 +140,12 @@ const SetupStep = ({
 }: SetupStepProps) => (
   <div className="space-y-4 min-w-0">
     <p className={`text-sm ${MUTED_CLS}`}>
-      Exporte a aba do mês como CSV (blocos: entradas, contas fixas, cartão, débito/pix) e escolha a conta de destino de cada bloco.
+      Envie a aba de um mês exportada como CSV ou a planilha inteira como .xlsx, com todos os meses (blocos: entradas, contas fixas,
+      cartão, débito/pix), e escolha a conta de destino de cada bloco.
     </p>
     <div>
-      <label htmlFor="maxfin-file" className={LABEL_CLS}>Arquivo da planilha (.csv, até 5 MB)</label>
-      <input id="maxfin-file" type="file" accept=".csv" disabled={isPreviewing} className={FILE_INPUT_CLS}
+      <label htmlFor="maxfin-file" className={LABEL_CLS}>Arquivo da planilha (.csv ou .xlsx, até 5 MB)</label>
+      <input id="maxfin-file" type="file" accept=".csv,.xlsx" disabled={isPreviewing} className={FILE_INPUT_CLS}
         onChange={(e) => {
           if (!onFileChange(e.target.files?.[0] ?? null)) e.target.value = '';
         }} />
@@ -192,7 +202,11 @@ const PreviewHeader = ({
     <div className="flex flex-wrap items-center gap-3 text-sm">
       {preview.month ? (
         <span className="font-medium text-gray-900 dark:text-white">
-          {monthLabel(preview.month)} <span className={`font-normal ${MUTED_CLS}`}>({monthSourceLabel(preview.monthSource)})</span>
+          {monthLabel(preview.month)}
+          {/* A source this client does not know has no label: nothing in parentheses then. */}
+          {monthSourceLabel(preview.monthSource) && (
+            <> <span className={`font-normal ${MUTED_CLS}`}>({monthSourceLabel(preview.monthSource)})</span></>
+          )}
         </span>
       ) : (
         <>
@@ -257,7 +271,7 @@ const InvoiceNotice = ({ preview, selection, accountName, currency }: InvoiceNot
   // No invoice from the server (month unknown, card account not of credit type): nothing to promise or to show.
   if (!invoice) return null;
   // The server prices every credit row of the file; the payment recorded only covers the ticked ones.
-  const fileDiffers = toCents(invoice.amount) !== selection.cents;
+  const fileDiffers = toSignedCents(invoice.amount) !== selection.cents;
   return (
     <div className="rounded-md border border-blue-200 dark:border-blue-900/60 bg-blue-50 dark:bg-blue-900/20 px-4 py-3 text-sm text-blue-900 dark:text-blue-200 space-y-1">
       <p>
@@ -266,9 +280,15 @@ const InvoiceNotice = ({ preview, selection, accountName, currency }: InvoiceNot
         <strong>{selection.willPay ? 'será registrado' : 'não será registrado'}</strong>
         {selection.reason && <> ({selection.reason})</>}.
       </p>
+      {selection.refundCents > 0 && (
+        <p className="text-xs">
+          Compras selecionadas: {formatCurrency(selection.purchaseCents / 100, currency)} − créditos (valores negativos na planilha):{' '}
+          {formatCurrency(selection.refundCents / 100, currency)}.
+        </p>
+      )}
       {fileDiffers && (
         <p className="text-xs">
-          No arquivo: {formatCurrency(invoice.amount, currency)} (o registro considera só as compras de cartão selecionadas).
+          No arquivo: {formatCurrency(invoice.amount, currency)} (o registro considera só as linhas de cartão selecionadas: compras menos créditos).
         </p>
       )}
     </div>
@@ -367,6 +387,9 @@ const PreviewRowItem = ({ row, checked, disabled, currency, onToggle }: PreviewR
   const replacesFuture = row.status === 'replaces-future';
   const showDetail = !!row.statusDetail && (INLINE_DETAIL_STATUSES.includes(row.status) || !knownChip);
   const prepaid = row.installment ? prepaidLabel(row.installment) : null;
+  // A negative value of the sheet: a credit (refund) in an expense block, an expense in the income block.
+  const reversed = reversedRowKind(row);
+  const sign = reversed === 'credit' ? '+' : reversed === 'debit' ? '−' : '';
   return (
     <tr className={ROW_TONE[row.status] ?? ''}>
       <td className="px-3 py-2 align-top whitespace-nowrap">
@@ -380,6 +403,8 @@ const PreviewRowItem = ({ row, checked, disabled, currency, onToggle }: PreviewR
       <td className={`${TD_CLS} max-w-[280px]`}>
         <div className="flex flex-wrap items-center gap-1 min-w-0">
           <span className="truncate max-w-full" title={row.description}>{row.description}</span>
+          {reversed === 'credit' && <Chip tone="green" title="Valor negativo na planilha: lançado como crédito">crédito</Chip>}
+          {reversed === 'debit' && <Chip tone="orange" title="Valor negativo na planilha: lançado como despesa">despesa</Chip>}
           {row.installment && <Chip tone="gray">{installmentLabel(row.installment)}</Chip>}
           {prepaid && <Chip tone="blue">{prepaid}</Chip>}
           {row.futureInstallments > 0 && <Chip tone="blue">+{row.futureInstallments} futuras</Chip>}
@@ -387,7 +412,7 @@ const PreviewRowItem = ({ row, checked, disabled, currency, onToggle }: PreviewR
         {showDetail && <p className={`mt-0.5 text-[11px] leading-snug ${MUTED_CLS}`}>{row.statusDetail}</p>}
       </td>
       <td className={`${TD_CLS} whitespace-nowrap ${MUTED_CLS}`}>{row.categoryKey || '(sem)'}</td>
-      <td className={`${TD_CLS} whitespace-nowrap text-right`}>{formatCurrency(row.amount, currency)}</td>
+      <td className={`${TD_CLS} whitespace-nowrap text-right`}>{sign}{formatCurrency(row.amount, currency)}</td>
       <td className={`${TD_CLS} whitespace-nowrap ${MUTED_CLS}`}>{row.paid ? 'pago' : 'pendente'}</td>
       <td className={`${TD_CLS} max-w-[180px]`}>
         <span className={`block truncate ${MUTED_CLS}`} title={row.notes ?? undefined}>{row.notes ?? ''}</span>
@@ -591,6 +616,306 @@ const ResultStep = ({ result, summary, onClose }: ResultStepProps) => {
 };
 
 // ---------------------------------------------------------------------------
+// Workbook (.xlsx): options, months table, month detail, footer, result
+// ---------------------------------------------------------------------------
+
+const WARN_BOX_CLS =
+  'rounded-md border border-yellow-200 dark:border-yellow-900/60 bg-yellow-50 dark:bg-yellow-900/20 px-4 py-3 text-sm text-yellow-800 dark:text-yellow-300 list-disc list-inside space-y-1';
+/** "Meses fechados até" value standing for null (no closed month). */
+const CLOSED_NONE = 'none';
+
+/** Warnings behind a toggle: a month can carry several (sheet totals) and a long list would bury the rows. */
+const CollapsibleWarnings = ({ warnings, label }: { warnings: string[]; label: string }) => {
+  const [expanded, setExpanded] = useState(false);
+  if (warnings.length === 0) return null;
+  const Icon = expanded ? ChevronDown : ChevronRight;
+  return (
+    <div>
+      <button type="button" onClick={() => setExpanded((v) => !v)} aria-expanded={expanded}
+        className="inline-flex items-center gap-1 text-sm text-yellow-800 dark:text-yellow-300 hover:opacity-70">
+        <Icon className="h-4 w-4" aria-hidden="true" />
+        {label}
+      </button>
+      {expanded && (
+        <ul className={`mt-2 ${WARN_BOX_CLS}`}>
+          {warnings.map((warning, index) => <li key={index}>{warning}</li>)}
+        </ul>
+      )}
+    </div>
+  );
+};
+
+interface WorkbookOptionsBarProps {
+  workbook: MaxFinWorkbookPreviewResponse; options: MaxFinWorkbookOptions; isRefreshing: boolean; disabled: boolean;
+  onChange: (patch: Partial<MaxFinWorkbookOptions>) => void;
+}
+
+const WorkbookOptionsBar = ({ workbook, options, isRefreshing, disabled, onChange }: WorkbookOptionsBarProps) => (
+  <div className="space-y-3">
+    <div className="flex flex-wrap items-center gap-3 text-sm min-w-0">
+      <span className="font-medium text-gray-900 dark:text-white truncate max-w-full" title={workbook.filename}>{workbook.filename}</span>
+      <span className={MUTED_CLS}>
+        {countLabel(workbook.sheets.length, 'aba', 'abas')} · {countLabel(options.months.length, 'mês marcado', 'meses marcados')}
+      </span>
+      {isRefreshing && (
+        <span className={`inline-flex items-center gap-1 text-xs ${MUTED_CLS}`} role="status">
+          <RefreshCw className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+          Atualizando…
+        </span>
+      )}
+    </div>
+    <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+      <div className="inline-flex items-center gap-2 text-sm text-gray-900 dark:text-gray-100">
+        <label htmlFor="maxfin-wb-closed">Meses fechados até</label>
+        <select id="maxfin-wb-closed" value={options.closedThrough ?? CLOSED_NONE} disabled={disabled} className={MONTH_INPUT_CLS}
+          onChange={(e) => onChange({ closedThrough: e.target.value === CLOSED_NONE ? null : e.target.value })}>
+          <option value={CLOSED_NONE}>nenhum</option>
+          {closedThroughChoices(workbook.sheets, options.closedThrough).map((key) => (
+            <option key={key} value={key}>{monthKeyLabel(key)}</option>
+          ))}
+        </select>
+      </div>
+      <OptionCheckbox id="maxfin-wb-invoice" label="Registrar o pagamento das faturas" checked={options.payInvoice} disabled={disabled}
+        onChange={(checked) => onChange({ payInvoice: checked })} />
+      <OptionCheckbox id="maxfin-wb-future" label="Gerar parcelas futuras a partir do último mês" checked={options.generateFutureInstallments}
+        disabled={disabled} onChange={(checked) => onChange({ generateFutureInstallments: checked })} />
+    </div>
+  </div>
+);
+
+interface MonthsTableProps {
+  workbook: MaxFinWorkbookPreviewResponse; plan: MaxFinWorkbookPlan; checkedMonths: readonly string[]; stale: boolean; disabled: boolean;
+  currency: CurrencyCode; onToggleMonth: (monthKey: string, checked: boolean) => void;
+}
+
+/** Every sheet in workbook order: months can be ticked, the other sheets say why they were skipped. */
+const MonthsTable = ({ workbook, plan, checkedMonths, stale, disabled, currency, onToggleMonth }: MonthsTableProps) => {
+  const planByKey = new Map(plan.months.map((month) => [month.monthKey, month]));
+  const columns = stale ? 5 : 6;
+  return (
+    <div>
+      <h4 className={`${H4_CLS} mb-2`}>Meses da planilha</h4>
+      <div className={TABLE_WRAP_CLS}>
+        <table className="w-full text-sm">
+          <thead>
+            <tr className={THEAD_ROW_CLS}>
+              <th className={`${TH_CLS} w-8`} aria-label="Importar" />
+              <th className={TH_CLS}>Aba</th>
+              <th className={TH_CLS}>Mês</th>
+              <th className={TH_CLS}>Linhas</th>
+              <th className={TH_CLS}>Situação</th>
+              {/* After a failed run nothing about invoices is promised until the preview is refreshed. */}
+              {!stale && <th className={TH_CLS}>Fatura</th>}
+            </tr>
+          </thead>
+          <tbody className={TBODY_CLS}>
+            {workbook.sheets.map((sheet, index) => {
+              const name = (
+                <span className="inline-flex flex-wrap items-center gap-1">
+                  <span className="truncate max-w-[180px]" title={sheet.name}>{sheet.name}</span>
+                  {sheet.hidden && <Chip tone="gray" title="Aba oculta na planilha (lida normalmente)">oculta</Chip>}
+                </span>
+              );
+              if (!isSelectableSheet(sheet)) {
+                return (
+                  <tr key={`${index}-${sheet.name}`}>
+                    <td className="px-3 py-2" />
+                    <td className={`${TD_CLS} ${MUTED_CLS}`}>{name}</td>
+                    <td colSpan={columns - 2} className={`${TD_CLS} ${MUTED_CLS}`}>
+                      {sheet.status === 'skipped' ? 'Ignorada' : 'Não pode ser importada'}{sheet.reason ? `: ${sheet.reason}` : ''}
+                    </td>
+                  </tr>
+                );
+              }
+              const monthKey = sheet.monthKey as string;
+              const label = monthKeyLabel(monthKey);
+              const checked = checkedMonths.includes(monthKey);
+              // The last ticked month stays ticked: the preview always has at least one month.
+              const lastOne = checked && toggleWorkbookMonth(checkedMonths, monthKey, false) === null;
+              const month = planByKey.get(monthKey);
+              const counts = month ? countByStatus(month.preview.rows) : null;
+              const invoice = month?.built.totals.invoice;
+              return (
+                <tr key={`${index}-${sheet.name}`}>
+                  <td className="px-3 py-2 align-top">
+                    <input type="checkbox" checked={checked} disabled={disabled || lastOne} className={CHECKBOX_CLS}
+                      aria-label={`Importar ${label} (aba ${sheet.name})`} title={lastOne ? 'Ao menos um mês fica marcado.' : undefined}
+                      onChange={(e) => onToggleMonth(monthKey, e.target.checked)} />
+                  </td>
+                  <td className={TD_CLS}>{name}</td>
+                  <td className={`${TD_CLS} whitespace-nowrap`}>{label}</td>
+                  <td className={TD_CLS}>
+                    {month && counts ? (
+                      <div className="flex flex-wrap items-center gap-1">
+                        <Chip tone="green">{countLabel(counts.new, 'nova', 'novas')}</Chip>
+                        <Chip tone="yellow">{countLabel(counts.duplicate, 'duplicada', 'duplicadas')}</Chip>
+                        <Chip tone="orange">{countLabel(counts.changed, 'alterada', 'alteradas')}</Chip>
+                        <span className={`text-xs ${MUTED_CLS}`}>{month.built.totals.count} a importar</span>
+                        {month.preview.warnings.length > 0 && (
+                          <Chip tone="yellow" title={month.preview.warnings.join('\n')}>
+                            {countLabel(month.preview.warnings.length, 'aviso', 'avisos')}
+                          </Chip>
+                        )}
+                      </div>
+                    ) : (
+                      <span className={MUTED_CLS}>{countLabel(sheet.rowCount, 'linha', 'linhas')}</span>
+                    )}
+                  </td>
+                  <td className={`${TD_CLS} whitespace-nowrap ${MUTED_CLS}`}>
+                    {month ? (month.preview.options.closedMonth ? 'fechado' : 'aberto') : '—'}
+                    {month?.preview.options.generateFutureInstallments && <span className="block text-[11px]">gera parcelas futuras</span>}
+                  </td>
+                  {!stale && (
+                    <td className={`${TD_CLS} whitespace-nowrap`}>
+                      {invoice?.willPay
+                        ? formatCurrency(invoice.amount, currency)
+                        : <span className={MUTED_CLS} title={invoice?.reason ?? undefined}>—</span>}
+                    </td>
+                  )}
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+};
+
+interface MonthDetailProps {
+  plan: MaxFinWorkbookPlan; detailId: string | null; selection: MaxFinWorkbookSelection; stale: boolean; disabled: boolean;
+  accountName: (id: string) => string; currency: CurrencyCode; onDetailChange: (id: string) => void;
+  onToggleRow: (monthId: string, key: string, checked: boolean) => void; onSelectAllNew: (monthId: string) => void;
+  onClear: (monthId: string) => void;
+}
+
+/** One month at a time: its blocks, invoice, rows (with their own selection) and skipped lines. */
+const MonthDetail = ({
+  plan, detailId, selection, stale, disabled, accountName, currency, onDetailChange, onToggleRow, onSelectAllNew, onClear,
+}: MonthDetailProps) => {
+  const month = plan.months.find((m) => m.id === detailId) ?? plan.months[0];
+  if (!month) return null;
+  const source = monthSourceLabel(month.preview.monthSource);
+  return (
+    <div className="space-y-4 min-w-0 rounded-md border border-gray-200 dark:border-gray-800 p-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <label htmlFor="maxfin-wb-detail" className={H4_CLS}>Detalhe do mês</label>
+        <select id="maxfin-wb-detail" value={month.id} className={MONTH_INPUT_CLS} onChange={(e) => onDetailChange(e.target.value)}>
+          {plan.months.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+        </select>
+        <span className={`text-xs ${MUTED_CLS}`}>
+          {month.preview.options.closedMonth ? 'mês fechado' : 'mês aberto'}
+          {source && ` · identificado ${source}`}
+        </span>
+      </div>
+      <CollapsibleWarnings key={`warnings-${month.id}`} warnings={month.preview.warnings}
+        label={countLabel(month.preview.warnings.length, 'aviso deste mês', 'avisos deste mês')} />
+      <SectionSummary preview={month.preview} accountName={accountName} currency={currency} />
+      {!stale && <InvoiceNotice preview={month.preview} selection={month.built.totals.invoice} accountName={accountName} currency={currency} />}
+      <RowsTable preview={month.preview} selected={selection[month.id] ?? {}} accountName={accountName} currency={currency} disabled={disabled}
+        onToggle={(key, checked) => onToggleRow(month.id, key, checked)} onSelectAllNew={() => onSelectAllNew(month.id)}
+        onClear={() => onClear(month.id)} />
+      <SkippedList key={`skipped-${month.id}`} skipped={month.preview.skipped} />
+    </div>
+  );
+};
+
+interface WorkbookFooterProps {
+  plan: MaxFinWorkbookPlan; blocker: MaxFinWorkbookBlocker | null; armed: boolean; busy: boolean; running: boolean; progress: string | null;
+  confirmError: string | null; currency: CurrencyCode; onBack: () => void; onConfirm: () => void; onRefresh: () => void;
+}
+
+/** Numbers come from buildWorkbookPlan: the same steps the run sends. */
+const WorkbookFooter = ({
+  plan, blocker, armed, busy, running, progress, confirmError, currency, onBack, onConfirm, onRefresh,
+}: WorkbookFooterProps) => {
+  const { totals } = plan;
+  // After a failed run the preview is stale: nothing about the invoices is promised until it is refreshed.
+  const stale = blocker?.code === 'needs-refresh';
+  const confirmText = running
+    ? 'Importando…'
+    : armed
+      ? `Confirmar e substituir ${totals.replacements}`
+      : totals.months > 0
+        ? `Importar ${countLabel(totals.months, 'mês', 'meses')}`
+        : 'Importar';
+  return (
+    <div className="pt-3 border-t border-gray-200 dark:border-gray-800 space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="space-y-1 text-sm min-w-0">
+          <p className="text-gray-900 dark:text-white">
+            {countLabel(totals.months, 'mês', 'meses')} · {countLabel(totals.rows, 'linha selecionada', 'linhas selecionadas')}
+            {totals.incomeCount > 0 && <> · Receitas: <strong>{formatCurrency(totals.incomeTotal, currency)}</strong></>}
+            {totals.expenseCount > 0 && <> · Despesas: <strong>{formatCurrency(totals.expenseTotal, currency)}</strong></>}
+          </p>
+          {totals.replacements > 0 && (
+            <p className="text-orange-700 dark:text-orange-300">{countLabel(totals.replacements, REPLACED_ONE, REPLACED_MANY)}</p>
+          )}
+          {totals.invoiceCount > 0 && !stale && (
+            <p className={MUTED_CLS}>
+              {countLabel(totals.invoiceCount, 'fatura será registrada', 'faturas serão registradas')}: {formatCurrency(totals.invoiceTotal, currency)}.
+            </p>
+          )}
+          {totals.emptyMonths.length > 0 && (
+            <p className={`text-xs ${MUTED_CLS}`}>Sem linhas para importar: {totals.emptyMonths.join(', ')}.</p>
+          )}
+        </div>
+        <div className="flex gap-3">
+          <button type="button" onClick={onBack} disabled={busy} className={BTN_SECONDARY}>
+            <ArrowLeft className="h-4 w-4 mr-2" aria-hidden="true" />
+            Voltar
+          </button>
+          <button type="button" onClick={onConfirm} disabled={busy || blocker !== null} title={blocker?.message}
+            aria-describedby={blocker ? 'maxfin-confirm-blocker' : undefined} className={armed ? BTN_WARN : BTN_PRIMARY}>
+            {confirmText}
+          </button>
+        </div>
+      </div>
+      {progress && <p role="status" className="text-sm text-gray-900 dark:text-white">{progress}</p>}
+      {armed && !running && (
+        <p role="alert" className="text-sm text-orange-700 dark:text-orange-300">
+          Atenção: dados que já estão registrados serão substituídos. Clique de novo para confirmar.
+        </p>
+      )}
+      {blocker && (
+        <p id="maxfin-confirm-blocker" className={`text-xs ${blocker.code === 'none-selected' ? MUTED_CLS : 'text-red-600 dark:text-red-400'}`}>
+          {blocker.message}
+        </p>
+      )}
+      {confirmError && (
+        <div className="flex flex-wrap items-center gap-3">
+          <p role="alert" className="text-sm text-red-600 dark:text-red-400">{confirmError}</p>
+          <button type="button" onClick={onRefresh} disabled={busy} className={BTN_SECONDARY_SM}>Atualizar pré-visualização</button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+/** After a run with something to read: one line per month and the warnings, each with its month. */
+const WorkbookResultStep = ({ summary, onClose }: { summary: MaxFinWorkbookRunSummary; onClose: () => void }) => (
+  <div className="space-y-4 min-w-0">
+    <div>
+      <h4 className={H4_CLS}>Importação concluída</h4>
+      <ul className="mt-1 text-sm text-gray-900 dark:text-white space-y-1">
+        {summary.months.map((month) => month.line && <li key={month.monthKey}>{month.line}</li>)}
+      </ul>
+    </div>
+    {summary.warnings.length > 0 && (
+      <div>
+        <h4 className={`${H4_CLS} mb-1`}>{countLabel(summary.warnings.length, 'aviso', 'avisos')}</h4>
+        <ul className={`${WARN_BOX_CLS} max-h-64 overflow-y-auto`}>
+          {summary.warnings.map((warning, index) => <li key={index}>{warning}</li>)}
+        </ul>
+      </div>
+    )}
+    <div className="flex justify-end pt-2">
+      <button type="button" onClick={onClose} autoFocus className={BTN_PRIMARY}>Fechar</button>
+    </div>
+  </div>
+);
+
+// ---------------------------------------------------------------------------
 // Dialog
 // ---------------------------------------------------------------------------
 
@@ -619,8 +944,9 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp }: Imp
   }), [customCategories]);
 
   const previewMutation = useMaxFinPreview();
+  const workbookMutation = useMaxFinWorkbookPreview();
   const confirmMutation = useMaxFinConfirm();
-  const isPreviewing = previewMutation.isPending;
+  const isPreviewing = previewMutation.isPending || workbookMutation.isPending;
   const isConfirming = confirmMutation.isPending;
 
   // Step 1 state (kept when going back from the preview).
@@ -639,8 +965,25 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp }: Imp
   const [confirmError, setConfirmError] = useState<string | null>(null);
   // Step 3 state: only set when the confirmed import has something to read (warnings, skipped, consumed).
   const [result, setResult] = useState<{ data: MaxFinConfirmResponse; summary: string } | null>(null);
+  // Workbook (.xlsx) state. workbook.options is the source of truth for its options; pendingWorkbookOptions only
+  // shows the change the user just made while the workbook preview is being recomputed.
+  const [workbook, setWorkbook] = useState<MaxFinWorkbookPreviewResponse | null>(null);
+  const [pendingWorkbookOptions, setPendingWorkbookOptions] = useState<MaxFinWorkbookOptions | null>(null);
+  const [workbookSelection, setWorkbookSelection] = useState<MaxFinWorkbookSelection>({});
+  // The month the user picked for the detail; the detail falls back to the oldest month when it is gone.
+  const [detailMonth, setDetailMonth] = useState<string | null>(null);
+  // A run sends one confirm per month: `running` spans the whole run (the mutation's isPending flips between months).
+  const [running, setRunning] = useState(false);
+  const [progress, setProgress] = useState<string | null>(null);
+  const [workbookResult, setWorkbookResult] = useState<MaxFinWorkbookRunSummary | null>(null);
   // Rows of the last preview, used to keep the selection of the user across re-runs.
   const lastRowsRef = useRef<MaxFinPreviewRow[]>([]);
+  // Same, per month of the workbook (months that left the selection are kept for when they come back).
+  const lastMonthRowsRef = useRef<MaxFinWorkbookRowsByMonth>({});
+  // Synchronous twin of `running`: guards closing and a second run before React re-renders.
+  const runningRef = useRef(false);
+  // Bumped when the dialog closes: a run in progress stops before its next month.
+  const runTokenRef = useRef(0);
   // Latest-wins guard: a preview run only touches state while it is the newest run of a mounted dialog.
   const seqRef = useRef(0);
   const mountedRef = useRef(true);
@@ -674,9 +1017,16 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp }: Imp
     setFormError(null);
     setConfirmError(null);
     setResult(null);
+    setWorkbook(null);
+    setPendingWorkbookOptions(null);
+    setWorkbookSelection({});
+    setDetailMonth(null);
+    setWorkbookResult(null);
     lastRowsRef.current = [];
+    lastMonthRowsRef.current = {};
     return () => {
       seqRef.current += 1;
+      runTokenRef.current += 1;
     };
   }, [open]);
 
@@ -715,11 +1065,11 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp }: Imp
     };
   }, [open]);
 
-  // ESC closes, except while the confirm request is in flight.
+  // ESC closes, except while a confirm request or a workbook run is in flight.
   useEffect(() => {
     if (!open) return;
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !isConfirming) onClose();
+      if (e.key === 'Escape' && !isConfirming && !runningRef.current) onClose();
     };
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
@@ -735,24 +1085,38 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp }: Imp
     () => (preview ? buildConfirmPayload(preview, selected, effectiveChoices, { accounts, customIdsByType }) : null),
     [preview, selected, effectiveChoices, accounts, customIdsByType],
   );
+  // Workbook: one category table for every month (the merged map), and one plan for the table, the footer and the run.
+  const workbookChoices = useMemo(
+    () => (workbook ? resolveCategoryChoices(workbook.categoryMap, categoryChoices, {}, customIdsByType) : {}),
+    [workbook, categoryChoices, customIdsByType],
+  );
+  const plan = useMemo(
+    () => (workbook ? buildWorkbookPlan(workbook, workbookSelection, workbookChoices, { accounts, customIdsByType }) : null),
+    [workbook, workbookSelection, workbookChoices, accounts, customIdsByType],
+  );
 
   // Anything that changes what would be sent (rows, targets, accounts, options) cancels a pending "replace" confirmation.
   useEffect(() => {
     setArmed(false);
-  }, [built, pendingOptions]);
+  }, [built, pendingOptions, plan, pendingWorkbookOptions]);
 
   if (!open) return null;
 
   const shownOptions = pendingOptions ?? preview?.options ?? INITIAL_OPTIONS;
-  const isRefreshing = isPreviewing && preview !== null;
-  const busy = isRefreshing || isConfirming;
+  const shownWorkbookOptions = pendingWorkbookOptions ?? workbook?.options ?? null;
+  const isRefreshing = isPreviewing && (preview !== null || workbook !== null);
+  const busy = isRefreshing || isConfirming || running;
   const allAccountsChosen = MAXFIN_SECTION_ORDER.every((key) => !!accountIds[key]);
   const accountName = (id: string): string => accounts.find((a) => a.id === id)?.name ?? '—';
   // A failed confirm may have stored part of the rows: the preview on screen is stale until it is run again.
   const blocker = preview ? confirmBlocker(built, confirmError !== null) : null;
-  // Closing is blocked while the confirm request is in flight: the import must not be abandoned halfway.
+  // Same for a workbook run that stopped: the months already stored would be sent again.
+  const workbookBlocker = workbook ? workbookConfirmBlocker(plan, confirmError !== null) : null;
+  const workbookStale = workbookBlocker?.code === 'needs-refresh';
+  const detailId = plan ? pickDetailMonth(detailMonth, plan.months.map((month) => month.id)) : null;
+  // Closing is blocked while a confirm request or a workbook run is in flight: the import must not be abandoned halfway.
   const requestClose = () => {
-    if (!isConfirming) onClose();
+    if (!isConfirming && !runningRef.current) onClose();
   };
 
   /** Runs the preview and merges the result into the state, unless a newer run or a close got ahead of it. */
@@ -792,15 +1156,25 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp }: Imp
     setSelected({});
     setMonthOverride(null);
     setConfirmError(null);
+    setWorkbook(null);
+    setPendingWorkbookOptions(null);
+    setWorkbookSelection({});
+    setDetailMonth(null);
     lastRowsRef.current = [];
+    lastMonthRowsRef.current = {};
     return problem === null;
   };
 
   const handlePreview = () => {
     setFormError(null);
     if (!householdId) return setFormError('Nenhuma household selecionada.');
-    if (!file) return setFormError('Selecione o arquivo .csv da planilha.');
+    if (!file) return setFormError('Selecione o arquivo .csv ou .xlsx da planilha.');
     if (!allAccountsChosen) return setFormError('Selecione uma conta para cada bloco da planilha.');
+    // The whole workbook goes to its own preview (server defaults for the options); a .csv keeps the monthly flow.
+    if (maxfinFileKind(file.name) === 'xlsx') {
+      void runWorkbookPreview();
+      return;
+    }
     void runPreview(monthOverride ? { monthOverride } : undefined);
   };
 
@@ -850,6 +1224,8 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp }: Imp
   const handleBack = () => {
     setPreview(null);
     setPendingOptions(null);
+    setWorkbook(null);
+    setPendingWorkbookOptions(null);
     setFormError(null);
     setConfirmError(null);
   };
@@ -880,12 +1256,136 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp }: Imp
     }
   };
 
+  // ---- Workbook (.xlsx) ----------------------------------------------------
+
+  /** Runs the workbook preview and merges the result into the state, unless a newer run or a close got ahead of it. */
+  const runWorkbookPreview = async (opts?: MaxFinWorkbookOptionsInput): Promise<PreviewOutcome> => {
+    if (!file) return 'error';
+    seqRef.current += 1;
+    const run = seqRef.current;
+    const isCurrent = () => mountedRef.current && run === seqRef.current;
+    try {
+      const data = await workbookMutation.mutateAsync({ accounts: accountIds, options: opts, file });
+      if (!isCurrent()) return 'stale';
+      saveAccountIds(householdId, accountIds);
+      const prevRows = lastMonthRowsRef.current;
+      lastMonthRowsRef.current = rowsByMonth(prevRows, data.months);
+      setWorkbook(data);
+      setConfirmError(null);
+      setWorkbookSelection((prev) => reconcileWorkbookSelection(prevRows, prev, data.months));
+      setCategoryChoices((prev) => resolveCategoryChoices(data.categoryMap, prev, loadSavedCategoryChoices(householdId), customIdsRef.current));
+      return 'ok';
+    } catch (err: unknown) {
+      if (!isCurrent()) return 'stale';
+      showError(getErrorMessage(err, 'Não foi possível pré-visualizar a planilha.'));
+      return 'error';
+    }
+  };
+
+  // Ticking a month or changing an option re-runs the workbook preview with every option explicit.
+  const handleWorkbookOptionsChange = async (patch: Partial<MaxFinWorkbookOptions>) => {
+    if (!shownWorkbookOptions) return;
+    const next = nextWorkbookOptions(shownWorkbookOptions, patch);
+    setPendingWorkbookOptions(next);
+    const outcome = await runWorkbookPreview(next);
+    // On success workbook.options already carries the new options; on error the previous ones come back.
+    if (outcome !== 'stale') setPendingWorkbookOptions(null);
+  };
+
+  const handleToggleMonth = (monthKey: string, checked: boolean) => {
+    if (!shownWorkbookOptions) return;
+    const months = toggleWorkbookMonth(shownWorkbookOptions.months, monthKey, checked);
+    if (months) void handleWorkbookOptionsChange({ months });
+  };
+
+  // After a run that stopped: same options again; the months already stored come back as duplicates.
+  const handleWorkbookRefresh = async () => {
+    if (!workbook) return;
+    await runWorkbookPreview(nextWorkbookOptions(workbook.options));
+  };
+
+  const handleToggleWorkbookRow = (monthId: string, key: string, checked: boolean) =>
+    setWorkbookSelection((prev) => ({ ...prev, [monthId]: { ...prev[monthId], [key]: checked } }));
+
+  const monthRows = (monthId: string): MaxFinPreviewRow[] => plan?.months.find((month) => month.id === monthId)?.preview.rows ?? [];
+
+  const handleSelectAllNewInMonth = (monthId: string) => {
+    const rows = monthRows(monthId);
+    setWorkbookSelection((prev) => {
+      const next = { ...prev[monthId] };
+      for (const row of rows) if (defaultRowSelected(row.status)) next[rowKey(row)] = true;
+      return { ...prev, [monthId]: next };
+    });
+  };
+
+  const handleClearMonth = (monthId: string) => {
+    const rows = monthRows(monthId);
+    setWorkbookSelection((prev) => ({ ...prev, [monthId]: Object.fromEntries(rows.map((row) => [rowKey(row), false])) }));
+  };
+
+  /**
+   * One monthly confirm per month, oldest first, each awaited before the next. Every request is computed before
+   * the first one goes; the run stops at the first failure (the months before it stay stored) and when the dialog
+   * goes away.
+   */
+  const handleWorkbookConfirm = async () => {
+    if (!plan || workbookBlocker || isConfirming || runningRef.current) return;
+    // Replacing stored transactions takes two clicks: the first one only arms the button.
+    if (plan.totals.replacements > 0) {
+      if (!armed) {
+        armedAtRef.current = Date.now();
+        setArmed(true);
+        return;
+      }
+      if (Date.now() - armedAtRef.current < ARM_GUARD_MS) return;
+    }
+    setArmed(false);
+    const steps = plan.steps;
+    const token = runTokenRef.current;
+    const isLive = () => mountedRef.current && token === runTokenRef.current;
+    const formatAmount = (value: number) => formatCurrency(value, baseCurrency);
+    const results: MaxFinConfirmResponse[] = [];
+    runningRef.current = true;
+    setRunning(true);
+    try {
+      for (let index = 0; index < steps.length; index += 1) {
+        if (!isLive()) {
+          // The dialog went away mid-run: no further month is sent; say what was stored.
+          showToast(workbookStopMessage(summarizeWorkbookRun(steps, results, null, formatAmount)), 'error', ERROR_TOAST_MS);
+          return;
+        }
+        setProgress(workbookProgressLabel(steps[index].label, index, steps.length));
+        try {
+          results.push(await confirmMutation.mutateAsync(steps[index].payload));
+        } catch (err: unknown) {
+          const reason = getErrorMessage(err, 'Não foi possível confirmar a importação.');
+          const message = workbookStopMessage(summarizeWorkbookRun(steps, results, { reason }, formatAmount));
+          showToast(message, 'error', ERROR_TOAST_MS);
+          // The preview is stale now (stored months come back as duplicates): Confirm waits for a refresh.
+          if (isLive()) setConfirmError(message);
+          return;
+        }
+      }
+      const summary = summarizeWorkbookRun(steps, results, null, formatAmount);
+      success(workbookRunToast(summary));
+      if (!isLive()) return;
+      if (summary.needsReview) setWorkbookResult(summary);
+      else onClose();
+    } finally {
+      runningRef.current = false;
+      if (mountedRef.current) {
+        setRunning(false);
+        setProgress(null);
+      }
+    }
+  };
+
   return createPortal(
     <div className="fixed inset-0 z-[60] overflow-y-auto">
       <div className="fixed inset-0 bg-black/40 animate-fade-in transition-opacity duration-300 ease-out" onClick={requestClose} aria-hidden="true" />
       <div className="flex min-h-full items-center justify-center p-4">
         <div role="dialog" aria-modal="true" aria-labelledby="maxfin-dialog-title"
-          className={`relative w-full ${preview && !result ? 'max-w-5xl' : 'max-w-2xl'} p-6 border rounded-lg bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 max-h-[90vh] overflow-y-auto min-w-0 animate-slide-in-bottom`}>
+          className={`relative w-full ${(preview || workbook) && !result && !workbookResult ? 'max-w-5xl' : 'max-w-2xl'} p-6 border rounded-lg bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 max-h-[90vh] overflow-y-auto min-w-0 animate-slide-in-bottom`}>
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center min-w-0">
               <Upload className="h-5 w-5 text-gray-500 dark:text-gray-400 mr-3 flex-shrink-0" aria-hidden="true" />
@@ -893,7 +1393,7 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp }: Imp
                 Importar planilha mensal (MaxFin)
               </h3>
             </div>
-            <button type="button" onClick={requestClose} disabled={isConfirming} aria-label="Fechar modal"
+            <button type="button" onClick={requestClose} disabled={isConfirming || running} aria-label="Fechar modal"
               className="text-gray-400 dark:text-gray-500 hover:opacity-70 transition-opacity p-1 disabled:opacity-40 disabled:cursor-not-allowed">
               <X className="h-5 w-5" aria-hidden="true" />
             </button>
@@ -929,6 +1429,37 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp }: Imp
 
               <PreviewFooter built={built} blocker={blocker} armed={armed} busy={busy} isConfirming={isConfirming} confirmError={confirmError}
                 currency={baseCurrency} onBack={handleBack} onConfirm={() => void handleConfirm()} onRefresh={() => void handleRefresh()} />
+            </div>
+          ) : workbookResult ? (
+            <WorkbookResultStep summary={workbookResult} onClose={requestClose} />
+          ) : workbook && plan && shownWorkbookOptions ? (
+            <div className="space-y-5 min-w-0">
+              <WorkbookOptionsBar workbook={workbook} options={shownWorkbookOptions} isRefreshing={isRefreshing} disabled={busy}
+                onChange={(patch) => void handleWorkbookOptionsChange(patch)} />
+
+              {workbook.warnings.length > 0 && (workbook.warnings.length <= 3 ? (
+                <ul className={WARN_BOX_CLS}>
+                  {workbook.warnings.map((warning, index) => <li key={index}>{warning}</li>)}
+                </ul>
+              ) : (
+                <CollapsibleWarnings warnings={workbook.warnings}
+                  label={countLabel(workbook.warnings.length, 'aviso da planilha', 'avisos da planilha')} />
+              ))}
+
+              {/* Kept visible (dimmed) while the preview is being recomputed. */}
+              <div className={`space-y-5 min-w-0 transition-opacity ${isRefreshing ? 'opacity-60' : ''}`} aria-busy={isRefreshing}>
+                <MonthsTable workbook={workbook} plan={plan} checkedMonths={shownWorkbookOptions.months} stale={workbookStale} disabled={busy}
+                  currency={baseCurrency} onToggleMonth={handleToggleMonth} />
+                <CategoryMapTable entries={workbook.categoryMap} choices={workbookChoices} customCategories={customCategories} disabled={busy}
+                  onChange={handleCategoryChange} />
+                <MonthDetail plan={plan} detailId={detailId} selection={workbookSelection} stale={workbookStale} disabled={busy}
+                  accountName={accountName} currency={baseCurrency} onDetailChange={setDetailMonth} onToggleRow={handleToggleWorkbookRow}
+                  onSelectAllNew={handleSelectAllNewInMonth} onClear={handleClearMonth} />
+              </div>
+
+              <WorkbookFooter plan={plan} blocker={workbookBlocker} armed={armed} busy={busy} running={running} progress={progress}
+                confirmError={confirmError} currency={baseCurrency} onBack={handleBack} onConfirm={() => void handleWorkbookConfirm()}
+                onRefresh={() => void handleWorkbookRefresh()} />
             </div>
           ) : (
             <SetupStep file={file} accountIds={accountIds} accounts={accounts} isLoadingAccounts={isLoadingAccounts} isPreviewing={isPreviewing}

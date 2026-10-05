@@ -87,7 +87,7 @@ export function isCardOfxText(text: string): boolean {
 }
 
 /** RFC 4180 tokenizer for the sniff: quotes, doubled quotes and line breaks inside quotes. At most `maxRows` rows. */
-export function parseCsvHead(text: string, delimiter: string, maxRows = 400): string[][] {
+export function parseCsvHead(text: string, delimiter: string, maxRows = 1000): string[][] {
   const rows: string[][] = [];
   let row: string[] = [];
   let cell = '';
@@ -129,9 +129,16 @@ export function parseCsvHead(text: string, delimiter: string, maxRows = 400): st
 
 const HEADER_SCAN_ROWS = 40;
 
+/** How many Total rows a monthly sheet has at least (one per block, the server stops at the third). */
+export const SHEET_MIN_TOTAL_ROWS = 3;
+
+/** The parser's own rule for a Total row: the whole cell is "Total" (case, accents and a closing colon aside). */
+export const isTotalCell = (cell: string): boolean => /^total\s*:?$/.test(normalizeLabel(cell));
+
 /**
- * The monthly sheet: column B of some early row is "Descrição" (the header) and, after it, column B of some row
- * starts with "Total". A bank statement .csv may have a "Descrição" column too, but never the Total rows.
+ * The monthly sheet: column B of some early row is "Descrição" (the header) and, after it, at least three rows
+ * have exactly "Total" in column B. A bank statement .csv may have a "Descrição" column too, and a description that
+ * starts with "Total" ("Total Pass", "TOTAL PAGO FATURA"), but never three bare Total rows.
  */
 export function isMonthlySheetCsv(text: string): boolean {
   const body = text.replace(/^\uFEFF/, '');
@@ -139,21 +146,42 @@ export function isMonthlySheetCsv(text: string): boolean {
     const rows = parseCsvHead(body, delimiter);
     const header = rows.slice(0, HEADER_SCAN_ROWS).findIndex((cells) => normalizeLabel(cells[1] ?? '') === 'descricao');
     if (header < 0) continue;
-    if (rows.slice(header + 1).some((cells) => normalizeLabel(cells[1] ?? '').startsWith('total'))) return true;
+    if (rows.slice(header + 1).filter((cells) => isTotalCell(cells[1] ?? '')).length >= SHEET_MIN_TOTAL_ROWS) return true;
   }
   return false;
 }
 
 /**
- * What a file is. `head` is the start of the file as text (null when it could not be read); it only decides
- * between card and bank statement for an .ofx and between sheet and statement for a .csv. Null: not a file the hub takes.
+ * What a file is. `text` is what was read of it: the WHOLE file for an .ofx (the server calls it a card invoice
+ * when CCSTMTRS is anywhere in it) and the start for a .csv. It decides between card and bank statement for an
+ * .ofx and between sheet and statement for a .csv. Null: not a file the hub takes, or the file could not be read
+ * (the user then has to choose the Tipo).
  */
-export function detectImportKind(name: string, head: string | null): ImportKind | null {
+export function detectImportKind(name: string, text: string | null): ImportKind | null {
   const ext = importExtension(name);
   if (ext === 'xlsx') return 'workbook';
-  if (ext === 'ofx') return head !== null && isCardOfxText(head) ? 'card' : 'statement';
-  if (ext === 'csv') return head !== null && isMonthlySheetCsv(head) ? 'sheet' : 'statement';
+  if (ext === 'ofx') return text !== null ? (isCardOfxText(text) ? 'card' : 'statement') : null;
+  if (ext === 'csv') return text !== null ? (isMonthlySheetCsv(text) ? 'sheet' : 'statement') : null;
   return null;
+}
+
+/** How much of a file the sniff reads: all of an .ofx up to the card limit, the first bytes of a .csv, nothing else. */
+export function sniffPlan(name: string, size: number): { read: 'full' | 'head' | 'none'; note: string | null } {
+  const ext = importExtension(name);
+  if (ext === 'ofx') {
+    if (size > CARD_OFX_MAX_FILE_BYTES) {
+      return { read: 'none', note: 'Maior que 5 MB, o limite de uma fatura de cartão: tratado como extrato (mude o Tipo se for outra coisa).' };
+    }
+    return { read: 'full', note: null };
+  }
+  return { read: ext === 'csv' ? 'head' : 'none', note: null };
+}
+
+/** The kind of a file given what the sniff read of it (see sniffPlan), and the note to show next to it. */
+export function classifyFile(file: { name: string; size: number }, text: string | null): { kind: ImportKind | null; note: string | null } {
+  const plan = sniffPlan(file.name, file.size);
+  if (plan.read === 'none' && importExtension(file.name) === 'ofx') return { kind: 'statement', note: plan.note };
+  return { kind: detectImportKind(file.name, text), note: null };
 }
 
 // ---- Date used to order the files -------------------------------------------------------------------------
@@ -230,7 +258,8 @@ export function fileProblem(kind: ImportKind, file: { name: string; size: number
 
 export interface HubEntryLike {
   name: string;
-  kind: ImportKind;
+  /** Null: the file could not be read, the user has to choose. */
+  kind: ImportKind | null;
   problem: string | null;
 }
 
@@ -244,6 +273,8 @@ export type HubSelectionCheck =
  */
 export function checkHubSelection(entries: readonly HubEntryLike[]): HubSelectionCheck {
   if (entries.length === 0) return { ok: false, kind: null, message: null };
+  const unknown = entries.find((entry) => entry.kind === null);
+  if (unknown) return { ok: false, kind: null, message: `${unknown.name}: não foi possível ler o arquivo. Escolha o Tipo.` };
   const kinds = IMPORT_KIND_ORDER.filter((kind) => entries.some((entry) => entry.kind === kind));
   if (kinds.length > 1) {
     const names = kinds.map((kind) => IMPORT_KIND_LABEL[kind]).join(' e ');

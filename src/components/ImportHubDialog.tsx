@@ -8,7 +8,7 @@ import type { MaxFinAccountsInput } from '../hooks/api/useImportMaxFin';
 import { MAXFIN_SECTION_ORDER, countLabel } from '../utils/maxfinPayload';
 import {
   IMPORT_ACCEPT, IMPORT_KIND_LABEL, SNIFF_BYTES, cardAccounts, checkHubSelection, decodeSniffBytes, defaultDestination, defaultSheetAccounts,
-  destinationProblem, detectImportKind, fileProblem, importExtension, kindsForExtension, orderByPeriod, periodStartOf, statementAccounts,
+  classifyFile, destinationProblem, fileProblem, sniffPlan, importExtension, kindsForExtension, orderByPeriod, periodStartOf, statementAccounts,
 } from '../utils/importHub';
 import type { ImportKind, PeriodSource } from '../utils/importHub';
 import ImportCardOfxDialog from './ImportCardOfxDialog';
@@ -38,10 +38,13 @@ const fmtIso = (iso: string): string => iso.split('-').reverse().join('/');
 // Reading the start of a file
 // ---------------------------------------------------------------------------
 
-/** The first bytes of the file as text; null when they cannot be read (the file is then classified by its name alone). */
-async function readFileHead(file: File): Promise<string | null> {
+/**
+ * The file as text: all of it (an .ofx is a card invoice when CCSTMTRS is anywhere in it) or its first bytes.
+ * Null when it cannot be read: the user then has to choose the Tipo, the file is never taken for a statement silently.
+ */
+async function readFileText(file: File, read: 'full' | 'head'): Promise<string | null> {
   try {
-    const slice = file.slice(0, SNIFF_BYTES);
+    const slice = read === 'full' ? file.slice(0) : file.slice(0, SNIFF_BYTES);
     const buffer: ArrayBuffer =
       typeof slice.arrayBuffer === 'function'
         ? await slice.arrayBuffer()
@@ -60,16 +63,20 @@ async function readFileHead(file: File): Promise<string | null> {
 interface HubEntry {
   id: string;
   file: File;
-  /** What the sniff says the file is. */
-  detected: ImportKind;
+  /** What the sniff says the file is; null when the file could not be read. */
+  detected: ImportKind | null;
+  /** Why the detection is what it is, when that is not obvious (a file too big to be a card invoice). */
+  note: string | null;
   /** What the user picked instead, if anything. */
   override: ImportKind | null;
   periodStart: string | null;
   periodSource: PeriodSource | null;
 }
 
-const entryKind = (entry: HubEntry): ImportKind => entry.override ?? entry.detected;
+const entryKind = (entry: HubEntry): ImportKind | null => entry.override ?? entry.detected;
 
+// The same name, size and modification time is taken for the same file (the content is not hashed: the picker gives
+// the same File back, and a different file with all three equal is not a case worth reading every file for).
 const fileKey = (file: File): string => `${file.name}|${file.size}|${file.lastModified}`;
 
 /** Where the files go once the user has chosen the destination. */
@@ -137,7 +144,7 @@ const ImportHubDialog = ({ open, onClose, householdId: householdIdProp, defaultA
   }, [open]);
 
   const rows = useMemo(
-    () => entries.map((entry) => ({ entry, kind: entryKind(entry), problem: fileProblem(entryKind(entry), entry.file) })),
+    () => entries.map((entry) => ({ entry, kind: entryKind(entry), problem: entryKind(entry) ? fileProblem(entryKind(entry) as ImportKind, entry.file) : null })),
     [entries],
   );
   const check = useMemo(
@@ -191,12 +198,14 @@ const ImportHubDialog = ({ open, onClose, householdId: householdIdProp, defaultA
     try {
       const fresh: HubEntry[] = [];
       for (const file of accepted) {
-        const head = importExtension(file.name) === 'xlsx' ? null : await readFileHead(file);
-        const detected = detectImportKind(file.name, head) ?? 'statement';
-        const period = detected === 'card' || detected === 'statement' ? periodStartOf(file.name, head) : null;
+        const plan = sniffPlan(file.name, file.size);
+        const text = plan.read === 'none' ? null : await readFileText(file, plan.read);
+        const { kind: detected, note } = classifyFile(file, text);
+        const ext = importExtension(file.name);
+        const period = ext === 'ofx' || ext === 'csv' ? periodStartOf(file.name, text) : null;
         nextId.current += 1;
         fresh.push({
-          id: `hub-${nextId.current}`, file, detected, override: null, periodStart: period?.date ?? null, periodSource: period?.source ?? null,
+          id: `hub-${nextId.current}`, file, detected, note, override: null, periodStart: period?.date ?? null, periodSource: period?.source ?? null,
         });
       }
       if (!mountedRef.current) return;
@@ -315,12 +324,13 @@ const ImportHubDialog = ({ open, onClose, householdId: householdIdProp, defaultA
                       </div>
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                         <span className={MUTED_CLS}>
-                          Detectado: <strong className="font-medium text-gray-900 dark:text-white">{IMPORT_KIND_LABEL[entry.detected]}</strong>
+                          Detectado: <strong className="font-medium text-gray-900 dark:text-white">{entry.detected ? IMPORT_KIND_LABEL[entry.detected] : 'não foi possível ler o arquivo'}</strong>
                         </span>
                         <label className="inline-flex items-center gap-1">
                           <span className={MUTED_CLS}>Tipo</span>
-                          <select value={rowKind} aria-label={`Tipo de ${entry.file.name}`} disabled={options.length < 2} className={SELECT_SM_CLS}
+                          <select value={rowKind ?? ''} aria-label={`Tipo de ${entry.file.name}`} disabled={options.length < 2 && rowKind !== null} className={SELECT_SM_CLS}
                             onChange={(e) => setOverride(entry.id, e.target.value as ImportKind)}>
+                            {rowKind === null && <option value="">Escolha o tipo</option>}
                             {options.map((option) => <option key={option} value={option}>{IMPORT_KIND_LABEL[option]}</option>)}
                           </select>
                         </label>
@@ -331,6 +341,7 @@ const ImportHubDialog = ({ open, onClose, householdId: householdIdProp, defaultA
                           <span className={MUTED_CLS}>Sem data: vai depois dos datados</span>
                         )}
                       </div>
+                      {entry.note && <p className={`text-xs ${MUTED_CLS}`}>{entry.note}</p>}
                       {problem && <p role="alert" className="text-xs text-red-600 dark:text-red-400">{problem}</p>}
                     </li>
                   );

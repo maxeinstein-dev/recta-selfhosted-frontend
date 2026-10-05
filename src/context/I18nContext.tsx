@@ -109,8 +109,8 @@ export interface Translations {
   closingDay: string;
   closingDayHint: string;
   bestDayToBuy: string;
-  bestDayOffset: string;
-  bestDayOffsetHint: string;
+  closingDayFromDueHint: string;
+  closingDayDerivedNotice: string;
   payInvoice: string;
   payInvoiceDescription: string;
   paymentAccount: string;

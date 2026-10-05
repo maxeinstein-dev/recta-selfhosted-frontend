@@ -6,6 +6,7 @@ import { formatCurrency } from '../../../utils/format';
 import { parseCurrencyValue } from '../../../utils/currency';
 import { getDisplayBalance } from '../../../utils/accountBalance';
 import { AccountType } from '../../../lib/enums';
+import { useClosingDayAutoFill } from '../../../hooks/useClosingDayAutoFill';
 import SelectCombobox from '../../SelectCombobox';
 import { OnboardingAccountFormData } from '../../../schemas';
 import { Account } from '../../../types';
@@ -38,6 +39,8 @@ export const OnboardingStep5Accounts = ({
   const { t } = useI18n();
   const watchedAccountType = accountForm.watch('accountType');
   const { clearErrors } = accountForm;
+  // The closing day follows the due day (due - 7) until the user types their own
+  const suggestedClosing = useClosingDayAutoFill(accountForm, watchedAccountType === AccountType.CREDIT);
 
   // The card fields leave the screen with the type: an error left on them would block a checking account.
   useEffect(() => {
@@ -220,14 +223,14 @@ export const OnboardingStep5Accounts = ({
                   min="1"
                   max="31"
                   {...accountForm.register('closingDay', { valueAsNumber: true })}
-                  placeholder={t.exampleDay}
+                  placeholder={suggestedClosing ? String(suggestedClosing) : t.exampleDay}
                   aria-describedby="closingDayHint"
                   className={`block w-full px-4 py-3 border rounded-lg shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 hover:shadow-md ${
                     accountForm.formState.errors.closingDay ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
                   }`}
                 />
                 <p id="closingDayHint" className="mt-2 text-xs text-gray-500">
-                  {t.closingDayHint}
+                  {t.closingDayFromDueHint || t.closingDayHint}
                 </p>
                 {accountForm.formState.errors.closingDay && (
                   <p className="mt-2 text-sm text-red-600 dark:text-red-400" role="alert">

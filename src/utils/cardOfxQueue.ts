@@ -7,6 +7,7 @@ import {
 } from './cardOfx';
 import type { CardOfxBuiltConfirm, CardOfxConfirmContext } from './cardOfx';
 import { countLabel, resolveCategoryChoices } from './maxfinPayload';
+import { DAYS_BETWEEN_CLOSING_AND_DUE, effectiveClosingDay } from './closingDay';
 import type { CardOfxConfirmResponse, CardOfxPreviewResponse } from '../hooks/api/useImportCardOfx';
 import type { MaxFinCategoryTargetInput } from '../hooks/api/useImportMaxFin';
 
@@ -78,7 +79,7 @@ export const shouldDeferInvalidation = (queueLength: number): boolean => queueLe
 // ---- Warnings of the preview --------------------------------------------------------------------------------
 
 /** The server's own warning that the card has no closing day (the dialog shows its own notice for it). */
-export const isClosingDayServerWarning = (warning: string): boolean => /não tem dia de fechamento configurado/.test(warning);
+export const isClosingDayServerWarning = (warning: string): boolean => /não tem dia de fechamento/.test(warning);
 
 /** Warnings to list: the server one about the closing day is left out while the dialog's notice is on screen. */
 export function visibleCardWarnings(warnings: readonly string[], noticeShown: boolean): string[] {
@@ -88,11 +89,26 @@ export function visibleCardWarnings(warnings: readonly string[], noticeShown: bo
 // ---- Closing day ------------------------------------------------------------------------------------------
 
 export const NO_CLOSING_DAY_NOTICE =
-  'Este cartão não tem dia de fechamento: o mês da fatura segue o mês do calendário. Para definir o dia, edite a conta do cartão (campo Dia de fechamento).';
+  'Este cartão não tem dia de fechamento nem de vencimento: o mês da fatura segue o mês do calendário. Para definir o dia, edite a conta do cartão (campos Dia de vencimento e Dia de fechamento).';
 
-/** The card has no closing day (absent, null or 0): the invoice month follows the calendar month. */
-export function lacksClosingDay(account: { closingDay?: number | null } | null | undefined): boolean {
-  return !!account && !(typeof account.closingDay === 'number' && account.closingDay >= 1 && account.closingDay <= 31);
+/**
+ * The card has neither a closing day (absent, null or 0) nor a due day to derive it from (due - 7): the invoice
+ * month follows the calendar month. A card with only a due day is not lacking one.
+ */
+export function lacksClosingDay(account: { closingDay?: number | null; dueDay?: number | null } | null | undefined): boolean {
+  return !!account && effectiveClosingDay(account) === null;
+}
+
+/**
+ * Notice for a card whose closing day is not stored but derived from the due day, or null (stored closing day, or
+ * nothing to derive from).
+ */
+export function derivedClosingNotice(account: { closingDay?: number | null; dueDay?: number | null } | null | undefined): string | null {
+  if (!account) return null;
+  const hasStored = typeof account.closingDay === 'number' && account.closingDay >= 1 && account.closingDay <= 31;
+  const effective = effectiveClosingDay(account);
+  if (hasStored || effective === null) return null;
+  return `Fechamento calculado: dia ${effective} (${DAYS_BETWEEN_CLOSING_AND_DUE} dias antes do vencimento)`;
 }
 
 // ---- Final summary ----------------------------------------------------------------------------------------

@@ -59,6 +59,7 @@ import { useCategories } from '../hooks/api/useCategories';
 // Import parseDateFromAPI and formatDateForAPI from utils
 import { parseDateFromAPI, formatDateForAPI } from '../utils/format';
 import { CONFLICT_MESSAGE, isConflict } from '../utils/transactionConflict';
+import { effectiveClosingDay } from '../utils/closingDay';
 
 const TransactionsContext = createContext<TransactionsContextType>({} as TransactionsContextType);
 
@@ -230,7 +231,6 @@ const convertAccountFromBackend = (a: BackendAccount): Account => {
     availableLimit: (a.availableLimit !== null && a.availableLimit !== undefined) ? Number(a.availableLimit) : undefined,
     dueDay: a.dueDay,
     closingDay: a.closingDay,
-    bestDayOffset: a.bestDayOffset,
     linkedAccountId: a.linkedAccountId,
     isPersonal: (a as any).isPersonal,
     accountOwnerId: (a as any).accountOwnerId || null,
@@ -732,7 +732,6 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
       creditLimit: account.creditLimit,
       dueDay: account.dueDay,
       closingDay: account.closingDay,
-      bestDayOffset: account.bestDayOffset,
     });
 
     // A conta criada retorna com o householdId (que pode ter sido criado pelo backend)
@@ -887,18 +886,15 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
       !!linkedAccount && linkedAccount.type === AccountType.CREDIT;
 
     // For credit cards, the purchase date and the first-invoice month can
-    // differ. If the user buys on or after closingDay, the purchase lands in
+    // differ. If the user buys on or after the closing day (the card's own, or
+    // due day - 7 when it has none), the purchase lands in
     // the NEXT month's invoice — so the first installment must be pushed one
     // month forward to avoid two installments falling in the same calendar
     // month (the bug reported on Reddit).
     const purchaseDate = new Date(transaction.date);
     let firstInstallmentAnchor = purchaseDate;
-    if (
-      isCreditCardInstallment &&
-      linkedAccount.closingDay !== undefined &&
-      linkedAccount.closingDay !== null &&
-      purchaseDate.getDate() >= linkedAccount.closingDay
-    ) {
+    const cardClosingDay = isCreditCardInstallment ? effectiveClosingDay(linkedAccount) : null;
+    if (cardClosingDay !== null && purchaseDate.getDate() >= cardClosingDay) {
       firstInstallmentAnchor = addMonths(purchaseDate, 1);
     }
 

@@ -39,7 +39,7 @@ import type {
 } from '../utils/cardOfx';
 import { QueueHeader, QueueProgressList } from './ImportQueuePanel';
 import {
-  CARD_RECONCILED_QUEUE_NOTE, NO_CLOSING_DAY_NOTICE, cardQueueControls, cardQueueTotalsLine, lacksClosingDay, planCardDefaultApply,
+  CARD_RECONCILED_QUEUE_NOTE, NO_CLOSING_DAY_NOTICE, cardQueueControls, derivedClosingNotice, cardQueueTotalsLine, lacksClosingDay, planCardDefaultApply,
   shouldDeferInvalidation, sumCardOfxResults, visibleCardWarnings,
 } from '../utils/cardOfxQueue';
 import {
@@ -1092,6 +1092,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
   const queueFinished = queue !== null && isQueueFinished(queue);
   const cardAccount = accounts.find((a) => a.id === (preview?.accountId ?? accountId));
   const showClosingNotice = lacksClosingDay(cardAccount) && !result && !queueFinished;
+  const derivedNotice = !result && !queueFinished ? derivedClosingNotice(cardAccount) : null;
   const queueBusy = isPreviewing || isConfirming || applying;
   // What the buttons of the queue do for the file on screen: a file with nothing to apply never stalls the queue.
   const queueControls = queue ? cardQueueControls({ busy: queueBusy, hasBuilt: !!built && !!preview, blocker }) : null;
@@ -1464,6 +1465,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
           )}
 
           {showClosingNotice && <p role="note" className={`mb-4 ${INFO_BOX_CLS}`}>{NO_CLOSING_DAY_NOTICE}</p>}
+          {derivedNotice && <p role="note" className={`mb-4 ${INFO_BOX_CLS}`}>{derivedNotice}</p>}
 
           {formError && <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">{formError}</p>}
 

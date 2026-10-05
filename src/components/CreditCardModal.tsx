@@ -32,7 +32,6 @@ interface CreditCardFormData {
   creditLimit?: number;
   closingDay?: number;
   dueDay?: number;
-  bestDayOffset?: number;
 }
 
 export const CreditCardModal = ({ account, onClose }: CreditCardModalProps) => {
@@ -90,7 +89,6 @@ export const CreditCardModal = ({ account, onClose }: CreditCardModalProps) => {
     creditLimit: z.number().positive(t.cardLimitMustBePositive).optional(),
     closingDay: z.preprocess((v) => (typeof v === 'number' && Number.isNaN(v) ? undefined : v), z.number().int().min(1).max(31).optional()),
     dueDay: z.number().int().min(1, t.dueDayMin).max(31, t.dueDayMax).optional(),
-    bestDayOffset: z.number().int().min(1).max(30).optional(),
   });
 
   const form = useForm<CreditCardFormData>({
@@ -102,7 +100,6 @@ export const CreditCardModal = ({ account, onClose }: CreditCardModalProps) => {
       creditLimit: undefined,
       closingDay: undefined,
       dueDay: undefined,
-      bestDayOffset: 7,
     },
   });
 
@@ -117,7 +114,6 @@ export const CreditCardModal = ({ account, onClose }: CreditCardModalProps) => {
         creditLimit: account.creditLimit || undefined,
         closingDay: account.closingDay || undefined,
         dueDay: account.dueDay || undefined,
-        bestDayOffset: account.bestDayOffset ?? 7,
       });
       creditLimitMask.setValue(account.creditLimit || 0);
     } else {
@@ -128,7 +124,6 @@ export const CreditCardModal = ({ account, onClose }: CreditCardModalProps) => {
         creditLimit: undefined,
         closingDay: undefined,
         dueDay: undefined,
-        bestDayOffset: 7,
       });
       creditLimitMask.setValue(0);
       balanceMask.setValue(0);
@@ -145,14 +140,13 @@ export const CreditCardModal = ({ account, onClose }: CreditCardModalProps) => {
     
     try {
       if (account?.id) {
-        // Edição: permite editar nome, cor, limite de crédito, dia de fechamento, dia de vencimento e melhor dia
+        // Edição: permite editar nome, cor, limite de crédito, dia de fechamento, dia de vencimento
         await updateAccount(account.id, {
           name: data.name,
           color: data.color,
           creditLimit: data.creditLimit,
           closingDay: data.closingDay,
           dueDay: data.dueDay,
-          bestDayOffset: data.bestDayOffset,
         });
         
         // Atualizar compartilhamento se necessário
@@ -187,7 +181,6 @@ export const CreditCardModal = ({ account, onClose }: CreditCardModalProps) => {
           creditLimit: data.creditLimit,
           closingDay: data.closingDay,
           dueDay: data.dueDay,
-          bestDayOffset: data.bestDayOffset ?? 7,
         } as Omit<Account, 'id' | 'userId'>);
         analyticsHelpers.logCreditCardCreated();
         success(t.accountCreated || 'Cartão criado com sucesso!');

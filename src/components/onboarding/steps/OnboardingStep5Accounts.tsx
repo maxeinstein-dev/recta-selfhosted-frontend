@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useCurrencyMask } from '../../../hooks/useCurrencyMask';
 import { useI18n } from '../../../context/I18nContext';
@@ -36,6 +37,12 @@ export const OnboardingStep5Accounts = ({
 }: OnboardingStep5AccountsProps) => {
   const { t } = useI18n();
   const watchedAccountType = accountForm.watch('accountType');
+  const { clearErrors } = accountForm;
+
+  // The card fields leave the screen with the type: an error left on them would block a checking account.
+  useEffect(() => {
+    if (watchedAccountType !== AccountType.CREDIT) clearErrors(['creditLimit', 'dueDay', 'closingDay']);
+  }, [watchedAccountType, clearErrors]);
 
   return (
     <form onSubmit={accountForm.handleSubmit(onSubmit)} className={`space-y-6 ${isTransitioning ? 'opacity-0 translate-x-4' : 'opacity-100 translate-x-0'} transition-all duration-300 ease-out`}>
@@ -199,6 +206,32 @@ export const OnboardingStep5Accounts = ({
                 {accountForm.formState.errors.dueDay && (
                   <p className="mt-2 text-sm text-red-600 dark:text-red-400" role="alert">
                     {accountForm.formState.errors.dueDay.message}
+                  </p>
+                )}
+              </div>
+
+              <div className="animate-fade-in-up animate-delay-500">
+                <label htmlFor="closingDay" className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+                  {t.closingDay}
+                </label>
+                <input
+                  id="closingDay"
+                  type="number"
+                  min="1"
+                  max="31"
+                  {...accountForm.register('closingDay', { valueAsNumber: true })}
+                  placeholder={t.exampleDay}
+                  aria-describedby="closingDayHint"
+                  className={`block w-full px-4 py-3 border rounded-lg shadow-sm bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-primary-500 transition-all duration-200 hover:shadow-md ${
+                    accountForm.formState.errors.closingDay ? 'border-red-300 dark:border-red-600' : 'border-gray-300 dark:border-gray-600'
+                  }`}
+                />
+                <p id="closingDayHint" className="mt-2 text-xs text-gray-500">
+                  {t.closingDayHint}
+                </p>
+                {accountForm.formState.errors.closingDay && (
+                  <p className="mt-2 text-sm text-red-600 dark:text-red-400" role="alert">
+                    {accountForm.formState.errors.closingDay.message}
                   </p>
                 )}
               </div>

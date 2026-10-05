@@ -41,7 +41,7 @@ import { CreditCardModal } from "../components/CreditCardModal";
 import { PageButton } from "../components/PageButton";
 import ConfirmModal from "../components/ConfirmModal";
 import InstallmentDeleteModal from "../components/InstallmentDeleteModal";
-import ImportCardOfxDialog from "../components/ImportCardOfxDialog";
+import ImportHubDialog from "../components/ImportHubDialog";
 import DivideTransactionDialog from "../components/people/DivideTransactionDialog";
 import { canWritePeople } from "../utils/people";
 import { AccountType, CategoryName, getCategoryDisplayName, TransactionType } from "../lib/enums";
@@ -102,7 +102,7 @@ const CreditCards = () => {
     useState<string>("");
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
-  const [isCardOfxOpen, setIsCardOfxOpen] = useState(false);
+  const [isImportOpen, setIsImportOpen] = useState(false);
   const [sharingTransaction, setSharingTransaction] = useState<Transaction | null>(null);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] =
@@ -617,14 +617,12 @@ const CreditCards = () => {
     <div className="px-4 sm:px-6 lg:px-8 space-y-6 dashboard-fade-in">
       <PageHeader title={t.creditCards} description={t.creditCardsDescription}>
         <PageButton
-          onClick={() => setIsCardOfxOpen(true)}
+          onClick={() => setIsImportOpen(true)}
           variant="secondary"
           icon={Upload}
-          disabled={!selectedAccountId}
-          aria-label="Importar fatura do cartão selecionado (OFX)"
-          mobileLabel="Importar fatura"
+          aria-label="Importar arquivos"
         >
-          Importar fatura (OFX)
+          Importar
         </PageButton>
         <PageButton
           onClick={handleNewTransaction}
@@ -1236,13 +1234,13 @@ const CreditCards = () => {
         />
       )}
 
-      {/* Importar a fatura (OFX) do cartão selecionado */}
-      {isCardOfxOpen && selectedAccountId && (
-        <ImportCardOfxDialog
-          open={isCardOfxOpen}
-          onClose={() => setIsCardOfxOpen(false)}
-          accountId={selectedAccountId}
+      {/* Importar (faturas OFX, extratos, planilha): o cartão selecionado vem preselecionado */}
+      {isImportOpen && (
+        <ImportHubDialog
+          open={isImportOpen}
+          onClose={() => setIsImportOpen(false)}
           householdId={householdId ?? undefined}
+          defaultAccountId={selectedAccountId || null}
         />
       )}
 

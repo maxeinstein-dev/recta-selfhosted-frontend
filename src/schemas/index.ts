@@ -185,12 +185,24 @@ export const createSchemas = (t: Translations) => {
     currency: z.string().min(1, t.currencyRequired) as z.ZodType<CurrencyCode>,
   });
 
-  const onboardingAccountSchema = z.object({
+  // An empty number input registers as NaN (valueAsNumber); null and '' also mean "not informed".
+  const emptyToUndefined = (val: unknown) => (val === null || val === '' || (typeof val === 'number' && Number.isNaN(val)) ? undefined : val);
+
+  const onboardingAccountBase = z.object({
     accountName: z.string().max(100, t.accountNameTooLong).optional().or(z.literal('')),
     accountType: z.nativeEnum(AccountType).or(z.enum(['CHECKING', 'SAVINGS', 'CREDIT', 'CASH', 'INVESTMENT']).transform((val) => val as AccountType)),
     balance: z.number().default(0).transform((val) => sanitizeNumber(val, 1e15)),
-    creditLimit: z.number().positive(t.limitMustBePositive).optional().transform((val) => val !== undefined ? sanitizeNumber(val, 1e15) : undefined),
-    dueDay: z.number().int().min(1, t.dueDayMin).max(31, t.dueDayMax).optional(),
+    creditLimit: z.preprocess(
+      emptyToUndefined,
+      z.number().positive(t.limitMustBePositive).optional().transform((val) => val !== undefined ? sanitizeNumber(val, 1e15) : undefined),
+    ),
+    dueDay: z.preprocess(emptyToUndefined, z.number().int().min(1, t.dueDayMin).max(31, t.dueDayMax).optional()),
+    // Dia de fechamento: opcional, mas é ele que dá o mês da fatura ao importar o OFX. Campo vazio (NaN do
+    // valueAsNumber, null ou '') conta como não informado.
+    closingDay: z.preprocess(
+      emptyToUndefined,
+      z.number().int().min(1, t.dueDayMin).max(31, t.dueDayMax).optional(),
+    ),
   }).refine((data) => {
     // Se for cartão de crédito, limite é recomendado mas não obrigatório
     if (data.accountType === AccountType.CREDIT && data.creditLimit && data.creditLimit <= 0) {
@@ -201,6 +213,12 @@ export const createSchemas = (t: Translations) => {
     message: t.cardLimitMustBePositive,
     path: ['creditLimit'],
   });
+
+  // The card fields only count for a credit card: what is left in them after the type changed is not validated.
+  const onboardingAccountSchema = z.preprocess((val) => {
+    if (typeof val !== 'object' || val === null || (val as { accountType?: unknown }).accountType === AccountType.CREDIT) return val;
+    return { ...val, creditLimit: undefined, dueDay: undefined, closingDay: undefined };
+  }, onboardingAccountBase);
 
   const onboardingRecurringSchema = z.object({
     description: z.string().max(500, t.descriptionTooLong).optional().or(z.literal('')),

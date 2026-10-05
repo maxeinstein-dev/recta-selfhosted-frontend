@@ -8,7 +8,7 @@ import { useToastContext } from '../context/ToastContext';
 import { useI18n } from '../context/I18nContext';
 import { useCurrency } from '../context/CurrencyContext';
 import { formatCurrency } from '../utils/format';
-import { followLastHint, recurrenceUpdatedMessage } from '../utils/recurringFollow';
+import { amountChanged, followLastHint, recurrenceUpdatedMessage } from '../utils/recurringFollow';
 import { Transaction } from '../types';
 import { createSchemas, TransactionFormData } from '../schemas';
 import { CategoryType, CategoryName, getCategoriesByType, getCategoryNameFromDisplay, AccountType, TransactionType } from '../lib/enums';
@@ -720,7 +720,10 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
 
       if (transaction) {
         if (transaction.id) {
-          const outcome = await updateTransaction(transaction.id, transactionData);
+          // Only send the amount when the user changed it: a recurrence that follows the last amount adopts the amount an
+          // update carries, so editing just a note or the paid mark must not make it adopt the stored one.
+          const { amount: editedAmount, ...withoutAmount } = transactionData;
+          const outcome = await updateTransaction(transaction.id, amountChanged(transaction.amount, editedAmount) ? transactionData : withoutAmount);
           success(t.transactionUpdated);
           // Phase 5: the server moved the amount of the recurrence this occurrence belongs to.
           const recurrenceMessage = recurrenceUpdatedMessage(outcome?.recurringUpdated, (value) => formatCurrency(value, baseCurrency));

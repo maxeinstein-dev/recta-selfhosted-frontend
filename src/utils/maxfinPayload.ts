@@ -127,6 +127,20 @@ export function replacesStoredData(status: string): boolean {
   return status === 'changed' || status === 'replaces-future' || status === 'matches-recurring';
 }
 
+/**
+ * The detail line of a row. For a `matches-recurring` row whose stored amount is known (`existingAmount`) it ends with
+ * "R$ old → R$ new", so the user sees what the sheet changes; with no stored amount (older server) it is the server text.
+ */
+export function rowDetailText(
+  row: Pick<MaxFinPreviewRow, 'status' | 'statusDetail' | 'amount'> & { existingAmount?: number | null },
+  formatAmount: (value: number) => string,
+): string | null {
+  const base = row.statusDetail || null;
+  if (row.status !== 'matches-recurring' || typeof row.existingAmount !== 'number' || !Number.isFinite(row.existingAmount)) return base;
+  const change = `${formatAmount(row.existingAmount)} → ${formatAmount(row.amount)}`;
+  return base ? `${base}: ${change}` : change;
+}
+
 /** Stable identity of a preview row across re-runs of the preview. */
 export function rowKey(row: Pick<MaxFinPreviewRow, 'section' | 'sourceLine' | 'sourceRef'>): string {
   return `${row.section}|${row.sourceLine}|${row.sourceRef}`;

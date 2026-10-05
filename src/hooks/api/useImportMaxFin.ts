@@ -81,6 +81,8 @@ export interface MaxFinPreviewRow {
   status: MaxFinRowStatus;
   statusDetail: string | null;
   existingTransactionId: string | null;
+  /** Phase 5, `matches-recurring` only: the amount stored on the generated bill (the row's `amount` is the new one). Absent on an older server. */
+  existingAmount?: number | null;
 }
 
 export type MaxFinCategoryTargetKind = 'system' | 'custom' | 'create' | 'default';

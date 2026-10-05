@@ -77,6 +77,8 @@ export interface RecurringTransaction {
   isActive: boolean;
   /** The amount follows the most recent occurrence the user adjusts (phase 5). */
   followLastAmount?: boolean;
+  /** YYYY-MM-DD of the newest occurrence up to today + 31 days; null when none; undefined when the server does not say. */
+  lastOccurrenceDate?: string | null;
 }
 
 import { AccountType } from '../constants/accountTypes';

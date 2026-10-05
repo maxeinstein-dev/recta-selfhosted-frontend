@@ -24,6 +24,11 @@ export interface OccurrenceRef {
 export interface RecurrenceRef {
   id?: string;
   followLastAmount?: boolean;
+  /**
+   * Server-computed: the newest transaction date of the recurrence that is not beyond today + 31 days (YYYY-MM-DD), or
+   * null when there is none. Absent (undefined) on an older server: the client then falls back to a heuristic.
+   */
+  lastOccurrenceDate?: string | null;
 }
 
 /** The notice the transaction update response carries when it changed the recurrence. */
@@ -79,7 +84,22 @@ export function followLastHint(
   if (!tx || !tx.recurringTransactionId) return null;
   const recurrence = recurrences.find((r) => r.id === tx.recurringTransactionId);
   if (!recurrence || recurrence.followLastAmount !== true) return null;
+  if (recurrence.lastOccurrenceDate !== undefined) {
+    // The server knows the newest occurrence: no guessing from the page of transactions the client happens to hold.
+    const own = dayKey(tx.date);
+    const last = dayKey(recurrence.lastOccurrenceDate);
+    return own && last && own <= addDaysKey(today, LATEST_WINDOW_DAYS) && own >= last ? FOLLOW_LAST_HINT : null;
+  }
   return isLatestOccurrence(tx, known, today) ? FOLLOW_LAST_HINT : null;
+}
+
+/**
+ * Whether the amount in an edit differs from the stored one, in integer cents. An update that does not change the amount
+ * must not send it: a recurrence that follows the last amount adopts whatever amount the update carries.
+ */
+export function amountChanged(stored: number | null | undefined, edited: number | null | undefined): boolean {
+  const cents = (v: number | null | undefined): number | null => (typeof v === 'number' && Number.isFinite(v) ? Math.round(v * 100 + (v < 0 ? -1e-6 : 1e-6)) : null);
+  return cents(stored) !== cents(edited);
 }
 
 /** "Recorrência atualizada para R$ 120,00", or null when the response did not change the recurrence. */

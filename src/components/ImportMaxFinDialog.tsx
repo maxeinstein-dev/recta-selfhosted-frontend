@@ -23,7 +23,7 @@ import type {
   MaxFinWorkbookOptions, MaxFinWorkbookOptionsInput, MaxFinWorkbookPreviewResponse,
 } from '../hooks/api/useImportMaxFin';
 import {
-  MAXFIN_MAX_YEAR, MAXFIN_MIN_YEAR, MAXFIN_SECTION_ORDER, applyOptionPatch, buildConfirmPayload, buildConfirmSummary, categoryChoiceKey,
+  MAXFIN_MAX_YEAR, MAXFIN_MIN_YEAR, MAXFIN_SECTION_ORDER, applyOptionPatch, buildConfirmPayload, buildConfirmSummary, categoryChoiceKey, rowDetailText,
   confirmBlocker, confirmFailureMessage, confirmResultNeedsReview, countByStatus, countLabel, defaultRowSelected, isSendableStatus,
   maxfinFileKind, monthToInputValue, parseMonthInput, reconcileSelection, resolveCategoryChoices, reversedRowKind, rowKey,
   selectValueToTarget, systemCategoryNames, targetToSelectValue, toSignedCents, validateMaxFinFile,
@@ -390,7 +390,8 @@ const PreviewRowItem = ({ row, checked, disabled, currency, onToggle }: PreviewR
   const isChanged = row.status === 'changed';
   const replacesFuture = row.status === 'replaces-future';
   const matchesRecurring = row.status === 'matches-recurring';
-  const showDetail = !!row.statusDetail && (INLINE_DETAIL_STATUSES.includes(row.status) || !knownChip);
+  const detail = rowDetailText(row, (value) => formatCurrency(value, currency));
+  const showDetail = !!detail && (INLINE_DETAIL_STATUSES.includes(row.status) || !knownChip);
   const prepaid = row.installment ? prepaidLabel(row.installment) : null;
   // A negative value of the sheet: a credit (refund) in an expense block, an expense in the income block.
   const reversed = reversedRowKind(row);
@@ -415,7 +416,7 @@ const PreviewRowItem = ({ row, checked, disabled, currency, onToggle }: PreviewR
           {prepaid && <Chip tone="blue">{prepaid}</Chip>}
           {row.futureInstallments > 0 && <Chip tone="blue">+{row.futureInstallments} futuras</Chip>}
         </div>
-        {showDetail && <p className={`mt-0.5 text-[11px] leading-snug ${MUTED_CLS}`}>{row.statusDetail}</p>}
+        {showDetail && <p className={`mt-0.5 text-[11px] leading-snug ${MUTED_CLS}`}>{detail}</p>}
       </td>
       <td className={`${TD_CLS} whitespace-nowrap ${MUTED_CLS}`}>{row.categoryKey || '(sem)'}</td>
       <td className={`${TD_CLS} whitespace-nowrap text-right`}>{sign}{formatCurrency(row.amount, currency)}</td>
@@ -425,7 +426,7 @@ const PreviewRowItem = ({ row, checked, disabled, currency, onToggle }: PreviewR
       </td>
       <td className={TD_CLS}>{row.shareHint && <Chip tone="gray">{describeShareHint(row.shareHint)}</Chip>}</td>
       <td className={`${TD_CLS} whitespace-nowrap`}>
-        <Chip tone={status.tone} title={row.statusDetail ?? undefined}>{status.label}</Chip>
+        <Chip tone={status.tone} title={detail ?? undefined}>{status.label}</Chip>
       </td>
     </tr>
   );

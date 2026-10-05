@@ -18,6 +18,8 @@ export interface RecurringTransaction {
   isActive: boolean;
   /** Phase 5: the amount follows the most recent occurrence the user adjusts. Absent on an older server. */
   followLastAmount?: boolean;
+  /** YYYY-MM-DD of the newest occurrence up to today + 31 days; null when none; absent on an older server. */
+  lastOccurrenceDate?: string | null;
   createdAt: string;
   updatedAt: string;
 }

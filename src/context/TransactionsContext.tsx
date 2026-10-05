@@ -299,6 +299,7 @@ const convertRecurringTransactionFromBackend = (r: BackendRecurringTransaction, 
     accountId: r.accountId ?? '',
     isActive: r.isActive ?? true,
     followLastAmount: r.followLastAmount === true,
+    lastOccurrenceDate: r.lastOccurrenceDate === undefined ? undefined : (r.lastOccurrenceDate ?? null),
   };
 };
 

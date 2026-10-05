@@ -118,7 +118,7 @@ const DetectRecurringDialog = ({ open, onClose, householdId, canWrite }: DetectR
   const blocker = canWrite ? detectBlocker(built, { needsRefresh: applyError !== null, applying }) : null;
 
   const handleApply = async () => {
-    if (!canWrite || !built || blocker || applying || applyingRef.current) return;
+    if (!canWrite || !built || blocker || applying || detecting || applyingRef.current) return;
     applyingRef.current = true;
     try {
       const data = await applyMutation.mutateAsync(built.payload);
@@ -354,7 +354,7 @@ const DetectRecurringDialog = ({ open, onClose, householdId, canWrite }: DetectR
                 </button>
                 <button type="button" onClick={onClose} disabled={busy} className={BTN_SECONDARY}>Fechar</button>
                 {canWrite && (
-                  <button type="button" onClick={() => void handleApply()} disabled={busy || blocker !== null} title={blocker?.message}
+                  <button type="button" onClick={() => void handleApply()} disabled={busy || detecting || blocker !== null} title={detecting ? 'Aguarde a detecção terminar.' : blocker?.message}
                     aria-describedby={blocker ? BLOCKER_ID : undefined} className={BTN_PRIMARY}>
                     {applying ? 'Criando…' : totals && totals.count > 0 ? `Criar ${totals.count === 1 ? '1 recorrência' : `${totals.count} recorrências`}` : 'Criar recorrências'}
                   </button>

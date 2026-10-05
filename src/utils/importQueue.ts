@@ -9,9 +9,10 @@ import { countLabel } from './maxfinPayload';
  * pending: waiting, or the file on screen.
  * done: confirmed.
  * skipped: left out by the user.
+ * uptodate: the loop found nothing to import in it (already imported, or nothing new): left out on its own.
  * failed: the confirm failed (it may have been applied in part): the file stays blocked until it is refreshed.
  */
-export type QueueStatus = 'pending' | 'done' | 'skipped' | 'failed';
+export type QueueStatus = 'pending' | 'done' | 'skipped' | 'uptodate' | 'failed';
 
 export interface QueueItem {
   /** Stable key (position at creation). */
@@ -54,12 +55,13 @@ export function followingCount(state: QueueState): number {
 export interface QueueTotals {
   done: number;
   skipped: number;
+  uptodate: number;
   failed: number;
   pending: number;
 }
 
 export function queueTotals(state: QueueState): QueueTotals {
-  const totals: QueueTotals = { done: 0, skipped: 0, failed: 0, pending: 0 };
+  const totals: QueueTotals = { done: 0, skipped: 0, uptodate: 0, failed: 0, pending: 0 };
   for (const item of state.items) totals[item.status] += 1;
   return totals;
 }
@@ -86,6 +88,13 @@ export function skipCurrent(state: QueueState, note: string | null = null): Queu
   return { ...withItem(state, state.index, { status: 'skipped', note }), index: state.index + 1 };
 }
 
+/** The loop found nothing to import in the file on screen: it is left out and the next one comes up. */
+export function markUpToDateCurrent(state: QueueState, note: string | null = null): QueueState {
+  const item = currentItem(state);
+  if (!item || item.status !== 'pending') return state;
+  return { ...withItem(state, state.index, { status: 'uptodate', note }), index: state.index + 1 };
+}
+
 /** The confirm of the file on screen failed: it stays on screen, blocked. */
 export function failCurrent(state: QueueState, reason: string): QueueState {
   const item = currentItem(state);
@@ -109,6 +118,8 @@ export const canConfirmCurrent = (state: QueueState): boolean => currentItem(sta
 export type ApplyOutcome =
   /** Previewed and confirmed. */
   | { ok: true; note: string }
+  /** Previewed and nothing to import (already imported / nothing new): left out, the loop goes on. */
+  | { ok: true; upToDate: true; note: string }
   /** Nothing was written: the file cannot go on as it is (a blocker, an error, a payment with no source account). */
   | { ok: false; reason: string; written: false }
   /** The confirm failed: it may have been applied in part, so the file is blocked until it is refreshed. */
@@ -146,7 +157,7 @@ export async function applyDefaultsToRemaining(
       outcome = { ok: false, reason: err instanceof Error && err.message ? err.message : 'Erro inesperado.', written: false };
     }
     if (outcome.ok) {
-      const next = completeCurrent(state, outcome.note);
+      const next = 'upToDate' in outcome ? markUpToDateCurrent(state, outcome.note) : completeCurrent(state, outcome.note);
       // The queue refused to move on (it cannot happen for a pending file): stop, never ask for the same file again.
       if (next.index === state.index) {
         return { state, stop: { index, name: item.name, reason: 'A fila não avançou depois de importar este arquivo.' } };
@@ -163,11 +174,15 @@ export async function applyDefaultsToRemaining(
 }
 
 /** "3 importadas, 1 pulada" for the final summary. */
-export function queueSummaryLine(state: QueueState, nouns: { done: [string, string]; skipped: [string, string]; failed: [string, string] }): string {
+export function queueSummaryLine(
+  state: QueueState,
+  nouns: { done: [string, string]; skipped: [string, string]; uptodate: [string, string]; failed: [string, string] },
+): string {
   const totals = queueTotals(state);
   const parts: string[] = [];
   if (totals.done > 0) parts.push(countLabel(totals.done, ...nouns.done));
   if (totals.skipped > 0) parts.push(countLabel(totals.skipped, ...nouns.skipped));
+  if (totals.uptodate > 0) parts.push(countLabel(totals.uptodate, ...nouns.uptodate));
   if (totals.failed > 0) parts.push(countLabel(totals.failed, ...nouns.failed));
   return parts.join(', ');
 }

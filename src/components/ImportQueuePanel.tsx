@@ -9,6 +9,7 @@ const STATUS_TEXT: Record<QueueStatus, string> = {
   pending: 'Aguardando',
   done: 'Importada',
   skipped: 'Pulada',
+  uptodate: 'Já importada',
   failed: 'Falhou',
 };
 
@@ -16,13 +17,14 @@ const STATUS_TONE: Record<QueueStatus, string> = {
   pending: 'text-gray-500 dark:text-gray-400',
   done: 'text-green-700 dark:text-green-400',
   skipped: 'text-yellow-700 dark:text-yellow-300',
+  uptodate: 'text-gray-500 dark:text-gray-400',
   failed: 'text-red-600 dark:text-red-400',
 };
 
 const StatusIcon = ({ status, current }: { status: QueueStatus; current: boolean }) => {
   const cls = `h-4 w-4 flex-shrink-0 ${STATUS_TONE[status]}`;
   if (status === 'done') return <CheckCircle2 className={cls} aria-hidden="true" />;
-  if (status === 'skipped') return <MinusCircle className={cls} aria-hidden="true" />;
+  if (status === 'skipped' || status === 'uptodate') return <MinusCircle className={cls} aria-hidden="true" />;
   if (status === 'failed') return <XCircle className={cls} aria-hidden="true" />;
   return <CircleDashed className={`${cls} ${current ? 'text-primary-600 dark:text-primary-400' : ''}`} aria-hidden="true" />;
 };

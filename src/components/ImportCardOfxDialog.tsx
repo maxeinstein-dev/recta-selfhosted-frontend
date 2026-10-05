@@ -35,10 +35,11 @@ import type {
   CardOfxTotals,
 } from '../utils/cardOfx';
 import { QueueHeader, QueueProgressList } from './ImportQueuePanel';
-import { NO_CLOSING_DAY_NOTICE, cardQueueTotalsLine, lacksClosingDay, planCardDefaultApply, sumCardOfxResults } from '../utils/cardOfxQueue';
 import {
-  applyDefaultsToRemaining, canConfirmCurrent, completeCurrent, createQueue, failCurrent, followingCount, isQueueFinished, queueSummaryLine,
-  remainingCount, retryCurrent, skipCurrent,
+  NO_CLOSING_DAY_NOTICE, cardQueueTotalsLine, lacksClosingDay, planCardDefaultApply, sumCardOfxResults, visibleCardWarnings,
+} from '../utils/cardOfxQueue';
+import {
+  applyDefaultsToRemaining, completeCurrent, createQueue, failCurrent, followingCount, isQueueFinished, queueSummaryLine, retryCurrent, skipCurrent,
 } from '../utils/importQueue';
 import type { ApplyOutcome, QueueState } from '../utils/importQueue';
 
@@ -726,7 +727,7 @@ interface QueueSummaryProps {
 }
 
 const QueueSummary = ({ state, results, onClose }: QueueSummaryProps) => {
-  const counts = queueSummaryLine(state, { done: ['fatura importada', 'faturas importadas'], skipped: ['pulada', 'puladas'], failed: ['com falha', 'com falha'] });
+  const counts = queueSummaryLine(state, { done: ['fatura importada', 'faturas importadas'], skipped: ['pulada', 'puladas'], uptodate: ['já importada', 'já importadas'], failed: ['com falha', 'com falha'] });
   const warnings = results.flatMap((r) => (r.data.warnings ?? []).map((warning) => `${r.name}: ${warning}`));
   return (
     <div className="space-y-4 min-w-0">
@@ -1028,9 +1029,11 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
     moveQueueTo(skipCurrent(queue));
   };
 
-  /** For this file and every one after it: preview, then confirm with the default groups; stops at the first that cannot. */
-  const handleApplyDefaults = async () => {
-    if (!queue || queueBusy || applyingRef.current || confirmingRef.current || !canConfirmCurrent(queue)) return;
+  /**
+   * For the files after the one just confirmed: preview, then confirm with the groups the server marks, one at a
+   * time. A file with nothing to import is left out; the first that cannot proceed stops it, with the reason.
+   */
+  const runDefaultsLoop = async (queue: QueueState) => {
     applyingRef.current = true;
     setApplying(true);
     setQueueStop(null);
@@ -1053,7 +1056,10 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
         { accounts: accountsRef.current, customIdsByType: customIdsRef.current },
         { sourceAccountId: queueSourceRef.current, savedChoices: loadSavedCategoryChoices(data.householdId || householdId) },
       );
-      if (!plan.ok) return { ok: false, written: false, reason: plan.reason };
+      if (!plan.ok) {
+        if (plan.code === 'nothing-to-do') return { ok: true, upToDate: true, note: 'Nada a importar: já está no Recta' };
+        return { ok: false, written: false, reason: plan.reason };
+      }
       confirmingRef.current = true;
       try {
         const confirmed = await confirmMutation.mutateAsync(plan.built.payload);
@@ -1152,9 +1158,13 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
     setConfirmError(null);
   };
 
-  const handleConfirm = async () => {
-    if (!built || blocker || isConfirming || confirmingRef.current) return;
+  /** Confirms the file on screen with the user's marks; with `thenApply`, the following files go through the default loop. */
+  const handleConfirm = async (thenApply = false) => {
+    if (!built || blocker || isConfirming || confirmingRef.current || applyingRef.current) return;
     confirmingRef.current = true;
+    // The dialog stays shut from the confirm to the end of the loop.
+    if (thenApply) applyingRef.current = true;
+    let loopFrom: QueueState | null = null;
     try {
       const data = await confirmMutation.mutateAsync(built.payload);
       const text = buildCardOfxSummary(data, (value) => formatCurrency(value, baseCurrency));
@@ -1163,7 +1173,13 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
       if (queue) {
         setQueueResults((prev) => [...prev, { name: file?.name ?? '', data }]);
         setQueueStop(null);
-        moveQueueTo(completeCurrent(queue, text.replace(/^Fatura importada:\s*/, '')));
+        const next = completeCurrent(queue, text.replace(/^Fatura importada:\s*/, ''));
+        if (thenApply && !isQueueFinished(next)) {
+          setQueue(next);
+          loopFrom = next;
+        } else {
+          moveQueueTo(next);
+        }
       } else {
         setResult(data);
       }
@@ -1176,7 +1192,10 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
       }
     } finally {
       confirmingRef.current = false;
+      // Nothing else runs after a confirm that failed or was cut short.
+      if (!loopFrom) applyingRef.current = false;
     }
+    if (loopFrom) await runDefaultsLoop(loopFrom);
   };
 
   const groupSectionProps = {
@@ -1222,12 +1241,14 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
                       <SkipForward className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
                       Pular esta fatura
                     </button>
-                    <button type="button" onClick={() => void handleApplyDefaults()} disabled={queueBusy || !canConfirmCurrent(queue)}
-                      title="Esta fatura e as seguintes: pré-visualiza e confirma só o que o servidor marca, uma por vez; para na primeira que não puder seguir."
-                      className={BTN_SECONDARY_SM}>
-                      <FastForward className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
-                      Aplicar o padrão nas restantes ({remainingCount(queue)})
-                    </button>
+                    {followingCount(queue) > 0 && (
+                      <button type="button" onClick={() => void handleConfirm(true)} disabled={queueBusy || !built || blocker !== null}
+                        title={blocker?.message ?? `Confirma esta fatura com as suas marcações e, nas ${followingCount(queue)} seguintes, pré-visualiza e confirma só o que o servidor marca, uma por vez; para na primeira que não puder seguir.`}
+                        className={BTN_SECONDARY_SM}>
+                        <FastForward className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+                        Confirmar esta e aplicar o padrão nas restantes
+                      </button>
+                    )}
                   </div>
                 </div>
               </QueueHeader>
@@ -1260,9 +1281,9 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
                 monthDisabled={isConfirming} currency={baseCurrency} onMonthInputChange={setMonthInput}
                 onApplyMonth={() => void handleApplyMonth()} />
 
-              {preview.warnings.length > 0 && (
+              {visibleCardWarnings(preview.warnings, showClosingNotice).length > 0 && (
                 <ul className={WARN_BOX_CLS}>
-                  {preview.warnings.map((warning, index) => <li key={index}>{warning}</li>)}
+                  {visibleCardWarnings(preview.warnings, showClosingNotice).map((warning, index) => <li key={index}>{warning}</li>)}
                 </ul>
               )}
 
@@ -1301,7 +1322,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
 
               <PreviewFooter built={built} blocker={blocker} payment={preview.payment} busy={busy} isConfirming={isConfirming}
                 confirmError={confirmError} currency={baseCurrency} accountName={accountName}
-                onBack={queue ? undefined : handleBack} onConfirm={() => void handleConfirm()} onRefresh={() => void handleRefresh()}
+                onBack={queue ? undefined : handleBack} onConfirm={() => void handleConfirm(false)} onRefresh={() => void handleRefresh()}
                 confirmLabel={queue && followingCount(queue) > 0 ? 'Confirmar e continuar' : undefined} />
             </div>
           ) : (

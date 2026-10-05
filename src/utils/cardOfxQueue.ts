@@ -17,7 +17,7 @@ export const QUEUE_PAYMENT_SOURCE_MISSING =
 
 export type CardDefaultPlan =
   | { ok: true; built: CardOfxBuiltConfirm }
-  | { ok: false; code: 'payment-source' | 'blocker'; reason: string };
+  | { ok: false; code: 'payment-source' | 'nothing-to-do' | 'blocker'; reason: string };
 
 /**
  * What "apply the default" sends for a preview: the groups the server marks (never an ambiguous one or one this
@@ -41,8 +41,18 @@ export function planCardDefaultApply(
   const sourceAccountId = apply && paymentNeedsSource(payment) ? options.sourceAccountId : '';
   const built = buildCardOfxConfirm(preview, selection, choices, { apply, sourceAccountId }, context);
   const blocker = cardOfxConfirmBlocker(built, false);
-  if (blocker) return { ok: false, code: 'blocker', reason: blocker.message };
+  if (blocker) return { ok: false, code: blocker.code === 'nothing-to-do' ? 'nothing-to-do' : 'blocker', reason: blocker.message };
   return { ok: true, built };
+}
+
+// ---- Warnings of the preview --------------------------------------------------------------------------------
+
+/** The server's own warning that the card has no closing day (the dialog shows its own notice for it). */
+export const isClosingDayServerWarning = (warning: string): boolean => /não tem dia de fechamento configurado/.test(warning);
+
+/** Warnings to list: the server one about the closing day is left out while the dialog's notice is on screen. */
+export function visibleCardWarnings(warnings: readonly string[], noticeShown: boolean): string[] {
+  return noticeShown ? warnings.filter((w) => !isClosingDayServerWarning(w)) : [...warnings];
 }
 
 // ---- Closing day ------------------------------------------------------------------------------------------

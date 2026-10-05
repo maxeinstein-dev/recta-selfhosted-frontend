@@ -11,8 +11,7 @@ import ImportCardOfxDialog from './ImportCardOfxDialog';
 import { QueueHeader, QueueProgressList } from './ImportQueuePanel';
 import { planStatementDefaultApply, statementConfirmRows, statementImportNote } from '../utils/statementQueue';
 import {
-  applyDefaultsToRemaining, canConfirmCurrent, completeCurrent, createQueue, failCurrent, followingCount, isQueueFinished, queueSummaryLine,
-  remainingCount, retryCurrent, skipCurrent,
+  applyDefaultsToRemaining, completeCurrent, createQueue, failCurrent, followingCount, isQueueFinished, queueSummaryLine, retryCurrent, skipCurrent,
 } from '../utils/importQueue';
 import type { ApplyOutcome, QueueState } from '../utils/importQueue';
 
@@ -223,9 +222,15 @@ const ImportTransactionsDialog = ({
     if (await runQueuePreview(file)) setQueue((current) => (current ? retryCurrent(current) : current));
   };
 
-  /** Este arquivo e os seguintes: pré-visualiza e confirma só as linhas novas, um por vez; para no primeiro que não puder seguir. */
-  const handleApplyDefaults = async () => {
-    if (!queue || queueBusy || applyingRef.current || confirmingRef.current || !canConfirmCurrent(queue) || !householdId) return;
+  /**
+   * Os arquivos depois do que acabou de ser confirmado: pré-visualiza e confirma só as linhas novas, um por vez.
+   * Um arquivo sem nada novo fica de fora; o primeiro que não puder seguir para a fila, com o motivo.
+   */
+  const runDefaultsLoop = async (queue: QueueState) => {
+    if (!householdId) {
+      applyingRef.current = false;
+      return;
+    }
     applyingRef.current = true;
     setApplying(true);
     setQueueStop(null);
@@ -242,7 +247,7 @@ const ImportTransactionsDialog = ({
       }
       loopPreviewRef.current = { index, data };
       const plan = planStatementDefaultApply(data);
-      if (!plan.ok) return { ok: false, written: false, reason: plan.reason };
+      if (!plan.ok) return { ok: true, upToDate: true, note: plan.reason };
       confirmingRef.current = true;
       try {
         const result = await confirmMutation.mutateAsync({ householdId, accountId: queueAccountId, rows: plan.rows });
@@ -329,8 +334,9 @@ const ImportTransactionsDialog = ({
     }
   };
 
-  const handleConfirm = async () => {
-    if (!preview) return;
+  /** Confirma o arquivo da tela; com `thenApply`, os arquivos seguintes passam pelo loop do padrão. */
+  const handleConfirm = async (thenApply = false) => {
+    if (!preview || applyingRef.current) return;
     setFormError(null);
     if (!householdId || !accountId) {
       setFormError('Selecione a conta de destino.');
@@ -340,6 +346,9 @@ const ImportTransactionsDialog = ({
     const newRows = statementConfirmRows(preview);
     if (newRows.length === 0 || confirmingRef.current) return;
     confirmingRef.current = true;
+    // O dialog fica fechado do confirmar até o fim do loop.
+    if (thenApply) applyingRef.current = true;
+    let loopFrom: QueueState | null = null;
     try {
       const result = await confirmMutation.mutateAsync({ householdId, accountId, rows: newRows });
       const imported = result?.imported ?? newRows.length;
@@ -352,7 +361,13 @@ const ImportTransactionsDialog = ({
         if (!mountedRef.current) return;
         setQueueImported((prev) => prev + imported);
         setQueueStop(null);
-        moveQueueTo(completeCurrent(queue, statementImportNote(imported)));
+        const next = completeCurrent(queue, statementImportNote(imported));
+        if (thenApply && !isQueueFinished(next)) {
+          setQueue(next);
+          loopFrom = next;
+        } else {
+          moveQueueTo(next);
+        }
       } else {
         onClose();
       }
@@ -366,7 +381,10 @@ const ImportTransactionsDialog = ({
       }
     } finally {
       confirmingRef.current = false;
+      // Nada mais roda depois de um confirmar que falhou ou foi interrompido.
+      if (!loopFrom) applyingRef.current = false;
     }
+    if (loopFrom) await runDefaultsLoop(loopFrom);
   };
 
   const handleBack = () => {
@@ -413,18 +431,21 @@ const ImportTransactionsDialog = ({
 
           {queue && !single && !queueFinished && (
             <div className="mb-4">
-              <QueueHeader state={queue} noun="Arquivo" statusText={{ done: 'Importado', skipped: 'Pulado' }}>
+              <QueueHeader state={queue} noun="Arquivo" statusText={{ done: 'Importado', skipped: 'Pulado', uptodate: 'Sem novidades' }}>
                 <div className="flex flex-wrap gap-2">
                   <button type="button" onClick={handleSkip} disabled={queueBusy} className={BTN_SECONDARY_SM}>
                     <SkipForward className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
                     Pular este arquivo
                   </button>
-                  <button type="button" onClick={() => void handleApplyDefaults()} disabled={queueBusy || !canConfirmCurrent(queue)}
-                    title="Este arquivo e os seguintes: pré-visualiza e confirma as linhas novas, uma por vez; para no primeiro que não puder seguir."
-                    className={BTN_SECONDARY_SM}>
-                    <FastForward className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
-                    Aplicar o padrão nas restantes ({remainingCount(queue)})
-                  </button>
+                  {followingCount(queue) > 0 && (
+                    <button type="button" onClick={() => void handleConfirm(true)}
+                      disabled={queueBusy || !preview || newCount === 0 || confirmError !== null}
+                      title={`Confirma este arquivo e, nos ${followingCount(queue)} seguintes, pré-visualiza e confirma as linhas novas, uma por vez; para no primeiro que não puder seguir.`}
+                      className={BTN_SECONDARY_SM}>
+                      <FastForward className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+                      Confirmar esta e aplicar o padrão nas restantes
+                    </button>
+                  )}
                 </div>
               </QueueHeader>
             </div>
@@ -447,11 +468,11 @@ const ImportTransactionsDialog = ({
               <div>
                 <h4 className="text-sm font-medium text-gray-900 dark:text-white">Importação concluída</h4>
                 <p className="mt-1 text-sm text-gray-900 dark:text-white">
-                  {queueSummaryLine(queue, { done: ['arquivo importado', 'arquivos importados'], skipped: ['pulado', 'pulados'], failed: ['com falha', 'com falha'] }) || 'Nenhum arquivo foi importado'}.
+                  {queueSummaryLine(queue, { done: ['arquivo importado', 'arquivos importados'], skipped: ['pulado', 'pulados'], uptodate: ['sem novidades', 'sem novidades'], failed: ['com falha', 'com falha'] }) || 'Nenhum arquivo foi importado'}.
                 </p>
                 <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Total: {statementImportNote(queueImported)}.</p>
               </div>
-              <QueueProgressList state={queue} statusText={{ done: 'Importado', skipped: 'Pulado' }} />
+              <QueueProgressList state={queue} statusText={{ done: 'Importado', skipped: 'Pulado', uptodate: 'Sem novidades' }} />
               <div className="flex justify-end pt-2">
                 <button type="button" onClick={requestClose} autoFocus
                   className="px-4 py-2.5 text-sm font-light tracking-tight text-white bg-primary-600 dark:bg-primary-500 border border-primary-600 dark:border-primary-500 rounded-md hover:opacity-80 transition-opacity">
@@ -659,7 +680,7 @@ const ImportTransactionsDialog = ({
                 )}
                 <button
                   type="button"
-                  onClick={handleConfirm}
+                  onClick={() => void handleConfirm(false)}
                   disabled={isConfirming || newCount === 0 || confirmError !== null}
                   title={newCount === 0 ? 'Não há transações novas para importar' : undefined}
                   className="px-4 py-2.5 text-sm font-light tracking-tight text-white bg-primary-600 dark:bg-primary-500 border border-primary-600 dark:border-primary-500 rounded-md hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"

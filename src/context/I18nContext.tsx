@@ -22,6 +22,8 @@ export interface Translations {
   goals: string;
   reports: string;
   settings: string;
+  /** Sidebar label of the people page (phase 4); other locales fall back to Portuguese. */
+  peoplePage?: string;
   logout: string;
   community: string;
   

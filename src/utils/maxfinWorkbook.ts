@@ -157,8 +157,10 @@ export interface MaxFinWorkbookTotals {
   expenseCents: number;
   /** Sum of the EXPENSE rows (despesas), from integer cents. */
   expenseTotal: number;
-  /** Stored transactions that will be replaced (ticked changed + replaces-future rows). */
+  /** Stored transactions that will be replaced (ticked changed, replaces-future and matches-recurring rows). */
   replacements: number;
+  /** Of those, the ticked rows that take a recurrence over. */
+  recurring: number;
   /** Invoice payments that will be recorded (closed months with credit rows sent) and their sum. */
   invoiceCount: number;
   invoiceCents: number;
@@ -215,7 +217,7 @@ export function buildWorkbookPlan(
   const emptyMonths: string[] = [];
   const totals: MaxFinWorkbookTotals = {
     months: 0, rows: 0, incomeCount: 0, incomeCents: 0, incomeTotal: 0, expenseCount: 0, expenseCents: 0, expenseTotal: 0,
-    replacements: 0, invoiceCount: 0, invoiceCents: 0, invoiceTotal: 0, emptyMonths,
+    replacements: 0, recurring: 0, invoiceCount: 0, invoiceCents: 0, invoiceTotal: 0, emptyMonths,
   };
   for (const month of months) {
     const { built, monthKey } = month;
@@ -241,6 +243,7 @@ export function buildWorkbookPlan(
     }
     totals.rows += built.rowsSent.length;
     totals.replacements += built.totals.replacements;
+    totals.recurring += built.totals.recurring;
     if (built.totals.invoice.willPay) {
       totals.invoiceCount += 1;
       totals.invoiceCents += built.totals.invoice.cents;
@@ -308,7 +311,7 @@ export interface MaxFinWorkbookRunSummary {
   notSent: string[];
   /** Server warnings of the imported months, each prefixed with its month label. */
   warnings: string[];
-  totals: { imported: number; replaced: number; skipped: number; invoices: number; invoiceCents: number };
+  totals: { imported: number; replaced: number; assumedRecurring: number; skipped: number; invoices: number; invoiceCents: number };
   /** Some imported month has something to read (warnings, skipped rows, consumed future installments). */
   needsReview: boolean;
 }
@@ -325,7 +328,7 @@ export function summarizeWorkbookRun(
 ): MaxFinWorkbookRunSummary {
   const summary: MaxFinWorkbookRunSummary = {
     months: [], imported: [], failed: null, notSent: [], warnings: [],
-    totals: { imported: 0, replaced: 0, skipped: 0, invoices: 0, invoiceCents: 0 },
+    totals: { imported: 0, replaced: 0, assumedRecurring: 0, skipped: 0, invoices: 0, invoiceCents: 0 },
     needsReview: false,
   };
   steps.forEach((step, index) => {
@@ -339,6 +342,7 @@ export function summarizeWorkbookRun(
       for (const warning of result.warnings ?? []) summary.warnings.push(`${step.label}: ${warning}`);
       summary.totals.imported += result.imported;
       summary.totals.replaced += result.replaced;
+      summary.totals.assumedRecurring += result.assumedRecurring ?? 0;
       summary.totals.skipped += result.skipped;
       if (result.invoicePayment) {
         summary.totals.invoices += 1;
@@ -361,6 +365,7 @@ export function workbookRunToast(summary: MaxFinWorkbookRunSummary): string {
   const { totals } = summary;
   const parts = [countLabel(totals.imported, 'transação importada', 'transações importadas')];
   if (totals.replaced > 0) parts.push(countLabel(totals.replaced, 'substituída', 'substituídas'));
+  if (totals.assumedRecurring > 0) parts.push(`assumiu ${countLabel(totals.assumedRecurring, 'recorrente', 'recorrentes')}`);
   if (totals.invoices > 0) parts.push(countLabel(totals.invoices, 'fatura registrada', 'faturas registradas'));
   if (totals.skipped > 0) parts.push(countLabel(totals.skipped, 'linha ignorada', 'linhas ignoradas'));
   let text = `${countLabel(summary.imported.length, 'mês importado', 'meses importados')}: ${parts.join(', ')}.`;

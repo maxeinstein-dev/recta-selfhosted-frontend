@@ -53,9 +53,11 @@ export type ShareHint =
 
 /**
  * `replaces-future`: generated future installments of the same plan (from an earlier import) are superseded by this row.
+ * `matches-recurring` (phase 5): a recurrence already generated this bill as a pending transaction of the month (or is
+ * about to): the row updates it (`existingTransactionId`) or assumes the recurrence, like a replacement (`replace: true`).
  * The server may add statuses later: the UI treats any other value as unknown (never selected, never sent).
  */
-export type MaxFinRowStatus = 'new' | 'duplicate' | 'changed' | 'replaces-future' | 'legacy-duplicate';
+export type MaxFinRowStatus = 'new' | 'duplicate' | 'changed' | 'replaces-future' | 'legacy-duplicate' | 'matches-recurring';
 
 export interface MaxFinPreviewRow {
   sourceLine: number;
@@ -79,6 +81,8 @@ export interface MaxFinPreviewRow {
   status: MaxFinRowStatus;
   statusDetail: string | null;
   existingTransactionId: string | null;
+  /** Phase 5, `matches-recurring` only: the amount stored on the generated bill (the row's `amount` is the new one). Absent on an older server. */
+  existingAmount?: number | null;
 }
 
 export type MaxFinCategoryTargetKind = 'system' | 'custom' | 'create' | 'default';
@@ -197,6 +201,8 @@ export interface MaxFinConfirmResponse {
   replaced: number;
   /** Generated future installments deleted because a sheet row of the same plan superseded them. */
   consumedFutureInstallments: number;
+  /** Phase 5: rows that took a recurrence over (optional: an older server does not send it). */
+  assumedRecurring?: number;
   futureInstallments: number;
   createdCategories: Array<{ id: string; name: string; type: MaxFinTransactionType }>;
   invoicePayment: { transactionId: string; amount: number; date: string } | null;

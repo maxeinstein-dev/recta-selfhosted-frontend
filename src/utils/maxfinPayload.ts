@@ -104,16 +104,41 @@ export function applyOptionPatch(current: MaxFinImportOptions, patch: Partial<Ma
 
 export type MaxFinSendableStatus = Exclude<MaxFinRowStatus, 'duplicate'>;
 
-const SENDABLE_STATUSES: readonly string[] = ['new', 'changed', 'replaces-future', 'legacy-duplicate'];
+const SENDABLE_STATUSES: readonly string[] = ['new', 'changed', 'replaces-future', 'legacy-duplicate', 'matches-recurring'];
 
 /** Only these statuses can be sent. `duplicate` never is, and neither is a status this client does not know. */
 export function isSendableStatus(status: string): status is MaxFinSendableStatus {
   return SENDABLE_STATUSES.includes(status);
 }
 
-/** Ticked by default: new rows, and rows that supersede generated future installments. */
+/**
+ * Ticked by default: new rows, rows that supersede generated future installments and rows that a recurrence generated
+ * for the month (the sheet takes the pending bill over: real amount, paid, no duplicate).
+ */
 export function defaultRowSelected(status: string): boolean {
-  return status === 'new' || status === 'replaces-future';
+  return status === 'new' || status === 'replaces-future' || status === 'matches-recurring';
+}
+
+/**
+ * Statuses whose row overwrites data already stored (the confirm needs `replace: true` and the button arms a second
+ * click): a changed row, generated future installments, or the pending bill a recurrence generated for the month.
+ */
+export function replacesStoredData(status: string): boolean {
+  return status === 'changed' || status === 'replaces-future' || status === 'matches-recurring';
+}
+
+/**
+ * The detail line of a row. For a `matches-recurring` row whose stored amount is known (`existingAmount`) it ends with
+ * "R$ old → R$ new", so the user sees what the sheet changes; with no stored amount (older server) it is the server text.
+ */
+export function rowDetailText(
+  row: Pick<MaxFinPreviewRow, 'status' | 'statusDetail' | 'amount'> & { existingAmount?: number | null },
+  formatAmount: (value: number) => string,
+): string | null {
+  const base = row.statusDetail || null;
+  if (row.status !== 'matches-recurring' || typeof row.existingAmount !== 'number' || !Number.isFinite(row.existingAmount)) return base;
+  const change = `${formatAmount(row.existingAmount)} → ${formatAmount(row.amount)}`;
+  return base ? `${base}: ${change}` : change;
 }
 
 /** Stable identity of a preview row across re-runs of the preview. */
@@ -158,12 +183,14 @@ export interface MaxFinStatusCounts {
   changed: number;
   replacesFuture: number;
   legacyDuplicate: number;
+  /** Rows the sheet takes over from a recurrence (the bill it generated, or the recurrence itself). */
+  matchesRecurring: number;
   /** Statuses this client does not know. */
   unknown: number;
 }
 
 export function countByStatus(rows: ReadonlyArray<Pick<MaxFinPreviewRow, 'status'>>): MaxFinStatusCounts {
-  const counts: MaxFinStatusCounts = { new: 0, duplicate: 0, changed: 0, replacesFuture: 0, legacyDuplicate: 0, unknown: 0 };
+  const counts: MaxFinStatusCounts = { new: 0, duplicate: 0, changed: 0, replacesFuture: 0, legacyDuplicate: 0, matchesRecurring: 0, unknown: 0 };
   for (const { status } of rows) {
     switch (status as string) {
       case 'new':
@@ -181,6 +208,9 @@ export function countByStatus(rows: ReadonlyArray<Pick<MaxFinPreviewRow, 'status
       case 'legacy-duplicate':
         counts.legacyDuplicate += 1;
         break;
+      case 'matches-recurring':
+        counts.matchesRecurring += 1;
+        break;
       default:
         counts.unknown += 1;
     }
@@ -188,7 +218,7 @@ export function countByStatus(rows: ReadonlyArray<Pick<MaxFinPreviewRow, 'status
   return counts;
 }
 
-/** Strips preview-only fields; `replace` is sent only for rows that replace stored data (changed, replaces-future). */
+/** Strips preview-only fields; `replace` is sent only for rows that replace stored data (changed, replaces-future, matches-recurring). */
 export function toConfirmRow(row: MaxFinPreviewRow): MaxFinConfirmRow {
   const base: MaxFinConfirmRow = {
     sourceRef: row.sourceRef,
@@ -202,7 +232,7 @@ export function toConfirmRow(row: MaxFinPreviewRow): MaxFinConfirmRow {
     notes: row.notes,
     installment: row.installment,
   };
-  return row.status === 'changed' || row.status === 'replaces-future' ? { ...base, replace: true } : base;
+  return replacesStoredData(row.status) ? { ...base, replace: true } : base;
 }
 
 // ---- Credit card invoice ----------------------------------------------------------------------------------
@@ -473,8 +503,10 @@ export interface MaxFinConfirmTotals {
   expenseCount: number;
   /** Sum of the EXPENSE rows (despesas). */
   expenseTotal: number;
-  /** Stored transactions that will be replaced: ticked `changed` rows plus ticked `replaces-future` rows. */
+  /** Stored transactions that will be replaced: ticked `changed`, `replaces-future` and `matches-recurring` rows. */
   replacements: number;
+  /** Of those, the ticked rows that take a recurrence over (`matches-recurring`). */
+  recurring: number;
   invoice: MaxFinInvoiceSelection;
 }
 
@@ -501,6 +533,7 @@ export function buildConfirmPayload(
   let incomeCount = 0;
   let expenseCount = 0;
   let replacements = 0;
+  let recurring = 0;
   for (const row of rowsSent) {
     if (row.type === 'INCOME') {
       incomeCents += toCents(row.amount);
@@ -509,7 +542,8 @@ export function buildConfirmPayload(
       expenseCents += toCents(row.amount);
       expenseCount += 1;
     }
-    if (row.status === 'changed' || row.status === 'replaces-future') replacements += 1;
+    if (replacesStoredData(row.status)) replacements += 1;
+    if (row.status === 'matches-recurring') recurring += 1;
   }
   // Derived from the very rows that are sent, so the invoice line and the request cannot disagree.
   const invoice = invoiceForRows(rowsSent, preview.options, {
@@ -539,6 +573,7 @@ export function buildConfirmPayload(
       expenseCount,
       expenseTotal: expenseCents / 100,
       replacements,
+      recurring,
       invoice,
     },
   };
@@ -579,6 +614,8 @@ export function buildConfirmSummary(result: MaxFinConfirmResponse, formatAmount:
   if (result.replaced > 0) parts.push(countLabel(result.replaced, 'substituída', 'substituídas'));
   const consumed = result.consumedFutureInstallments ?? 0;
   if (consumed > 0) parts.push(countLabel(consumed, 'parcela futura substituída', 'parcelas futuras substituídas'));
+  const assumed = result.assumedRecurring ?? 0;
+  if (assumed > 0) parts.push(`assumiu ${countLabel(assumed, 'recorrente', 'recorrentes')}`);
   const created = result.createdCategories?.length ?? 0;
   if (created > 0) parts.push(countLabel(created, 'categoria criada', 'categorias criadas'));
   if (result.futureInstallments > 0) {

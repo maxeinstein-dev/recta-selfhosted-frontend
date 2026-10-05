@@ -28,6 +28,8 @@ import { Transaction } from '../types';
 import { PageButton } from '../components/PageButton';
 import { CategoryName, getCategoryIconName, getCategoryDisplayName, TransactionType } from '../lib/enums';
 import { TransactionFilters, TransactionList } from '../components/transactions';
+import { useToastContext } from '../context/ToastContext';
+import { updateFailureMessage } from '../utils/transactionConflict';
 
 // Helper function to get icon component for category (supports enum or CUSTOM:uuid)
 const getCategoryIcon = (categoryName: string | undefined, customCategories?: { id: string; name: string; icon?: string | null }[]) => {
@@ -44,6 +46,7 @@ const getCategoryIcon = (categoryName: string | undefined, customCategories?: { 
 };
 
 const Transactions = () => {
+  const { error: showError } = useToastContext();
   const { exportToCSV, accounts, deleteTransaction, updateTransaction, customCategories } = useTransactionsContext();
   const { baseCurrency } = useCurrency();
   const { t, locale } = useI18n();
@@ -577,7 +580,11 @@ const Transactions = () => {
     if (isTransactionSharedAndUserParticipated(transaction)) {
       return; // Do nothing - menu should be disabled, but add safety check
     }
-    await updateTransaction(id, { paid });
+    try {
+      await updateTransaction(id, { paid });
+    } catch (err) {
+      showError(updateFailureMessage(err));
+    }
   };
 
   // Helper function to format transaction description

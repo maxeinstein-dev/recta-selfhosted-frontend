@@ -43,7 +43,12 @@ export interface CardOfxLine {
 }
 
 /** The server may add kinds later: a proposal of a kind this client does not know is shown but never sent. */
-export type CardOfxProposalKind = 'enrich-exact' | 'enrich-plan' | 'enrich-sum' | 'consume-future' | 'create' | 'reversal';
+export type CardOfxProposalKind = 'enrich-exact' | 'enrich-plan' | 'enrich-sum' | 'enrich-merge' | 'enrich-neighbour' | 'enrich-group' | 'enrich-near' | 'consume-future' | 'create' | 'reversal';
+
+/** Why the server leaves a proposal unticked. The server may add reasons: the UI never relies on this list. */
+export type CardOfxProposalReason =
+  | 'ambiguous' | 'no-shared-words' | 'mixed-categories' | 'sheet-residue' | 'neighbour-ambiguous' | 'neighbour-weak'
+  | 'neighbour-month-not-imported' | 'near-amount' | 'near-ambiguous' | 'pool-too-large';
 
 /** The stored transaction a proposal changes: the sheet row (enrich) or the future installment (consume). */
 export interface CardOfxTarget {
@@ -72,6 +77,12 @@ export interface CardOfxProposal {
   defaultSelected: boolean;
   ambiguous: boolean;
   target: CardOfxTarget | null;
+  /** enrich-merge: the other sheet rows whose amounts the target takes over (deleted on apply). Absent or empty otherwise. */
+  absorbed?: CardOfxTarget[];
+  /** Why the server leaves the proposal unticked; null or absent when it is ticked. A string this client does not know is shown as is. */
+  reason?: CardOfxProposalReason | string | null;
+  /** reason 'sheet-residue' on history: the card row left over that the new purchase may be a copy of. */
+  counterpart?: CardOfxTarget | null;
   result: CardOfxResult | null;
   /** create: future installments that will be generated. */
   futureInstallments: number;
@@ -107,6 +118,32 @@ export interface CardOfxPayment {
   proposal: CardOfxPaymentProposal;
 }
 
+/**
+ * Statement closing the server computed with the proposals ticked by default. delta = uncreated + heldMatches -
+ * sheetOnlyInPeriod - foreignInPeriod - advancePayments + residual. Amounts in reais, purchases positive.
+ */
+export interface CardOfxClosing {
+  periodStart: string;
+  periodEnd: string;
+  /** DTEND counts as inside the period only when the OFX lists lines dated on it. */
+  endInclusive: boolean;
+  ofxTotal: number;
+  recordedTotal: number;
+  /** ofxTotal - recordedTotal: positive = the card holds less than the bank charged. */
+  delta: number;
+  components: {
+    uncreated: number;
+    heldMatches: number;
+    sheetOnlyInPeriod: number;
+    foreignInPeriod: number;
+    advancePayments: number;
+    residual: number;
+  };
+  sheetOnlyOutsidePeriod: number;
+  /** |residual| within 5 cents. */
+  explained: boolean;
+}
+
 export interface CardOfxPreviewTotals {
   lines: number;
   reconciled: number;
@@ -130,6 +167,8 @@ export interface CardOfxPreviewResponse {
   proposals: CardOfxProposal[];
   sheetOnly: CardOfxSheetOnly[];
   payment: CardOfxPayment | null;
+  /** The statement closing with the default selection; absent on a server that predates it. */
+  closing?: CardOfxClosing | null;
   /** Merchants of the create proposals (same format as the monthly sheet importer). */
   categoryMap: MaxFinCategoryMapEntry[];
   totals: CardOfxPreviewTotals;
@@ -161,6 +200,8 @@ export interface CardOfxConfirmRequest {
 
 export interface CardOfxConfirmResponse {
   enriched: number;
+  /** Sheet rows deleted by merges (absorbed into the row that stays); absent on a server that predates merges. */
+  absorbedRows?: number;
   consumedFutures: number;
   created: number;
   futureInstallments: number;

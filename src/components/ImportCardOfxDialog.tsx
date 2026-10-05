@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, ChevronDown, ChevronRight, FastForward, FileUp, RefreshCw, SkipForward, Upload, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, ClipboardCheck, FastForward, FileUp, RefreshCw, SkipForward, Upload, X } from 'lucide-react';
 import { useAccounts } from '../hooks/api/useAccounts';
 import type { Account } from '../hooks/api/useAccounts';
 import { useCategories } from '../hooks/api/useCategories';
@@ -27,9 +27,12 @@ import { monthKeyLabel } from '../utils/maxfinWorkbook';
 import {
   PROPOSAL_KIND_LABEL, buildCardOfxConfirm, buildCardOfxSections, buildCardOfxSummary, cardOfxConfirmBlocker, cardOfxFailureMessage,
   cardOfxMonthSourceLabel, cardOfxResultLines, clearGroups, defaultPaymentChoice, isGroupSelected, isKnownProposalKind,
-  isPaymentActionable, lineKindLabel, newLinesNotice, paymentNeedsSource, paymentSourceAccounts, reconcileGroupSelection, reconcilePaymentChoice,
-  selectAllGroups, setGroupSelected, validateCardOfxFile,
+  isPaymentActionable, lineKindLabel, mergeAbsorbedNotice, mergeSummary, nearChange, nearChangeText, neighbourMonthLabel, newLinesNotice, paymentNeedsSource, paymentSourceAccounts,
+  proposalHeadline, proposalReasonChip, reconcileGroupSelection, reconcilePaymentChoice, selectAllGroups, setGroupSelected, validateCardOfxFile,
 } from '../utils/cardOfx';
+import { buildClosingView, closingBasisLabel, closingHeadline, closingResidualStatus, closingRows } from '../utils/cardOfxClosing';
+import type { ClosingView } from '../utils/cardOfxClosing';
+import CardOfxReviewDialog from './CardOfxReviewDialog';
 import type {
   CardOfxBlocker, CardOfxBuiltConfirm, CardOfxGroupSection, CardOfxGroupView, CardOfxNewLinesNotice, CardOfxPaymentChoice, CardOfxSelection,
   CardOfxTotals,
@@ -174,19 +177,82 @@ const FileStep = ({ cardName, file, isPreviewing, canPreview, queued = false, on
 // ---------------------------------------------------------------------------
 
 interface PreviewHeaderProps {
-  preview: CardOfxPreviewResponse; cardName: string; totals: CardOfxTotals; monthInput: string; isRefreshing: boolean;
+  preview: CardOfxPreviewResponse; cardName: string; totals: CardOfxTotals; closing: ClosingView | null; monthInput: string; isRefreshing: boolean;
   monthDisabled: boolean; currency: CurrencyCode; onMonthInputChange: (value: string) => void; onApplyMonth: () => void;
 }
 
 const RECTA_TOTAL_HINT =
   'Linhas já conciliadas, linhas da planilha e parcelas futuras que as propostas apontam (marcadas ou não), novas e pares marcados, e as transações do mês sem par no OFX. Pagamentos ficam fora, como no total do OFX.';
 
+const CLOSING_TOTAL_HINT =
+  'O que o cartão guarda no período do extrato (por data), como fica depois de aplicar as propostas marcadas. Veja o fechamento da fatura abaixo.';
+
+/** The statement closing: the OFX total against the card total, the delta and what explains it. */
+const ClosingPanel = ({ view, currency }: { view: ClosingView; currency: CurrencyCode }) => {
+  const rows = closingRows(view);
+  const delta = view.deltaCents;
+  const residual = closingResidualStatus(view, (cents) => money(cents, currency));
+  return (
+    <section aria-labelledby="card-ofx-closing-title" className={BOX_CLS}>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h4 id="card-ofx-closing-title" className={H4_CLS}>Fechamento da fatura</h4>
+        <span data-closing-basis={view.basis} className={`text-xs ${view.basis === 'server-default' ? 'text-orange-700 dark:text-orange-300' : MUTED_CLS}`}>
+          {closingBasisLabel(view)}
+        </span>
+      </div>
+      <p className={`text-sm ${delta === 0 ? 'text-green-700 dark:text-green-400' : 'text-gray-900 dark:text-white'}`}>
+        {closingHeadline(view, (cents) => money(cents, currency))}
+      </p>
+      <dl className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+        <div className="min-w-0">
+          <dt className={`text-xs ${MUTED_CLS}`}>Total do OFX</dt>
+          <dd className="font-medium text-gray-900 dark:text-white">{money(view.ofxCents, currency)}</dd>
+        </div>
+        <div className="min-w-0">
+          <dt className={`text-xs ${MUTED_CLS}`}>No cartão após importar</dt>
+          <dd className="font-medium text-gray-900 dark:text-white">{money(view.recordedCents, currency)}</dd>
+        </div>
+        <div className="min-w-0">
+          <dt className={`text-xs ${MUTED_CLS}`}>Diferença (OFX − cartão)</dt>
+          <dd className="font-medium text-gray-900 dark:text-white">{delta > 0 ? '+' : delta < 0 ? '−' : ''}{money(Math.abs(delta), currency)}</dd>
+        </div>
+      </dl>
+      <p className={`text-xs ${MUTED_CLS}`}>
+        Período {fmtDate(view.periodStart)} a {fmtDate(view.periodEnd)}
+        {view.endInclusive ? ' (o último dia entra)' : ' (o último dia pertence à próxima fatura)'}.
+      </p>
+      <div>
+        <p className="text-xs font-medium text-gray-700 dark:text-gray-200 mb-1">O que explica a diferença</p>
+        <ul className="text-sm space-y-0.5">
+          {rows.map((row) => (
+            <li key={row.key} data-closing-row={row.key} className="flex flex-wrap items-baseline justify-between gap-x-3" title={row.hint}>
+              <span className={row.key === 'residual' ? 'text-gray-900 dark:text-white' : MUTED_CLS}>{row.label}</span>
+              <span className="whitespace-nowrap text-gray-900 dark:text-white">{row.cents > 0 ? '+' : row.cents < 0 ? '−' : ''}{money(Math.abs(row.cents), currency)}</span>
+            </li>
+          ))}
+        </ul>
+        <p className="mt-1 flex flex-wrap items-center gap-2 text-xs">
+          <Chip tone={residual.tone}>{residual.chip}</Chip>
+          <span className={MUTED_CLS}>{residual.verdict}</span>
+        </p>
+        {view.sheetOnlyOutsideCents !== 0 && (
+          <p className={`mt-1 text-xs ${MUTED_CLS}`}>
+            Informativo: {money(Math.abs(view.sheetOnlyOutsideCents), currency)} de linhas da planilha sem par, datadas fora do período, contam numa fatura vizinha.
+          </p>
+        )}
+      </div>
+    </section>
+  );
+};
+
 const PreviewHeader = ({
-  preview, cardName, totals, monthInput, isRefreshing, monthDisabled, currency, onMonthInputChange, onApplyMonth,
+  preview, cardName, totals, closing, monthInput, isRefreshing, monthDisabled, currency, onMonthInputChange, onApplyMonth,
 }: PreviewHeaderProps) => {
   const source = cardOfxMonthSourceLabel(preview.monthSource);
   const canApply = !monthDisabled && !!parseMonthInput(monthInput) && monthInput !== preview.monthKey;
-  const diff = totals.differenceCents;
+  // With the server's closing the total in the card and the difference come from it (the period count by date); without it, from the client's estimate.
+  const diff = closing ? closing.deltaCents : totals.differenceCents;
+  const rectaCents = closing ? closing.recordedCents : totals.rectaCents;
   return (
     <div className="space-y-3">
       <dl className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 text-sm">
@@ -210,9 +276,9 @@ const PreviewHeader = ({
           <dd className="font-medium text-gray-900 dark:text-white">{money(totals.ofxCents, currency)}</dd>
         </div>
         <div className="min-w-0">
-          <dt className={`text-xs ${MUTED_CLS}`} title={RECTA_TOTAL_HINT}>Total no Recta após importar</dt>
-          <dd className="font-medium text-gray-900 dark:text-white" title={RECTA_TOTAL_HINT}>
-            {money(totals.rectaCents, currency)}
+          <dt className={`text-xs ${MUTED_CLS}`} title={closing ? CLOSING_TOTAL_HINT : RECTA_TOTAL_HINT}>Total no Recta após importar</dt>
+          <dd className="font-medium text-gray-900 dark:text-white" title={closing ? CLOSING_TOTAL_HINT : RECTA_TOTAL_HINT}>
+            {money(rectaCents, currency)}
             {diff === 0 ? (
               <span className="block text-xs font-normal text-green-700 dark:text-green-400">igual ao OFX</span>
             ) : (
@@ -273,12 +339,47 @@ const ResultCell = ({ result }: { result: CardOfxResult }) => (
   </div>
 );
 
+/**
+ * A match that needs explaining: a merge (one bank line that is the sum of several sheet rows; the first stays, the
+ * others are absorbed and deleted), a near amount (the row takes the bank amount), a purchase of the neighbouring month,
+ * or a sum by merchant.
+ */
+const MergeCell = ({ proposal, netCents, currency }: { proposal: CardOfxGroupView['proposal']; netCents: number; currency: CurrencyCode }) => {
+  const absorbed = proposal.absorbed ?? [];
+  const notice = mergeAbsorbedNotice(proposal);
+  const near = nearChange(proposal, netCents);
+  const month = neighbourMonthLabel(proposal);
+  return (
+    <div className="space-y-1 min-w-0">
+      <p className="font-medium text-gray-900 dark:text-white">{proposalHeadline(proposal)}</p>
+      {near && <p data-near-change className="text-xs text-gray-900 dark:text-white">{nearChangeText(near, (cents) => money(cents, currency))}</p>}
+      {month && <p className={`text-xs ${MUTED_CLS}`}>Linha da planilha de {month}.</p>}
+      <ul className="space-y-0.5">
+        {proposal.target && (
+          <li className="min-w-0">
+            <TargetCell target={proposal.target} currency={currency} />
+            <span className={`text-[11px] ${MUTED_CLS}`}>fica</span>
+          </li>
+        )}
+        {absorbed.map((row, index) => (
+          <li key={`${index}-${row.transactionId}`} className="min-w-0" data-absorbed={row.transactionId}>
+            <TargetCell target={row} currency={currency} />
+            <span className="text-[11px] text-red-700 dark:text-red-400">absorvido e apagado</span>
+          </li>
+        ))}
+      </ul>
+      {notice && <p className={`text-[11px] leading-snug ${MUTED_CLS}`}>{notice}</p>}
+    </div>
+  );
+};
+
 /** Accessible name of a group checkbox: what ticking it does, plus what it is about. */
 const groupCheckboxLabel = (group: CardOfxGroupView): string => {
   const first = group.lines[0];
   const about = group.proposal.target?.description || first?.memo || group.proposal.group;
   switch (group.section) {
     case 'matched':
+      if (group.proposal.kind === 'enrich-merge') return `Somar ${mergeSummary(group.proposal)?.replace('Soma de ', '') ?? 'lançamentos da planilha'} e enriquecer com o OFX: ${about}`;
       return `Enriquecer com o OFX: ${about}`;
     case 'futures':
       return `Consumir parcela futura: ${about}`;
@@ -299,6 +400,8 @@ interface GroupRowProps {
 const GroupRow = ({ group, checked, disabled, currency, onToggle }: GroupRowProps) => {
   const { proposal, section } = group;
   const twoColumns = section === 'matched' || section === 'futures';
+  // Why the server left it unticked (ambiguous, no shared words, mixed categories, a sheet row left over that it may copy).
+  const reasonChip = proposalReasonChip(proposal, (value, type) => signedAmount(value, type, currency), fmtDate);
   return (
     <tr className={checked ? '' : 'bg-gray-50/60 dark:bg-gray-800/20'}>
       <td className="px-3 py-2 align-top">
@@ -308,7 +411,14 @@ const GroupRow = ({ group, checked, disabled, currency, onToggle }: GroupRowProp
       <td className={`${TD_CLS} min-w-[280px]`}>
         <div className="flex flex-wrap items-center gap-1 mb-1 empty:hidden">
           {section === 'matched' && isKnownProposalKind(proposal.kind) && <Chip tone="blue">{PROPOSAL_KIND_LABEL[proposal.kind]}</Chip>}
-          {proposal.ambiguous && <Chip tone="orange" title="Mais de uma combinação de linhas do OFX fecha este valor">ambígua</Chip>}
+          {reasonChip ? (
+            <Chip tone={reasonChip.tone} title={reasonChip.title}>{reasonChip.text}</Chip>
+          ) : (
+            proposal.ambiguous && <Chip tone="orange" title="Mais de uma combinação de linhas do OFX fecha este valor">ambígua</Chip>
+          )}
+          {reasonChip && proposal.ambiguous && reasonChip.reason !== 'ambiguous' && (
+            <Chip tone="orange" title="Mais de uma combinação de linhas do OFX fecha este valor">ambígua</Chip>
+          )}
           {section === 'new' && proposal.futureInstallments > 0 && (
             <Chip tone="blue">+{countLabel(proposal.futureInstallments, 'parcela futura', 'parcelas futuras')}</Chip>
           )}
@@ -323,7 +433,9 @@ const GroupRow = ({ group, checked, disabled, currency, onToggle }: GroupRowProp
       {twoColumns && (
         <>
           <td className={`${TD_CLS} min-w-[180px]`}>
-            {proposal.target ? <TargetCell target={proposal.target} currency={currency} /> : <span className={MUTED_CLS}>—</span>}
+            {proposalHeadline(proposal) !== null && proposal.target
+              ? <MergeCell proposal={proposal} netCents={group.netCents} currency={currency} />
+              : proposal.target ? <TargetCell target={proposal.target} currency={currency} /> : <span className={MUTED_CLS}>—</span>}
           </td>
           <td className={`${TD_CLS} min-w-[180px]`}>
             {proposal.result ? <ResultCell result={proposal.result} /> : <span className={MUTED_CLS}>—</span>}
@@ -331,7 +443,7 @@ const GroupRow = ({ group, checked, disabled, currency, onToggle }: GroupRowProp
         </>
       )}
       {section === 'reversal' && <td className={`${TD_CLS} whitespace-nowrap`}>{money(group.netCents, currency)}</td>}
-      {section === 'other' && <td className={`${TD_CLS} ${MUTED_CLS}`}>{proposal.kind}</td>}
+      {section === 'other' && <td className={`${TD_CLS} ${MUTED_CLS}`}>Tipo de proposta desconhecido</td>}
     </tr>
   );
 };
@@ -339,7 +451,7 @@ const GroupRow = ({ group, checked, disabled, currency, onToggle }: GroupRowProp
 const SECTION_HEADERS: Record<CardOfxGroupSection, string[]> = {
   matched: ['No OFX', 'Na planilha', 'Como fica'],
   futures: ['No OFX', 'Parcela futura', 'Como fica'],
-  new: ['No OFX'],
+  new: ['Compra do OFX (será criada)'],
   reversal: ['No OFX', 'Soma'],
   other: ['No OFX', 'Tipo'],
 };
@@ -689,7 +801,17 @@ const PreviewFooter = ({
 // Step 3: result
 // ---------------------------------------------------------------------------
 
-const ResultStep = ({ result, lines, onClose }: { result: CardOfxConfirmResponse; lines: string[]; onClose: () => void }) => {
+const REVIEW_BUTTON_LABEL = 'Revisar lançamentos sem comprovante';
+const REVIEW_HINT = 'Linhas da planilha deste cartão que não acharam par no OFX: mantenha, mova para outra conta ou exclua.';
+
+const ReviewButton = ({ onReview }: { onReview: () => void }) => (
+  <button type="button" onClick={onReview} title={REVIEW_HINT} className={BTN_SECONDARY}>
+    <ClipboardCheck className="h-4 w-4 mr-2" aria-hidden="true" />
+    {REVIEW_BUTTON_LABEL}
+  </button>
+);
+
+const ResultStep = ({ result, lines, onClose, onReview }: { result: CardOfxConfirmResponse; lines: string[]; onClose: () => void; onReview: () => void }) => {
   const warnings = result.warnings ?? [];
   return (
     <div className="space-y-4 min-w-0">
@@ -711,7 +833,8 @@ const ResultStep = ({ result, lines, onClose }: { result: CardOfxConfirmResponse
           </ul>
         </div>
       )}
-      <div className="flex justify-end pt-2">
+      <div className="flex flex-wrap justify-end gap-3 pt-2">
+        <ReviewButton onReview={onReview} />
         <button type="button" onClick={onClose} autoFocus className={BTN_PRIMARY}>Fechar</button>
       </div>
     </div>
@@ -723,10 +846,10 @@ const ResultStep = ({ result, lines, onClose }: { result: CardOfxConfirmResponse
 // ---------------------------------------------------------------------------
 
 interface QueueSummaryProps {
-  state: QueueState; results: ReadonlyArray<{ name: string; data: CardOfxConfirmResponse }>; onClose: () => void;
+  state: QueueState; results: ReadonlyArray<{ name: string; data: CardOfxConfirmResponse }>; onClose: () => void; onReview: () => void;
 }
 
-const QueueSummary = ({ state, results, onClose }: QueueSummaryProps) => {
+const QueueSummary = ({ state, results, onClose, onReview }: QueueSummaryProps) => {
   const counts = queueSummaryLine(state, { done: ['fatura importada', 'faturas importadas'], skipped: ['pulada', 'puladas'], uptodate: ['já importada', 'já importadas'], failed: ['com falha', 'com falha'] });
   const warnings = results.flatMap((r) => (r.data.warnings ?? []).map((warning) => `${r.name}: ${warning}`));
   return (
@@ -747,7 +870,8 @@ const QueueSummary = ({ state, results, onClose }: QueueSummaryProps) => {
           </ul>
         </div>
       )}
-      <div className="flex justify-end pt-2">
+      <div className="flex flex-wrap justify-end gap-3 pt-2">
+        <ReviewButton onReview={onReview} />
         <button type="button" onClick={onClose} autoFocus className={BTN_PRIMARY}>Fechar</button>
       </div>
     </div>
@@ -805,6 +929,10 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [result, setResult] = useState<CardOfxConfirmResponse | null>(null);
+  // "Revisar lançamentos sem comprovante" is open on top of this dialog: ESC belongs to it.
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const reviewOpenRef = useRef(false);
+  reviewOpenRef.current = reviewOpen;
   // Last applied preview: the next one keeps the choices of the groups that did not change.
   const lastPreviewRef = useRef<CardOfxPreviewResponse | null>(null);
   // Latest-wins guard: a preview run only touches state while it is the newest run of a mounted dialog.
@@ -868,6 +996,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
     setFormError(handedOver);
     setConfirmError(null);
     setResult(null);
+    setReviewOpen(false);
     lastPreviewRef.current = null;
     setQueueSource('');
     queueSourceRef.current = '';
@@ -904,7 +1033,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
   useEffect(() => {
     if (!open) return;
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !confirmingRef.current && !applyingRef.current) onClose();
+      if (e.key === 'Escape' && !confirmingRef.current && !applyingRef.current && !reviewOpenRef.current) onClose();
     };
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
@@ -919,6 +1048,12 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
   const built = useMemo(
     () => (preview ? buildCardOfxConfirm(preview, selection, effectiveChoices, paymentChoice, { accounts, customIdsByType }) : null),
     [preview, selection, effectiveChoices, paymentChoice, accounts, customIdsByType],
+  );
+
+  // The statement closing for the selection on screen (the server's numbers for its default, recomputed otherwise).
+  const closing = useMemo(
+    () => (preview && built ? buildClosingView(preview.closing, built.sections.groups, selection) : null),
+    [preview, built, selection],
   );
 
   if (!open) return null;
@@ -1280,7 +1415,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
           {formError && <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">{formError}</p>}
 
           {queue && queueFinished ? (
-            <QueueSummary state={queue} results={queueResults} onClose={requestClose} />
+            <QueueSummary state={queue} results={queueResults} onClose={requestClose} onReview={() => setReviewOpen(true)} />
           ) : applying && queue ? (
             <p role="status" className={`flex items-center gap-2 text-sm ${MUTED_CLS}`}>
               <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
@@ -1288,12 +1423,14 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
             </p>
           ) : result ? (
             <ResultStep result={result} lines={cardOfxResultLines(result, (value) => formatCurrency(value, baseCurrency), fmtDate)}
-              onClose={requestClose} />
+              onClose={requestClose} onReview={() => setReviewOpen(true)} />
           ) : preview && built && sections ? (
             <div className="space-y-5 min-w-0">
-              <PreviewHeader preview={preview} cardName={cardName} totals={built.totals} monthInput={monthInput} isRefreshing={isRefreshing}
+              <PreviewHeader preview={preview} cardName={cardName} totals={built.totals} closing={closing} monthInput={monthInput} isRefreshing={isRefreshing}
                 monthDisabled={isConfirming} currency={baseCurrency} onMonthInputChange={setMonthInput}
                 onApplyMonth={() => void handleApplyMonth()} />
+
+              {closing && <ClosingPanel view={closing} currency={baseCurrency} />}
 
               {visibleCardWarnings(preview.warnings, showClosingNotice).length > 0 && (
                 <ul className={WARN_BOX_CLS}>
@@ -1345,6 +1482,9 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
           )}
         </div>
       </div>
+      {reviewOpen && (
+        <CardOfxReviewDialog open onClose={() => setReviewOpen(false)} accountId={accountId} householdId={householdId ?? undefined} zClass="z-[70]" />
+      )}
     </div>,
     document.body,
   );

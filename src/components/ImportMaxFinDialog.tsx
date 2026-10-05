@@ -86,6 +86,7 @@ const STATUS_CHIP: Partial<Record<string, { label: string; tone: ChipTone }>> = 
   changed: { label: 'Alterada', tone: 'orange' },
   'replaces-future': { label: 'Substitui futuras', tone: 'blue' },
   'legacy-duplicate': { label: 'Possível duplicata', tone: 'yellow' },
+  'matches-recurring': { label: 'Recorrente', tone: 'blue' },
 };
 const FALLBACK_CHIP: { label: string; tone: ChipTone } = { label: 'Status desconhecido', tone: 'gray' };
 const ROW_TONE: Partial<Record<string, string>> = {
@@ -93,9 +94,10 @@ const ROW_TONE: Partial<Record<string, string>> = {
   changed: 'bg-orange-50/50 dark:bg-orange-900/10',
   'replaces-future': 'bg-blue-50/50 dark:bg-blue-900/10',
   'legacy-duplicate': 'bg-yellow-50/50 dark:bg-yellow-900/10',
+  'matches-recurring': 'bg-blue-50/50 dark:bg-blue-900/10',
 };
-/** Statuses whose detail must be readable without hovering: they replace stored data or may duplicate it. */
-const INLINE_DETAIL_STATUSES: readonly string[] = ['changed', 'replaces-future', 'legacy-duplicate'];
+/** Statuses whose detail must be readable without hovering: they replace stored data, take a recurrence over or may duplicate it. */
+const INLINE_DETAIL_STATUSES: readonly string[] = ['changed', 'replaces-future', 'legacy-duplicate', 'matches-recurring'];
 
 const EMPTY_ACCOUNTS: MaxFinAccountsInput = { income: '', bills: '', credit: '', debit: '' };
 const MONTH_MIN = monthToInputValue({ year: MAXFIN_MIN_YEAR, month: 1 });
@@ -370,6 +372,8 @@ const rowCheckboxLabel = (row: MaxFinPreviewRow): string => {
       return `Substituir transação existente: ${what}`;
     case 'replaces-future':
       return `Importar e substituir parcelas futuras: ${what}`;
+    case 'matches-recurring':
+      return `Importar e assumir a conta recorrente: ${what}`;
     case 'legacy-duplicate':
       return `Importar mesmo assim (possível duplicata): ${what}`;
     case 'duplicate':
@@ -385,6 +389,7 @@ const PreviewRowItem = ({ row, checked, disabled, currency, onToggle }: PreviewR
   const status = knownChip ?? FALLBACK_CHIP;
   const isChanged = row.status === 'changed';
   const replacesFuture = row.status === 'replaces-future';
+  const matchesRecurring = row.status === 'matches-recurring';
   const showDetail = !!row.statusDetail && (INLINE_DETAIL_STATUSES.includes(row.status) || !knownChip);
   const prepaid = row.installment ? prepaidLabel(row.installment) : null;
   // A negative value of the sheet: a credit (refund) in an expense block, an expense in the income block.
@@ -398,6 +403,7 @@ const PreviewRowItem = ({ row, checked, disabled, currency, onToggle }: PreviewR
             aria-label={rowCheckboxLabel(row)} onChange={(e) => onToggle(key, e.target.checked)} />
           {isChanged && <span className="text-[11px] text-orange-700 dark:text-orange-300">substituir</span>}
           {replacesFuture && <span className="text-[11px] text-blue-700 dark:text-blue-300">substitui futuras</span>}
+          {matchesRecurring && <span className="text-[11px] text-blue-700 dark:text-blue-300">assume a recorrente</span>}
         </label>
       </td>
       <td className={`${TD_CLS} max-w-[280px]`}>
@@ -444,6 +450,9 @@ const RowsTable = ({ preview, selected, accountName, currency, disabled, onToggl
           <Chip tone="orange">{countLabel(counts.changed, 'alterada', 'alteradas')}</Chip>
           {counts.replacesFuture > 0 && (
             <Chip tone="blue">{countLabel(counts.replacesFuture, 'substitui futuras', 'substituem futuras')}</Chip>
+          )}
+          {counts.matchesRecurring > 0 && (
+            <Chip tone="blue">{countLabel(counts.matchesRecurring, 'recorrente', 'recorrentes')}</Chip>
           )}
           {counts.legacyDuplicate > 0 && (
             <Chip tone="yellow">{countLabel(counts.legacyDuplicate, 'possível duplicata', 'possíveis duplicatas')}</Chip>
@@ -540,7 +549,10 @@ const PreviewFooter = ({ built, blocker, armed, busy, isConfirming, confirmError
             {totals.expenseCount > 0 && <> · Despesas: <strong>{formatCurrency(totals.expenseTotal, currency)}</strong></>}
           </p>
           {totals.replacements > 0 && (
-            <p className="text-orange-700 dark:text-orange-300">{countLabel(totals.replacements, REPLACED_ONE, REPLACED_MANY)}</p>
+            <p className="text-orange-700 dark:text-orange-300">
+              {countLabel(totals.replacements, REPLACED_ONE, REPLACED_MANY)}
+              {totals.recurring > 0 && <> ({countLabel(totals.recurring, 'assume uma recorrente', 'assumem recorrentes')})</>}
+            </p>
           )}
           {totals.invoice.willPay && !stale && (
             <p className={MUTED_CLS}>Fatura de {formatCurrency(totals.invoice.amount, currency)} será registrada.</p>
@@ -750,6 +762,7 @@ const MonthsTable = ({ workbook, plan, checkedMonths, stale, disabled, currency,
                         <Chip tone="green">{countLabel(counts.new, 'nova', 'novas')}</Chip>
                         <Chip tone="yellow">{countLabel(counts.duplicate, 'duplicada', 'duplicadas')}</Chip>
                         <Chip tone="orange">{countLabel(counts.changed, 'alterada', 'alteradas')}</Chip>
+                        {counts.matchesRecurring > 0 && <Chip tone="blue">{countLabel(counts.matchesRecurring, 'recorrente', 'recorrentes')}</Chip>}
                         <span className={`text-xs ${MUTED_CLS}`}>{month.built.totals.count} a importar</span>
                         {month.preview.warnings.length > 0 && (
                           <Chip tone="yellow" title={month.preview.warnings.join('\n')}>
@@ -849,7 +862,10 @@ const WorkbookFooter = ({
             {totals.expenseCount > 0 && <> · Despesas: <strong>{formatCurrency(totals.expenseTotal, currency)}</strong></>}
           </p>
           {totals.replacements > 0 && (
-            <p className="text-orange-700 dark:text-orange-300">{countLabel(totals.replacements, REPLACED_ONE, REPLACED_MANY)}</p>
+            <p className="text-orange-700 dark:text-orange-300">
+              {countLabel(totals.replacements, REPLACED_ONE, REPLACED_MANY)}
+              {totals.recurring > 0 && <> ({countLabel(totals.recurring, 'assume uma recorrente', 'assumem recorrentes')})</>}
+            </p>
           )}
           {totals.invoiceCount > 0 && !stale && (
             <p className={MUTED_CLS}>

@@ -8,6 +8,7 @@ import { useToastContext } from '../context/ToastContext';
 import { useI18n } from '../context/I18nContext';
 import { useCurrency } from '../context/CurrencyContext';
 import { formatCurrency } from '../utils/format';
+import { followLastHint, recurrenceUpdatedMessage } from '../utils/recurringFollow';
 import { Transaction } from '../types';
 import { createSchemas, TransactionFormData } from '../schemas';
 import { CategoryType, CategoryName, getCategoriesByType, getCategoryNameFromDisplay, AccountType, TransactionType } from '../lib/enums';
@@ -38,7 +39,7 @@ interface TransactionModalProps {
 }
 
 const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid, readOnly = false }: TransactionModalProps) => {
-  const { addTransaction, updateTransaction, createInstallments, accounts: contextAccounts, addRecurringTransaction, createTransfer } = useTransactions();
+  const { addTransaction, updateTransaction, createInstallments, accounts: contextAccounts, addRecurringTransaction, createTransfer, transactions: knownTransactions, recurringTransactions } = useTransactions();
   const { success, error: showError } = useToastContext();
   const { t } = useI18n();
   const { baseCurrency } = useCurrency();
@@ -186,6 +187,11 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
   const transactionCategory = watch('category');
   const selectedAccountId = watch('accountId');
   const transactionAmount = watch('amount') || 0;
+  // A recurrence that follows the last amount takes the value of its most recent occurrence: say so while editing it.
+  const amountHint = useMemo(
+    () => (transaction ? followLastHint(transaction, recurringTransactions, knownTransactions, new Date()) : null),
+    [transaction, recurringTransactions, knownTransactions],
+  );
 
   // Detectar se estamos no contexto de cartões de crédito
   const isCreditCardContext = useMemo(() => {
@@ -714,8 +720,11 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
 
       if (transaction) {
         if (transaction.id) {
-          await updateTransaction(transaction.id, transactionData);
+          const outcome = await updateTransaction(transaction.id, transactionData);
           success(t.transactionUpdated);
+          // Phase 5: the server moved the amount of the recurrence this occurrence belongs to.
+          const recurrenceMessage = recurrenceUpdatedMessage(outcome?.recurringUpdated, (value) => formatCurrency(value, baseCurrency));
+          if (recurrenceMessage) success(recurrenceMessage);
         }
         if (!shouldCreateNew) {
           onClose();
@@ -895,6 +904,7 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
               isCreditCardContext={isCreditCardContext}
               disabled={readOnly}
               householdId={householdId ?? undefined}
+              amountHint={amountHint}
             />
 
             {transactionType === TransactionType.EXPENSE && isSharedHousehold && householdMembers && householdMembers.length > 1 && !readOnly && (

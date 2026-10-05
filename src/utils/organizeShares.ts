@@ -158,16 +158,54 @@ export function setSettlement(choices: OrganizeChoices, id: string, selected: bo
   return { ...choices, settlements: { ...choices.settlements, [id]: selected } };
 }
 
+/**
+ * Whether the server's own mark forbids ticking an item "in bulk". The server leaves an item unticked for two kinds of
+ * reason: the person does not exist yet (`person.id` null: ticking it creates the person, which is a decision for the
+ * user, not a doubt about the item) or something else about the item. The data only tells the first kind apart, so
+ * "Marcar todas" ticks the suggested items and the new-person ones, and leaves the rest as the server left them.
+ */
+function bulkTickable(item: { defaultSelected: boolean; person: { id: string | null } }): boolean {
+  return item.defaultSelected === true || item.person.id === null;
+}
+
 export function setAllProposals(choices: OrganizeChoices, preview: OrganizePreview, selected: boolean): OrganizeChoices {
   const proposals = { ...choices.proposals };
-  for (const p of preview.proposals) proposals[p.id] = selected;
+  for (const p of preview.proposals) if (!selected || bulkTickable(p)) proposals[p.id] = selected;
   return { ...choices, proposals };
 }
 
 export function setAllSettlements(choices: OrganizeChoices, preview: OrganizePreview, selected: boolean): OrganizeChoices {
   const settlements = { ...choices.settlements };
-  for (const s of preview.settlements) settlements[s.id] = selected;
+  for (const s of preview.settlements) if (!selected || bulkTickable(s)) settlements[s.id] = selected;
   return { ...choices, settlements };
+}
+
+/** The proposals and settlements that mention a detected new name (normalized key). */
+export function itemsOfDetected(preview: OrganizePreview, detectedKey: string): { proposalIds: string[]; settlementIds: string[] } {
+  const mine = (p: { person: { id: string | null; name: string } }) => p.person.id === null && normalizeLabel(p.person.name) === detectedKey;
+  return { proposalIds: preview.proposals.filter(mine).map((p) => p.id), settlementIds: preview.settlements.filter(mine).map((s) => s.id) };
+}
+
+/** Ticks or unticks everything that mentions one new name ("marcar todas de X"). */
+export function setDetectedItems(choices: OrganizeChoices, preview: OrganizePreview, detectedKey: string, selected: boolean): OrganizeChoices {
+  const { proposalIds, settlementIds } = itemsOfDetected(preview, detectedKey);
+  const proposals = { ...choices.proposals };
+  const settlements = { ...choices.settlements };
+  for (const id of proposalIds) proposals[id] = selected;
+  for (const id of settlementIds) settlements[id] = selected;
+  return { ...choices, proposals, settlements };
+}
+
+/**
+ * Items of new people that are unticked: by the server's mark when `choices` is omitted (what arrived), by the current
+ * choices otherwise (what would be left out of the apply).
+ */
+export function newPersonItemCounts(preview: OrganizePreview, choices?: OrganizeChoices): { proposals: number; settlements: number } {
+  const off = (id: string, defaultSelected: boolean, map?: Record<string, boolean>) => (map ? map[id] !== true : defaultSelected !== true);
+  return {
+    proposals: preview.proposals.filter((p) => p.person.id === null && off(p.id, p.defaultSelected, choices?.proposals)).length,
+    settlements: preview.settlements.filter((s) => s.person.id === null && off(s.id, s.defaultSelected, choices?.settlements)).length,
+  };
 }
 
 export function setProposalAmount(choices: OrganizeChoices, id: string, text: string): OrganizeChoices {

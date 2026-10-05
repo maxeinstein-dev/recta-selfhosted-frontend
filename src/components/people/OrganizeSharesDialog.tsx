@@ -8,13 +8,14 @@ import { formatCurrency } from '../../utils/format';
 import {
   DEFAULT_OPTIONS_DRAFT, addExtraAlias, buildOrganizeApply, buildOrganizeOptions, buildRegistry, emptyChoices, organizeBlocker,
   organizeFailureMessage, organizeResultLines, organizeSummary, reconcileChoices, removeExtraAlias, reviewAmountCents, setAllProposals, setAllSettlements,
-  setAssignment, setProposal, setProposalAmount, setRename, setReview, setSettlement, targetOfDetected,
+  setAssignment, setDetectedItems, setProposal, setProposalAmount, setRename, setReview, setSettlement, targetOfDetected,
+  itemsOfDetected, newPersonItemCounts,
 } from '../../utils/organizeShares';
 import type { BuiltOrganize, OrganizeChoices, OrganizeOptionsDraft, PersonGroup, ResolvedReviewLine } from '../../utils/organizeShares';
 import { formatCentsInput, reaisToCents } from '../../utils/people';
 import {
   BOX_CLS, BTN_PRIMARY, BTN_SECONDARY, BTN_SECONDARY_SM, CHECKBOX_CLS, Chip, DialogShell, ERROR_CLS, ERROR_TOAST_MS, H4_CLS, INPUT_CLS, INPUT_SM_CLS, LABEL_CLS,
-  LINK_CLS, MUTED_CLS, TABLE_WRAP_CLS, TBODY_CLS, TD_CLS, TH_CLS, THEAD_ROW_CLS, WARN_BOX_CLS, fmtDate, getErrorMessage,
+  LINK_CLS, MUTED_CLS, NOTICE_BOX_CLS, TABLE_WRAP_CLS, TBODY_CLS, TD_CLS, TH_CLS, THEAD_ROW_CLS, WARN_BOX_CLS, fmtDate, getErrorMessage,
 } from './ui';
 
 const DIRECTION_SHORT: Record<ShareDirection, string> = { THEY_OWE_ME: 'ela me deve', I_OWE_THEM: 'eu devo' };
@@ -99,6 +100,7 @@ const PeopleSection = ({ preview, choices, existing, groups, disabled, onChoices
               <th className={TH_CLS}>Nome encontrado</th>
               <th className={`${TH_CLS} text-right`}>Usos</th>
               <th className={TH_CLS}>É</th>
+              <th className={TH_CLS}>Itens</th>
             </tr>
           </thead>
           <tbody className={TBODY_CLS}>
@@ -119,6 +121,20 @@ const PeopleSection = ({ preview, choices, existing, groups, disabled, onChoices
                       {activeExisting.map((p) => <option key={p.id} value={`existing:${p.id}`}>A mesma que “{p.name}” (já cadastrada)</option>)}
                     </select>
                     {value !== '' && target.kind === 'new' && <span className={`block text-xs ${MUTED_CLS}`}>Junta com {target.name}</span>}
+                  </td>
+                  <td className={TD_CLS}>
+                    {(() => {
+                      const items = itemsOfDetected(preview, detected.key);
+                      const total = items.proposalIds.length + items.settlementIds.length;
+                      if (total === 0) return <span className={MUTED_CLS}>—</span>;
+                      const allTicked = items.proposalIds.every((id) => choices.proposals[id] === true) && items.settlementIds.every((id) => choices.settlements[id] === true);
+                      return (
+                        <button type="button" disabled={disabled} className={LINK_CLS} aria-label={`${allTicked ? 'Desmarcar' : 'Marcar'} todas de ${detected.name}`}
+                          onClick={() => onChoices((c) => setDetectedItems(c, preview, detected.key, !allTicked))}>
+                          {allTicked ? 'Desmarcar' : 'Marcar'} {total === 1 ? 'o item' : `os ${total} itens`}
+                        </button>
+                      );
+                    })()}
                   </td>
                 </tr>
               );
@@ -228,6 +244,8 @@ const ReviewRow = ({ item, existing, registry, disabled, money, onChange }: Revi
 
 interface FooterProps {
   built: BuiltOrganize;
+  /** Items of new people still unticked: they stay out of the apply. */
+  leftOut: number;
   blocker: ReturnType<typeof organizeBlocker>;
   applying: boolean;
   refreshing: boolean;
@@ -238,7 +256,7 @@ interface FooterProps {
   onRefresh: () => void;
 }
 
-const Footer = ({ built, blocker, applying, refreshing, applyError, money, onBack, onApply, onRefresh }: FooterProps) => {
+const Footer = ({ built, leftOut, blocker, applying, refreshing, applyError, money, onBack, onApply, onRefresh }: FooterProps) => {
   const { totals } = built;
   const parts: string[] = [];
   const shares = totals.proposals.count + totals.manual.count;
@@ -268,6 +286,11 @@ const Footer = ({ built, blocker, applying, refreshing, applyError, money, onBac
           </button>
         </div>
       </div>
+      {leftOut > 0 && (
+        <p id="organize-left-out" className={`text-xs ${MUTED_CLS}`}>
+          {leftOut === 1 ? '1 item de pessoa nova fica de fora' : `${leftOut} itens de pessoas novas ficam de fora`}.
+        </p>
+      )}
       {blocker && blocker.code !== 'applying' && (
         <p id={BLOCKER_ID} className={`text-xs ${blocker.code === 'none-selected' ? MUTED_CLS : 'text-red-600 dark:text-red-400'}`}>{blocker.message}</p>
       )}
@@ -460,6 +483,19 @@ const OrganizeSharesDialog = ({ open, onClose, householdId }: OrganizeSharesDial
             <ul className={WARN_BOX_CLS}>{preview.warnings.map((w, i) => <li key={i}>{w}</li>)}</ul>
           )}
 
+          {(() => {
+            const arrived = newPersonItemCounts(preview);
+            if (arrived.proposals + arrived.settlements === 0) return null;
+            const parts: string[] = [];
+            if (arrived.proposals > 0) parts.push(arrived.proposals === 1 ? '1 divisão' : `${arrived.proposals} divisões`);
+            if (arrived.settlements > 0) parts.push(arrived.settlements === 1 ? '1 acerto' : `${arrived.settlements} acertos`);
+            return (
+              <p id="organize-new-people-note" role="note" className={NOTICE_BOX_CLS}>
+                {parts.join(' e ')} de pessoas novas {arrived.proposals + arrived.settlements === 1 ? 'vem desmarcado' : 'vêm desmarcados'}: marque para criar a pessoa.
+              </p>
+            );
+          })()}
+
           <div className={`space-y-6 min-w-0 transition-opacity ${isRefreshing ? 'opacity-60' : ''}`} aria-busy={isRefreshing}>
             {proposals.length + reviewItems.length + settlements.length === 0 && (
               <p className={`text-sm ${MUTED_CLS}`}>Nada para organizar: nenhuma nota de divisão nem acerto encontrado.</p>
@@ -478,7 +514,11 @@ const OrganizeSharesDialog = ({ open, onClose, householdId }: OrganizeSharesDial
                     <button type="button" className={LINK_CLS} disabled={busy} onClick={() => onChoices((c) => setAllProposals(c, preview, false))}>Desmarcar todas</button>
                   </div>
                 </div>
-                <p className={`text-xs ${MUTED_CLS}`}>Marcadas como o servidor sugere. Para mudar o valor de uma, digite o valor certo em “Ajustar”.</p>
+                <p className={`text-xs ${MUTED_CLS}`}>
+                  Vêm marcadas as que o servidor sugere; as de pessoas novas vêm desmarcadas, porque marcar uma cria a pessoa (use “Marcar os itens” na lista de
+                  pessoas novas, ou marque aqui). “Marcar todas” marca as sugeridas e as de pessoas novas; as que o servidor deixou de fora por outro motivo
+                  continuam desmarcadas. Para mudar o valor de uma, digite o valor certo em “Ajustar”.
+                </p>
                 <div className={TABLE_WRAP_CLS}>
                   <table className="w-full text-sm">
                     <thead>
@@ -611,7 +651,7 @@ const OrganizeSharesDialog = ({ open, onClose, householdId }: OrganizeSharesDial
             )}
           </div>
 
-          <Footer built={built} blocker={blocker} applying={applying} refreshing={isRefreshing} applyError={applyError} money={money}
+          <Footer built={built} leftOut={(() => { const left = newPersonItemCounts(preview, choices); return left.proposals + left.settlements; })()} blocker={blocker} applying={applying} refreshing={isRefreshing} applyError={applyError} money={money}
             onBack={handleBack} onApply={() => void handleApply()} onRefresh={() => void handleRefresh()} />
         </div>
       ) : (

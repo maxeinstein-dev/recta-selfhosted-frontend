@@ -13,7 +13,7 @@ import {
 import type { ShareDraft, ShareDraftRow } from '../../utils/people';
 import PersonFormDialog from './PersonFormDialog';
 import {
-  BTN_PRIMARY, BTN_SECONDARY, BTN_SECONDARY_SM, DialogShell, ERROR_CLS, INPUT_SM_CLS, LABEL_CLS, LINK_CLS, MUTED_CLS, NOTICE_BOX_CLS,
+  BTN_DANGER, BTN_PRIMARY, BTN_SECONDARY, BTN_SECONDARY_SM, DialogShell, ERROR_CLS, INPUT_SM_CLS, LABEL_CLS, LINK_CLS, MUTED_CLS, NOTICE_BOX_CLS,
   getErrorMessage,
 } from './ui';
 
@@ -387,7 +387,7 @@ const DivideTransactionDialog = ({ open, onClose, householdId, transaction, read
               <p className="font-medium">Remover todas as partes?</p>
               <p>As partes de todas as pessoas desta transação, nos dois sentidos, serão apagadas.</p>
               <div className="flex gap-3 pt-1">
-                <button type="button" onClick={() => void handleClearAll()} disabled={saving} className={BTN_PRIMARY}>{saving ? 'Removendo…' : 'Remover'}</button>
+                <button type="button" onClick={() => void handleClearAll()} disabled={saving} className={BTN_DANGER}>{saving ? 'Removendo…' : 'Remover'}</button>
                 <button type="button" onClick={() => setConfirmingClear(false)} disabled={saving} className={BTN_SECONDARY}>Manter</button>
               </div>
             </div>

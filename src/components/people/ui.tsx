@@ -79,7 +79,9 @@ function unlockScroll(): void {
   if (openShells.length === 0) document.body.style.overflow = savedOverflow;
 }
 
-const FOCUSABLE = 'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]):not([data-shell-close])';
+// The first thing worth typing in: an enabled field. Buttons are not "relevant" first targets (Cancelar is enabled while a
+// dialog is still loading).
+const FIELDS = 'input:not([disabled]):not([type=hidden]), select:not([disabled]), textarea:not([disabled])';
 
 /** Portal, backdrop, scroll lock, ESC for the topmost shell only, focus in and back, and the close guard. */
 export const DialogShell = ({ open, onClose, canClose, titleId, title, icon, widthClass = 'max-w-2xl', zClass = 'z-[60]', children }: DialogShellProps) => {
@@ -88,29 +90,52 @@ export const DialogShell = ({ open, onClose, canClose, titleId, title, icon, wid
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
   const panelRef = useRef<HTMLDivElement>(null);
+  // The control that had focus when this opening began (undefined: not captured). It is read during the render that
+  // opens the dialog, BEFORE the children mount: a child with autoFocus would already hold the focus by any effect.
+  const returnFocusRef = useRef<HTMLElement | null | undefined>(undefined);
+  const focusedFieldRef = useRef(false);
+  if (!open) {
+    returnFocusRef.current = undefined;
+  } else if (returnFocusRef.current === undefined) {
+    const active = typeof document !== 'undefined' ? (document.activeElement as HTMLElement | null) : null;
+    returnFocusRef.current = active && active !== document.body ? active : null;
+  }
 
   useEffect(() => {
     if (!open) return;
     const id = Symbol('shell');
-    const active = document.activeElement as HTMLElement | null;
-    const before = active && active !== document.body ? active : null;
+    // Read now: by the cleanup the closing render has already reset the ref.
+    const returnTo = returnFocusRef.current;
     openShells.push(id);
     lockScroll();
+    focusedFieldRef.current = false;
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key !== 'Escape' || openShells[openShells.length - 1] !== id) return;
       if (canCloseRef.current) onCloseRef.current();
     };
     window.addEventListener('keydown', handleEscape);
-    // The first control, else the panel itself, so the keyboard starts inside the dialog.
-    const panel = panelRef.current;
-    if (panel && !panel.contains(document.activeElement)) (panel.querySelector<HTMLElement>(FOCUSABLE) ?? panel).focus();
     return () => {
       window.removeEventListener('keydown', handleEscape);
       openShells.splice(openShells.indexOf(id), 1);
       unlockScroll();
-      if (before && before.isConnected) before.focus();
+      if (returnTo && returnTo.isConnected) returnTo.focus();
     };
   }, [open]);
+
+  // Focus: the panel itself while there is nothing to type in (loading), then the first field as soon as one exists --
+  // once, and only if the user has not already moved focus somewhere inside.
+  useEffect(() => {
+    if (!open || focusedFieldRef.current) return;
+    const panel = panelRef.current;
+    if (!panel) return;
+    const inside = panel.contains(document.activeElement) && document.activeElement !== panel;
+    const field = panel.querySelector<HTMLElement>(FIELDS);
+    if (inside) focusedFieldRef.current = true;
+    else if (field) {
+      field.focus();
+      focusedFieldRef.current = true;
+    } else if (document.activeElement !== panel) panel.focus();
+  });
 
   if (!open) return null;
   const requestClose = () => {

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, ChevronDown, ChevronRight, FileUp, RefreshCw, Upload, X } from 'lucide-react';
+import { ArrowLeft, ChevronDown, ChevronRight, FastForward, FileUp, RefreshCw, SkipForward, Upload, X } from 'lucide-react';
 import { useAccounts } from '../hooks/api/useAccounts';
 import type { Account } from '../hooks/api/useAccounts';
 import { useCategories } from '../hooks/api/useCategories';
@@ -34,6 +34,13 @@ import type {
   CardOfxBlocker, CardOfxBuiltConfirm, CardOfxGroupSection, CardOfxGroupView, CardOfxNewLinesNotice, CardOfxPaymentChoice, CardOfxSelection,
   CardOfxTotals,
 } from '../utils/cardOfx';
+import { QueueHeader, QueueProgressList } from './ImportQueuePanel';
+import { NO_CLOSING_DAY_NOTICE, cardQueueTotalsLine, lacksClosingDay, planCardDefaultApply, sumCardOfxResults } from '../utils/cardOfxQueue';
+import {
+  applyDefaultsToRemaining, canConfirmCurrent, completeCurrent, createQueue, failCurrent, followingCount, isQueueFinished, queueSummaryLine,
+  remainingCount, retryCurrent, skipCurrent,
+} from '../utils/importQueue';
+import type { ApplyOutcome, QueueState } from '../utils/importQueue';
 
 // ---------------------------------------------------------------------------
 // Shared styles (mirrors ImportMaxFinDialog)
@@ -66,6 +73,9 @@ const WARN_BOX_CLS =
 const NOTICE_BOX_CLS =
   'rounded-md border border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20 px-4 py-3 text-sm text-orange-900 dark:text-orange-200 space-y-1';
 
+const INFO_BOX_CLS =
+  'rounded-md border border-blue-200 dark:border-blue-900/60 bg-blue-50 dark:bg-blue-900/20 px-4 py-2 text-xs text-blue-900 dark:text-blue-200';
+
 const CHIP_TONES = {
   green: 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300',
   yellow: 'bg-yellow-100 dark:bg-yellow-900/40 text-yellow-800 dark:text-yellow-300',
@@ -85,6 +95,7 @@ const MONTH_MIN = monthToInputValue({ year: MAXFIN_MIN_YEAR, month: 1 });
 const MONTH_MAX = monthToInputValue({ year: MAXFIN_MAX_YEAR, month: 12 });
 const ERROR_TOAST_MS = 10000;
 const BLOCKER_ID = 'card-ofx-confirm-blocker';
+const NO_FILES: File[] = [];
 
 type PreviewOutcome = 'ok' | 'error' | 'stale';
 type RunPreview = (target: File, opts?: CardOfxOptionsInput) => Promise<PreviewOutcome>;
@@ -113,17 +124,27 @@ const signedAmount = (amount: number, type: string, currency: CurrencyCode): str
 
 interface FileStepProps {
   cardName: string; file: File | null; isPreviewing: boolean; canPreview: boolean;
+  /** In a queue the file is the one on screen: it cannot be swapped here. */
+  queued?: boolean;
   /** Resolves to whether the file was accepted; a rejected file is also cleared from the input. */
   onFileChange: (file: File | null) => boolean; onPreview: () => void; onCancel: () => void;
 }
 
-const FileStep = ({ cardName, file, isPreviewing, canPreview, onFileChange, onPreview, onCancel }: FileStepProps) => (
+const FileStep = ({ cardName, file, isPreviewing, canPreview, queued = false, onFileChange, onPreview, onCancel }: FileStepProps) => (
   <div className="space-y-4 min-w-0">
     <p className={`text-sm ${MUTED_CLS}`}>
       Envie a fatura do cartão <strong className="font-medium text-gray-900 dark:text-white">{cardName}</strong> exportada como .ofx. As
       compras são conciliadas com as transações do mês (as linhas da planilha ficam, com a data e a descrição do banco); nada é gravado
       antes de confirmar.
     </p>
+    {queued ? (
+      file && (
+        <p className={`flex items-center gap-2 text-sm ${MUTED_CLS}`}>
+          <FileUp className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+          <span className="truncate">{file.name}</span>
+        </p>
+      )
+    ) : (
     <div>
       <label htmlFor="card-ofx-file" className={LABEL_CLS}>Fatura do cartão (.ofx, até 5 MB)</label>
       <input id="card-ofx-file" type="file" accept=".ofx" disabled={isPreviewing} className={FILE_INPUT_CLS}
@@ -137,6 +158,7 @@ const FileStep = ({ cardName, file, isPreviewing, canPreview, onFileChange, onPr
         </p>
       )}
     </div>
+    )}
     <div className="flex gap-3 justify-end pt-2">
       <button type="button" onClick={onCancel} className={BTN_SECONDARY}>Cancelar</button>
       <button type="button" onClick={onPreview} disabled={!canPreview} className={BTN_PRIMARY}>
@@ -594,12 +616,16 @@ const OrphanLines = ({ lines, currency }: { lines: CardOfxLine[]; currency: Curr
 interface PreviewFooterProps {
   built: CardOfxBuiltConfirm; blocker: CardOfxBlocker | null; payment: CardOfxPayment | null; busy: boolean; isConfirming: boolean;
   confirmError: string | null; currency: CurrencyCode; accountName: (id: string) => string;
-  onBack: () => void; onConfirm: () => void; onRefresh: () => void;
+  /** Absent in a queue: going back would swap the file. */
+  onBack?: () => void; onConfirm: () => void; onRefresh: () => void;
+  /** "Confirmar e continuar" while more files follow. */
+  confirmLabel?: string;
 }
 
 /** Numbers come from buildCardOfxConfirm, the same groups the request is built from. */
 const PreviewFooter = ({
   built, blocker, payment, busy, isConfirming, confirmError, currency, accountName, onBack, onConfirm, onRefresh,
+  confirmLabel = 'Confirmar importação',
 }: PreviewFooterProps) => {
   const { totals } = built;
   // After a failed confirm the preview is stale: nothing about the payment is promised until it is refreshed.
@@ -630,13 +656,15 @@ const PreviewFooter = ({
           {promise && !stale && <p className={MUTED_CLS}>{promise}</p>}
         </div>
         <div className="flex gap-3">
-          <button type="button" onClick={onBack} disabled={busy} className={BTN_SECONDARY}>
-            <ArrowLeft className="h-4 w-4 mr-2" aria-hidden="true" />
-            Voltar
-          </button>
+          {onBack && (
+            <button type="button" onClick={onBack} disabled={busy} className={BTN_SECONDARY}>
+              <ArrowLeft className="h-4 w-4 mr-2" aria-hidden="true" />
+              Voltar
+            </button>
+          )}
           <button type="button" onClick={onConfirm} disabled={busy || blocker !== null} title={blocker?.message}
             aria-describedby={blocker ? BLOCKER_ID : undefined} className={BTN_PRIMARY}>
-            {isConfirming ? 'Importando…' : 'Confirmar importação'}
+            {isConfirming ? 'Importando…' : confirmLabel}
           </button>
         </div>
       </div>
@@ -690,6 +718,42 @@ const ResultStep = ({ result, lines, onClose }: { result: CardOfxConfirmResponse
 };
 
 // ---------------------------------------------------------------------------
+// Queue: final summary
+// ---------------------------------------------------------------------------
+
+interface QueueSummaryProps {
+  state: QueueState; results: ReadonlyArray<{ name: string; data: CardOfxConfirmResponse }>; onClose: () => void;
+}
+
+const QueueSummary = ({ state, results, onClose }: QueueSummaryProps) => {
+  const counts = queueSummaryLine(state, { done: ['fatura importada', 'faturas importadas'], skipped: ['pulada', 'puladas'], failed: ['com falha', 'com falha'] });
+  const warnings = results.flatMap((r) => (r.data.warnings ?? []).map((warning) => `${r.name}: ${warning}`));
+  return (
+    <div className="space-y-4 min-w-0">
+      <div>
+        <h4 className={H4_CLS}>Importação concluída</h4>
+        <p className="mt-1 text-sm text-gray-900 dark:text-white">{counts || 'Nenhuma fatura foi importada'}.</p>
+        {results.length > 0 && (
+          <p className={`mt-1 text-sm ${MUTED_CLS}`}>Total: {cardQueueTotalsLine(sumCardOfxResults(results.map((r) => r.data)))}.</p>
+        )}
+      </div>
+      <QueueProgressList state={state} />
+      {warnings.length > 0 && (
+        <div>
+          <h4 className={`${H4_CLS} mb-1`}>{countLabel(warnings.length, 'aviso', 'avisos')}</h4>
+          <ul className={`${WARN_BOX_CLS} max-h-64 overflow-y-auto`}>
+            {warnings.map((warning, index) => <li key={index}>{warning}</li>)}
+          </ul>
+        </div>
+      )}
+      <div className="flex justify-end pt-2">
+        <button type="button" onClick={onClose} autoFocus className={BTN_PRIMARY}>Fechar</button>
+      </div>
+    </div>
+  );
+};
+
+// ---------------------------------------------------------------------------
 // Dialog
 // ---------------------------------------------------------------------------
 
@@ -702,9 +766,14 @@ interface ImportCardOfxDialogProps {
   householdId?: string;
   /** File handed over by the generic import: the preview starts as soon as the dialog opens. */
   initialFile?: File | null;
+  /**
+   * Several invoices, already in the order to import (oldest first): they go one after the other, each one
+   * previewed only after the previous one was confirmed (or skipped). Read when the dialog opens.
+   */
+  files?: File[];
 }
 
-const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdIdProp, initialFile = null }: ImportCardOfxDialogProps) => {
+const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdIdProp, initialFile = null, files }: ImportCardOfxDialogProps) => {
   const { householdId: defaultHouseholdId } = useDefaultHousehold();
   const householdId = householdIdProp ?? defaultHouseholdId;
   const { success, error: showError, showToast } = useToastContext();
@@ -747,9 +816,32 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
   // Latest runPreview, for the preview started by the open effect.
   const runPreviewRef = useRef<RunPreview>(async () => 'error');
 
+  // Queue of invoices (the `files` prop). The files are read when the dialog opens.
+  const queueFilesRef = useRef<File[]>(files ?? NO_FILES);
+  queueFilesRef.current = files ?? NO_FILES;
+  const [queue, setQueue] = useState<QueueState | null>(null);
+  // Account the payment of the previous invoice comes from, chosen once for the whole queue.
+  const [queueSource, setQueueSource] = useState('');
+  const queueSourceRef = useRef('');
+  // Why "apply the default" stopped, shown above the file it stopped at.
+  const [queueStop, setQueueStop] = useState<string | null>(null);
+  const [queueResults, setQueueResults] = useState<Array<{ name: string; data: CardOfxConfirmResponse }>>([]);
+  // The loop "apply the default to the rest" is running: nothing else may touch the queue and the dialog cannot close.
+  const [applying, setApplying] = useState(false);
+  const applyingRef = useRef(false);
+  const accountsRef = useRef(accounts);
+  // Preview the loop got for the file it stopped at: shown as is, without asking the server again.
+  const loopPreviewRef = useRef<{ index: number; data: CardOfxPreviewResponse } | null>(null);
+  // Latest startFile, for the open effect.
+  const startFileRef = useRef<(index: number, adopt?: CardOfxPreviewResponse) => void>(() => undefined);
+
   useEffect(() => {
     customIdsRef.current = customIdsByType;
   }, [customIdsByType]);
+
+  useEffect(() => {
+    accountsRef.current = accounts;
+  }, [accounts]);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -774,7 +866,21 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
     setConfirmError(null);
     setResult(null);
     lastPreviewRef.current = null;
-    if (initialFile && !handedOver) void runPreviewRef.current(initialFile);
+    setQueueSource('');
+    queueSourceRef.current = '';
+    setQueueStop(null);
+    setQueueResults([]);
+    setApplying(false);
+    applyingRef.current = false;
+    loopPreviewRef.current = null;
+    const queued = queueFilesRef.current;
+    if (queued.length > 0) {
+      setQueue(createQueue(queued.map((f) => f.name)));
+      startFileRef.current(0);
+    } else {
+      setQueue(null);
+      if (initialFile && !handedOver) void runPreviewRef.current(initialFile);
+    }
     return () => {
       seqRef.current += 1;
     };
@@ -794,7 +900,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
   useEffect(() => {
     if (!open) return;
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && !confirmingRef.current) onClose();
+      if (e.key === 'Escape' && !confirmingRef.current && !applyingRef.current) onClose();
     };
     window.addEventListener('keydown', handleEscape);
     return () => window.removeEventListener('keydown', handleEscape);
@@ -821,9 +927,32 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
   const cardName = accountName(preview?.accountId ?? accountId);
   const sections = built?.sections ?? null;
   const notice = sections ? newLinesNotice(sections) : null;
-  // Closing is blocked while the confirm request is in flight: the import must not be abandoned halfway.
+  // Closing is blocked while the confirm request is in flight (and while the loop of a queue runs): the import must
+  // not be abandoned halfway.
   const requestClose = () => {
-    if (!confirmingRef.current && !isConfirming) onClose();
+    if (!confirmingRef.current && !isConfirming && !applyingRef.current) onClose();
+  };
+  const queueFinished = queue !== null && isQueueFinished(queue);
+  const cardAccount = accounts.find((a) => a.id === (preview?.accountId ?? accountId));
+  const showClosingNotice = lacksClosingDay(cardAccount) && !result && !queueFinished;
+  const queueBusy = isPreviewing || isConfirming || applying;
+
+  /** The payment source chosen for the queue fills the one of the file while that one is still empty. */
+  const withQueueSource = (choice: CardOfxPaymentChoice): CardOfxPaymentChoice =>
+    choice.sourceAccountId || !queueSourceRef.current ? choice : { ...choice, sourceAccountId: queueSourceRef.current };
+
+  /** Merges a preview into the state: the choices of the user survive for the groups that did not change. */
+  const adoptPreview = (data: CardOfxPreviewResponse) => {
+    const prev = lastPreviewRef.current;
+    lastPreviewRef.current = data;
+    const groups = buildCardOfxSections(data).groups;
+    setPreview(data);
+    setConfirmError(null);
+    setSelection((current) => reconcileGroupSelection(prev?.proposals ?? [], current, groups));
+    setPaymentChoice((current) => withQueueSource(reconcilePaymentChoice(prev?.payment ?? null, current, data.payment)));
+    setCategoryChoices((current) =>
+      resolveCategoryChoices(data.categoryMap ?? [], current, loadSavedCategoryChoices(data.householdId || householdId), customIdsRef.current));
+    setMonthInput(monthToInputValue(data.month));
   };
 
   /** Runs the preview and merges the result into the state, unless a newer run or a close got ahead of it. */
@@ -834,16 +963,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
     try {
       const data = await previewMutation.mutateAsync({ accountId, options: opts, file: target });
       if (!isCurrent()) return 'stale';
-      const prev = lastPreviewRef.current;
-      lastPreviewRef.current = data;
-      const groups = buildCardOfxSections(data).groups;
-      setPreview(data);
-      setConfirmError(null);
-      setSelection((current) => reconcileGroupSelection(prev?.proposals ?? [], current, groups));
-      setPaymentChoice((current) => reconcilePaymentChoice(prev?.payment ?? null, current, data.payment));
-      setCategoryChoices((current) =>
-        resolveCategoryChoices(data.categoryMap ?? [], current, loadSavedCategoryChoices(data.householdId || householdId), customIdsRef.current));
-      setMonthInput(monthToInputValue(data.month));
+      adoptPreview(data);
       return 'ok';
     } catch (err: unknown) {
       if (!isCurrent()) return 'stale';
@@ -852,6 +972,128 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
     }
   };
   runPreviewRef.current = runPreview;
+
+  // ---- Queue ----------------------------------------------------------------------------------------------
+
+  /** Puts the file of the queue at `index` on screen: clean state, then its preview (or the one already at hand). */
+  const startFile = (index: number, adopt?: CardOfxPreviewResponse) => {
+    const target = queueFilesRef.current[index];
+    const problem = target ? validateCardOfxFile(target) : null;
+    seqRef.current += 1;
+    setFile(target && !problem ? target : null);
+    setPreview(null);
+    setMonthOverride(null);
+    setMonthInput('');
+    setSelection({});
+    setPaymentChoice(defaultPaymentChoice(null));
+    setCategoryChoices({});
+    setFormError(problem);
+    setConfirmError(null);
+    lastPreviewRef.current = null;
+    if (!target || problem) return;
+    if (adopt) adoptPreview(adopt);
+    else void runPreviewRef.current(target);
+  };
+  startFileRef.current = startFile;
+
+  /** Nothing is on screen any more: the queue is over. */
+  const clearFileState = () => {
+    seqRef.current += 1;
+    setFile(null);
+    setPreview(null);
+    setSelection({});
+    setPaymentChoice(defaultPaymentChoice(null));
+    setMonthOverride(null);
+    setMonthInput('');
+    setConfirmError(null);
+    lastPreviewRef.current = null;
+  };
+
+  /** The queue moved on: the next file is previewed (only now: futures and payments depend on what was just applied). */
+  const moveQueueTo = (next: QueueState) => {
+    setQueue(next);
+    if (isQueueFinished(next)) clearFileState();
+    else startFile(next.index);
+  };
+
+  const handleQueueSourceChange = (value: string) => {
+    setQueueSource(value);
+    queueSourceRef.current = value;
+    setPaymentChoice((current) => (current.sourceAccountId ? current : { ...current, sourceAccountId: value }));
+  };
+
+  const handleSkip = () => {
+    if (!queue || queueBusy || confirmingRef.current || applyingRef.current) return;
+    setQueueStop(null);
+    moveQueueTo(skipCurrent(queue));
+  };
+
+  /** For this file and every one after it: preview, then confirm with the default groups; stops at the first that cannot. */
+  const handleApplyDefaults = async () => {
+    if (!queue || queueBusy || applyingRef.current || confirmingRef.current || !canConfirmCurrent(queue)) return;
+    applyingRef.current = true;
+    setApplying(true);
+    setQueueStop(null);
+    seqRef.current += 1;
+    loopPreviewRef.current = null;
+    const results: Array<{ name: string; data: CardOfxConfirmResponse }> = [];
+    const applyOne = async (index: number): Promise<ApplyOutcome> => {
+      const target = queueFilesRef.current[index];
+      const problem = validateCardOfxFile(target);
+      if (problem) return { ok: false, written: false, reason: problem };
+      let data: CardOfxPreviewResponse;
+      try {
+        data = await previewMutation.mutateAsync({ accountId, file: target });
+      } catch (err: unknown) {
+        return { ok: false, written: false, reason: getErrorMessage(err, 'Não foi possível pré-visualizar a fatura.') };
+      }
+      loopPreviewRef.current = { index, data };
+      const plan = planCardDefaultApply(
+        data,
+        { accounts: accountsRef.current, customIdsByType: customIdsRef.current },
+        { sourceAccountId: queueSourceRef.current, savedChoices: loadSavedCategoryChoices(data.householdId || householdId) },
+      );
+      if (!plan.ok) return { ok: false, written: false, reason: plan.reason };
+      confirmingRef.current = true;
+      try {
+        const confirmed = await confirmMutation.mutateAsync(plan.built.payload);
+        const text = buildCardOfxSummary(confirmed, (value) => formatCurrency(value, baseCurrency));
+        success(text);
+        results.push({ name: target.name, data: confirmed });
+        return { ok: true, note: text.replace(/^Fatura importada:\s*/, '') };
+      } catch (err: unknown) {
+        const message = cardOfxFailureMessage(getErrorMessage(err, 'Não foi possível confirmar a importação.'));
+        showToast(message, 'error', ERROR_TOAST_MS);
+        return { ok: false, written: true, reason: message };
+      } finally {
+        confirmingRef.current = false;
+      }
+    };
+    try {
+      const run = await applyDefaultsToRemaining(queue, applyOne, {
+        shouldStop: () => !mountedRef.current,
+        onProgress: (state) => {
+          if (mountedRef.current) setQueue(state);
+        },
+      });
+      if (!mountedRef.current) return;
+      setQueueResults((prev) => [...prev, ...results]);
+      setQueue(run.state);
+      if (isQueueFinished(run.state)) {
+        clearFileState();
+      } else if (run.stop) {
+        setQueueStop(`${run.stop.name}: ${run.stop.reason}`);
+        // Assigned inside applyOne (TS does not follow the closure).
+        const got = loopPreviewRef.current as { index: number; data: CardOfxPreviewResponse } | null;
+        startFile(run.state.index, got && got.index === run.state.index ? got.data : undefined);
+        // A confirm that failed may have applied part of it: the preview on screen is stale until it is refreshed.
+        if (run.state.items[run.state.index]?.status === 'failed') setConfirmError(run.stop.reason);
+      }
+    } finally {
+      applyingRef.current = false;
+      if (mountedRef.current) setApplying(false);
+    }
+  };
 
   /** Resolves to whether the file was accepted; a rejected file is also cleared from the input. */
   const handleFileChange = (selectedFile: File | null): boolean => {
@@ -887,7 +1129,9 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
   // After a failed confirm: run the preview again; whatever was applied comes back as reconciled.
   const handleRefresh = async () => {
     if (!file) return;
-    await runPreview(file, monthOverride ? { monthOverride } : undefined);
+    const outcome = await runPreview(file, monthOverride ? { monthOverride } : undefined);
+    // A refreshed file can be confirmed again (what was applied before comes back as reconciled).
+    if (outcome === 'ok') setQueue((current) => (current ? retryCurrent(current) : current));
   };
 
   const handleToggleGroup = (group: CardOfxGroupView, checked: boolean) => setSelection((prev) => setGroupSelected(prev, group, checked));
@@ -913,12 +1157,23 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
     confirmingRef.current = true;
     try {
       const data = await confirmMutation.mutateAsync(built.payload);
-      success(buildCardOfxSummary(data, (value) => formatCurrency(value, baseCurrency)));
-      if (mountedRef.current) setResult(data);
+      const text = buildCardOfxSummary(data, (value) => formatCurrency(value, baseCurrency));
+      success(text);
+      if (!mountedRef.current) return;
+      if (queue) {
+        setQueueResults((prev) => [...prev, { name: file?.name ?? '', data }]);
+        setQueueStop(null);
+        moveQueueTo(completeCurrent(queue, text.replace(/^Fatura importada:\s*/, '')));
+      } else {
+        setResult(data);
+      }
     } catch (err: unknown) {
       const message = cardOfxFailureMessage(getErrorMessage(err, 'Não foi possível confirmar a importação.'));
       showToast(message, 'error', ERROR_TOAST_MS);
-      if (mountedRef.current) setConfirmError(message);
+      if (mountedRef.current) {
+        setConfirmError(message);
+        if (queue) setQueue(failCurrent(queue, getErrorMessage(err, 'Não foi possível confirmar a importação.')));
+      }
     } finally {
       confirmingRef.current = false;
     }
@@ -941,15 +1196,62 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
                 Importar fatura do cartão (OFX)
               </h3>
             </div>
-            <button type="button" onClick={requestClose} disabled={isConfirming} aria-label="Fechar modal"
+            <button type="button" onClick={requestClose} disabled={isConfirming || applying} aria-label="Fechar modal"
               className="text-gray-400 dark:text-gray-500 hover:opacity-70 transition-opacity p-1 disabled:opacity-40 disabled:cursor-not-allowed">
               <X className="h-5 w-5" aria-hidden="true" />
             </button>
           </div>
 
+          {queue && !queueFinished && (
+            <div className="mb-4">
+              <QueueHeader state={queue} noun="Fatura">
+                <div className="space-y-2">
+                  <div className="max-w-sm">
+                    <label htmlFor="card-ofx-queue-source" className={LABEL_CLS}>Conta de origem dos pagamentos</label>
+                    <select id="card-ofx-queue-source" value={queueSource} disabled={queueBusy} className={INPUT_CLS}
+                      onChange={(e) => handleQueueSourceChange(e.target.value)}>
+                      <option value="">Escolha a conta</option>
+                      {paymentSourceAccounts(accounts).map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}
+                    </select>
+                    <p className={`mt-1 text-xs ${MUTED_CLS}`}>
+                      De onde sai o pagamento da fatura anterior quando ele ainda não está registrado. Vale para a fila toda.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <button type="button" onClick={handleSkip} disabled={queueBusy} className={BTN_SECONDARY_SM}>
+                      <SkipForward className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+                      Pular esta fatura
+                    </button>
+                    <button type="button" onClick={() => void handleApplyDefaults()} disabled={queueBusy || !canConfirmCurrent(queue)}
+                      title="Esta fatura e as seguintes: pré-visualiza e confirma só o que o servidor marca, uma por vez; para na primeira que não puder seguir."
+                      className={BTN_SECONDARY_SM}>
+                      <FastForward className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+                      Aplicar o padrão nas restantes ({remainingCount(queue)})
+                    </button>
+                  </div>
+                </div>
+              </QueueHeader>
+            </div>
+          )}
+
+          {queueStop && !applying && !queueFinished && (
+            <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">
+              A aplicação do padrão parou: {queueStop}
+            </p>
+          )}
+
+          {showClosingNotice && <p role="note" className={`mb-4 ${INFO_BOX_CLS}`}>{NO_CLOSING_DAY_NOTICE}</p>}
+
           {formError && <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">{formError}</p>}
 
-          {result ? (
+          {queue && queueFinished ? (
+            <QueueSummary state={queue} results={queueResults} onClose={requestClose} />
+          ) : applying && queue ? (
+            <p role="status" className={`flex items-center gap-2 text-sm ${MUTED_CLS}`}>
+              <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
+              Aplicando o padrão: {queue.items[queue.index]?.name ?? ''}…
+            </p>
+          ) : result ? (
             <ResultStep result={result} lines={cardOfxResultLines(result, (value) => formatCurrency(value, baseCurrency), fmtDate)}
               onClose={requestClose} />
           ) : preview && built && sections ? (
@@ -999,11 +1301,12 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
 
               <PreviewFooter built={built} blocker={blocker} payment={preview.payment} busy={busy} isConfirming={isConfirming}
                 confirmError={confirmError} currency={baseCurrency} accountName={accountName}
-                onBack={handleBack} onConfirm={() => void handleConfirm()} onRefresh={() => void handleRefresh()} />
+                onBack={queue ? undefined : handleBack} onConfirm={() => void handleConfirm()} onRefresh={() => void handleRefresh()}
+                confirmLabel={queue && followingCount(queue) > 0 ? 'Confirmar e continuar' : undefined} />
             </div>
           ) : (
             <FileStep cardName={cardName} file={file} isPreviewing={isPreviewing} canPreview={!isPreviewing && !!file && !!householdId}
-              onFileChange={handleFileChange} onPreview={handlePreview} onCancel={requestClose} />
+              queued={queue !== null} onFileChange={handleFileChange} onPreview={handlePreview} onCancel={requestClose} />
           )}
         </div>
       </div>

@@ -9,6 +9,12 @@ import {
   ResponsiveContainer,
   Tooltip,
 } from 'recharts';
+import { PiePercentLabel } from './PiePercentLabel';
+import { pieOuterRadius } from '../../utils/pieLabel';
+
+/** Real height of the chart: the inline height of ResponsiveContainer wins over any responsive class. */
+const PIE_CHART_HEIGHT = 200;
+type PieLabelRenderProps = { cx: number; cy: number; midAngle: number; outerRadius: number; percent: number; fill?: string };
 import { TrendingUp } from 'lucide-react';
 import { getCategoryDisplayName, CustomCategoryInfo } from '../../lib/enums';
 import { useCategories } from '../../hooks/api/useCategories';
@@ -85,7 +91,7 @@ export const IncomeByCategoryWidget = ({
       </h2>
       <ResponsiveContainer
         width="100%"
-        height={200}
+        height={PIE_CHART_HEIGHT}
         className={`sm:h-[250px] lg:h-[300px] ${blurNumbers ? 'demo-blur' : ''}`}
       >
         <PieChart>
@@ -94,16 +100,8 @@ export const IncomeByCategoryWidget = ({
             cx="50%"
             cy="50%"
             labelLine={false}
-            label={({
-              percent,
-            }: {
-              percent: number;
-            }) => {
-              // Mostrar label apenas se for > 5% para não poluir
-              if (percent < 0.05) return '';
-              return `${(percent * 100).toFixed(0)}%`;
-            }}
-            outerRadius={80}
+            label={(props: PieLabelRenderProps) => <PiePercentLabel {...props} />}
+            outerRadius={pieOuterRadius(PIE_CHART_HEIGHT)}
             fill="#8884d8"
             dataKey="value"
           >

@@ -6,6 +6,12 @@ import { formatCurrency } from '../../utils/format';
 import { getTransactionsByMonth, getRecurringTransactionsForMonth, getTotalExpense } from '../../utils/calculations';
 import { TransactionType, AccountType } from '../../lib/enums';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
+import { PiePercentLabel } from './PiePercentLabel';
+import { pieOuterRadius } from '../../utils/pieLabel';
+
+/** Real height of the chart: the inline height of ResponsiveContainer wins over any responsive class. */
+const PIE_CHART_HEIGHT = 180;
+type PieLabelRenderProps = { cx: number; cy: number; midAngle: number; outerRadius: number; percent: number; fill?: string };
 import { Lock, Zap } from 'lucide-react';
 
 interface FixedVsVariableWidgetProps {
@@ -121,15 +127,15 @@ export const FixedVsVariableWidget = ({ selectedMonth, blurNumbers = false }: Fi
             </div>
           </div>
 
-          <ResponsiveContainer width="100%" height={180} className={`sm:h-[200px] ${blurNumbers ? 'demo-blur' : ''}`}>
+          <ResponsiveContainer width="100%" height={PIE_CHART_HEIGHT} className={blurNumbers ? 'demo-blur' : ''}>
             <PieChart>
               <Pie
                 data={chartData}
                 cx="50%"
                 cy="50%"
                 labelLine={false}
-                label={({ percent }: { percent: number }) => `${(percent * 100).toFixed(0)}%`}
-                outerRadius={70}
+                label={(props: PieLabelRenderProps) => <PiePercentLabel {...props} />}
+                outerRadius={pieOuterRadius(PIE_CHART_HEIGHT)}
                 fill="#8884d8"
                 dataKey="value"
               >

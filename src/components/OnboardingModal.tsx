@@ -149,7 +149,7 @@ export const OnboardingModal = memo(({ isOpen, onComplete }: OnboardingModalProp
   
   const accountForm = useForm<OnboardingAccountFormData>({
     resolver: zodResolver(onboardingAccountSchema),
-    defaultValues: { accountName: '', accountType: AccountType.CHECKING, balance: 0, creditLimit: undefined, dueDay: undefined },
+    defaultValues: { accountName: '', accountType: AccountType.CHECKING, balance: 0, creditLimit: undefined, dueDay: undefined, closingDay: undefined },
   });
   const accountCurrencyMask = useCurrencyMask();
   const creditLimitCurrencyMask = useCurrencyMask();
@@ -219,6 +219,7 @@ export const OnboardingModal = memo(({ isOpen, onComplete }: OnboardingModalProp
             balance: 0,
             creditLimit: undefined,
             dueDay: undefined,
+            closingDay: undefined,
           });
           recurringForm.reset({
             description: t.salary,
@@ -337,6 +338,7 @@ export const OnboardingModal = memo(({ isOpen, onComplete }: OnboardingModalProp
           balance: 0,
           creditLimit: undefined,
           dueDay: undefined,
+          closingDay: undefined,
         });
         accountCurrencyMask.setValue('');
         creditLimitCurrencyMask.setValue('');
@@ -447,6 +449,7 @@ export const OnboardingModal = memo(({ isOpen, onComplete }: OnboardingModalProp
           ...(data.accountType === 'CREDIT' && {
             creditLimit: data.creditLimit,
             dueDay: data.dueDay,
+            closingDay: data.closingDay,
           }),
         });
         
@@ -487,6 +490,7 @@ export const OnboardingModal = memo(({ isOpen, onComplete }: OnboardingModalProp
           balance: 0,
           creditLimit: undefined,
           dueDay: undefined,
+          closingDay: undefined,
         });
         accountCurrencyMask.setValue('');
         creditLimitCurrencyMask.setValue('');

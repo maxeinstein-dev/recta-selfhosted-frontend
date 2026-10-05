@@ -718,6 +718,7 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
       icon: account.icon,
       creditLimit: account.creditLimit,
       dueDay: account.dueDay,
+      closingDay: account.closingDay,
       bestDayOffset: account.bestDayOffset,
     });
 

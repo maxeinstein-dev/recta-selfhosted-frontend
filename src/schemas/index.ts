@@ -191,6 +191,12 @@ export const createSchemas = (t: Translations) => {
     balance: z.number().default(0).transform((val) => sanitizeNumber(val, 1e15)),
     creditLimit: z.number().positive(t.limitMustBePositive).optional().transform((val) => val !== undefined ? sanitizeNumber(val, 1e15) : undefined),
     dueDay: z.number().int().min(1, t.dueDayMin).max(31, t.dueDayMax).optional(),
+    // Dia de fechamento: opcional, mas é ele que dá o mês da fatura ao importar o OFX. Campo vazio (NaN do
+    // valueAsNumber, null ou '') conta como não informado.
+    closingDay: z.preprocess(
+      (val) => (val === null || val === '' || (typeof val === 'number' && Number.isNaN(val)) ? undefined : val),
+      z.number().int().min(1, t.dueDayMin).max(31, t.dueDayMax).optional(),
+    ),
   }).refine((data) => {
     // Se for cartão de crédito, limite é recomendado mas não obrigatório
     if (data.accountType === AccountType.CREDIT && data.creditLimit && data.creditLimit <= 0) {

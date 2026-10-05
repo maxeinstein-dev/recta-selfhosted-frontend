@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useForm } from 'react-hook-form';
 import { useCurrencyMask } from '../../../hooks/useCurrencyMask';
 import { useI18n } from '../../../context/I18nContext';
@@ -36,6 +37,12 @@ export const OnboardingStep5Accounts = ({
 }: OnboardingStep5AccountsProps) => {
   const { t } = useI18n();
   const watchedAccountType = accountForm.watch('accountType');
+  const { clearErrors } = accountForm;
+
+  // The card fields leave the screen with the type: an error left on them would block a checking account.
+  useEffect(() => {
+    if (watchedAccountType !== AccountType.CREDIT) clearErrors(['creditLimit', 'dueDay', 'closingDay']);
+  }, [watchedAccountType, clearErrors]);
 
   return (
     <form onSubmit={accountForm.handleSubmit(onSubmit)} className={`space-y-6 ${isTransitioning ? 'opacity-0 translate-x-4' : 'opacity-100 translate-x-0'} transition-all duration-300 ease-out`}>

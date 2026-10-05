@@ -357,9 +357,19 @@ export function draftAfterResults(draft: ReviewDraft, summary: Pick<ReviewApplyS
   return next;
 }
 
-export function reviewFailureMessage(reason: string): string {
+/** The reason shown next to a refused or failed row: the server's own, or the standard one for a blocked row. */
+export function reviewOutcomeReason(outcome: Pick<ReviewOutcome, 'status' | 'reason'>): string {
+  return reviewReasonText(outcome.reason ?? (outcome.status === 'blocked' ? 'blocked' : undefined));
+}
+
+/** A 4xx answer is a refusal before any write; anything else (network, 5xx) may have applied part of the request. */
+export const isRefusedBeforeWriting = (status: number | undefined): boolean => status !== undefined && status >= 400 && status < 500;
+
+export function reviewFailureMessage(reason: string, status?: number): string {
   const head = reason.trim() || 'Não foi possível aplicar as decisões.';
-  return `${/[.!?]$/.test(head) ? head : `${head}.`} Algumas podem ter sido aplicadas. ${REVIEW_REFRESH_NOTICE}`;
+  const sentence = /[.!?]$/.test(head) ? head : `${head}.`;
+  if (isRefusedBeforeWriting(status)) return `${sentence} Nenhuma decisão foi aplicada.`;
+  return `${sentence} Algumas podem ter sido aplicadas. ${REVIEW_REFRESH_NOTICE}`;
 }
 
 // ---- The list ---------------------------------------------------------------------------------------------

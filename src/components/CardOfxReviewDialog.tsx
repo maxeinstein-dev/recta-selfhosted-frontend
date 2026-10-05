@@ -12,7 +12,7 @@ import { signedCents } from '../utils/cardOfx';
 import {
   DELETE_WARNING, EMPTY_REVIEW_DRAFT, KEPT_EXPLANATION, REVIEW_ACTION_LABEL, REVIEW_EXPLANATION, REVIEW_LIMIT, REVIEW_STATUS_LABEL,
   allowedActions, buildReviewActions, choiceOf, confirmLines, decidedCount, draftAfterResults, lingeringOutcomes, moveTargetAccounts,
-  moveTargetProblem, reconcileReviewDraft, reviewBlocker, reviewFailureMessage, reviewHeadline, reviewReasonText, reviewSections,
+  isRefusedBeforeWriting, moveTargetProblem, reconcileReviewDraft, reviewBlocker, reviewFailureMessage, reviewHeadline, reviewOutcomeReason, reviewSections,
   reviewSummaryLine, reviewViewLabel, setBulkChoice, setRowChoice, setRowTarget, summarizeReviewResponse, unkeepRequest,
 } from '../utils/cardOfxReview';
 import type { ReviewApplySummary, ReviewChoiceAction, ReviewDraft, ReviewOutcome } from '../utils/cardOfxReview';
@@ -198,11 +198,13 @@ const CardOfxReviewDialog = ({ open, onClose, accountId, householdId: householdI
     try {
       response = await actionsMutation.mutateAsync(request);
     } catch (err: unknown) {
-      const message = reviewFailureMessage(getErrorMessage(err, 'Não foi possível aplicar as decisões.'));
+      const status = (err as { status?: number } | null)?.status;
+      const message = reviewFailureMessage(getErrorMessage(err, 'Não foi possível aplicar as decisões.'), status);
       showToast(message, 'error', ERROR_TOAST_MS);
       if (mountedRef.current) {
         setApplyError(message);
-        setNeedsRefresh(true);
+        // A refusal (4xx) wrote nothing: the list on screen is still right. Anything else may have applied part of it.
+        if (!isRefusedBeforeWriting(status)) setNeedsRefresh(true);
         setConfirming(false);
       }
     } finally {
@@ -255,7 +257,7 @@ const CardOfxReviewDialog = ({ open, onClose, accountId, householdId: householdI
   const outcomeChip = (id: string) => {
     const outcome = outcomes[id];
     if (!outcome) return null;
-    const reason = reviewReasonText(outcome.reason);
+    const reason = reviewOutcomeReason(outcome);
     return (
       <Chip tone={outcome.status === 'failed' ? 'red' : 'yellow'} title={reason || undefined}>
         {REVIEW_STATUS_LABEL[outcome.status]}{reason ? `: ${reason}` : ''}
@@ -308,7 +310,7 @@ const CardOfxReviewDialog = ({ open, onClose, accountId, householdId: householdI
             )}
             {summary.missing.length > 0 && (
               <p className="text-xs text-red-600 dark:text-red-400">
-                {countLabel(summary.missing.length, 'decisão não teve resposta do servidor', 'decisões não tiveram resposta do servidor')}: não se sabe se foram aplicadas. A lista abaixo mostra o que existe agora.
+                {summary.missing.length === 1 ? '1 decisão não teve resposta do servidor: não se sabe se foi aplicada.' : `${summary.missing.length} decisões não tiveram resposta do servidor: não se sabe se foram aplicadas.`} A lista abaixo mostra o que existe agora.
               </p>
             )}
             {summary.results.filter((r) => r.status === 'failed' || r.status === 'blocked').length > 0 && (
@@ -317,7 +319,7 @@ const CardOfxReviewDialog = ({ open, onClose, accountId, householdId: householdI
                   const row = items.find((i) => i.transactionId === r.transactionId);
                   return (
                     <li key={`${r.transactionId}-${r.action}`} className={r.status === 'failed' ? 'text-red-600 dark:text-red-400' : 'text-yellow-800 dark:text-yellow-300'}>
-                      {row?.description ?? r.transactionId}: {REVIEW_STATUS_LABEL[r.status]}{r.reason ? ` (${reviewReasonText(r.reason)})` : ''}
+                      {row?.description ?? r.transactionId}: {REVIEW_STATUS_LABEL[r.status]}{reviewOutcomeReason(r) ? ` (${reviewOutcomeReason(r)})` : ''}
                     </li>
                   );
                 })}

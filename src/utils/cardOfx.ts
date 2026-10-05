@@ -59,6 +59,7 @@ const KIND_SECTION: Record<CardOfxProposalKind, Exclude<CardOfxGroupSection, 'ot
   'enrich-exact': 'matched',
   'enrich-plan': 'matched',
   'enrich-sum': 'matched',
+  'enrich-merge': 'matched',
   'consume-future': 'futures',
   create: 'new',
   reversal: 'reversal',
@@ -68,6 +69,7 @@ export const PROPOSAL_KIND_LABEL: Record<CardOfxProposalKind, string> = {
   'enrich-exact': 'exata',
   'enrich-plan': 'plano antecipado',
   'enrich-sum': 'soma',
+  'enrich-merge': 'mesclagem',
   'consume-future': 'parcela futura',
   create: 'nova',
   reversal: 'compra e estorno',
@@ -79,6 +81,84 @@ export function isKnownProposalKind(kind: string): kind is CardOfxProposalKind {
 
 export function proposalSection(kind: string): CardOfxGroupSection {
   return isKnownProposalKind(kind) ? KIND_SECTION[kind] : 'other';
+}
+
+// ---- Merge (enrich-merge) and reasons -----------------------------------------------------------------------
+
+/** Rows of the sheet a merge puts together: the one that stays plus the absorbed ones (null when it is not a merge). */
+export function mergeRowCount(proposal: Pick<CardOfxProposal, 'kind' | 'target' | 'absorbed'>): number | null {
+  if (proposal.kind !== 'enrich-merge' || !proposal.target) return null;
+  return 1 + (proposal.absorbed?.length ?? 0);
+}
+
+/** "Soma de N lançamentos da planilha" for a merge; null for any other proposal. */
+export function mergeSummary(proposal: Pick<CardOfxProposal, 'kind' | 'target' | 'absorbed'>): string | null {
+  const rows = mergeRowCount(proposal);
+  return rows === null ? null : `Soma de ${rows} lançamentos da planilha`;
+}
+
+/** What ticking a merge does to the sheet rows other than the one that stays; null when nothing is deleted. */
+export function mergeAbsorbedNotice(proposal: Pick<CardOfxProposal, 'kind' | 'absorbed'>): string | null {
+  const n = proposal.kind === 'enrich-merge' ? (proposal.absorbed?.length ?? 0) : 0;
+  if (n === 0) return null;
+  return `${countLabel(n, 'lançamento absorvido será apagado', 'lançamentos absorvidos serão apagados')}; a descrição e o valor ${n === 1 ? 'dele ficam' : 'deles ficam'} nas notas da linha que permanece.`;
+}
+
+export type CardOfxReasonTone = 'orange' | 'yellow' | 'gray';
+
+export interface CardOfxReasonChip {
+  /** The reason as the server sent it. */
+  reason: string;
+  tone: CardOfxReasonTone;
+  text: string;
+  /** Longer explanation, for the tooltip. */
+  title: string;
+}
+
+/**
+ * Chip explaining why the server left a proposal unticked; null when it came ticked (no reason). 'sheet-residue'
+ * names the card row it may be a copy of, with its amount. A reason this client does not know is shown as sent.
+ */
+export function proposalReasonChip(
+  proposal: Pick<CardOfxProposal, 'reason' | 'counterpart'>,
+  formatAmount: (value: number, type: string) => string,
+  formatDate: (isoDate: string) => string,
+): CardOfxReasonChip | null {
+  const reason = typeof proposal.reason === 'string' ? proposal.reason.trim() : '';
+  if (!reason) return null;
+  switch (reason) {
+    case 'ambiguous':
+      return {
+        reason, tone: 'orange', text: 'ambígua',
+        title: 'Mais de uma combinação de linhas fecha este valor: confira qual é a certa antes de marcar.',
+      };
+    case 'no-shared-words':
+      return {
+        reason, tone: 'yellow', text: 'sem palavras em comum',
+        title: 'A descrição do banco não divide palavras com a da planilha: confira se é a mesma compra antes de marcar.',
+      };
+    case 'mixed-categories':
+      return {
+        reason, tone: 'yellow', text: 'categorias diferentes',
+        title: 'As linhas da planilha que somam este valor têm categorias diferentes: a linha que fica mantém a categoria dela.',
+      };
+    case 'sheet-residue': {
+      const c = proposal.counterpart ?? null;
+      if (!c) {
+        return {
+          reason, tone: 'orange', text: 'sobra na planilha',
+          title: 'O mês tem linhas da planilha sem par no OFX: esta compra pode ser uma delas com outra data ou valor.',
+        };
+      }
+      const what = `${c.description} · ${formatDate(c.date)} · ${formatAmount(c.amount, c.type)}`;
+      return {
+        reason, tone: 'orange', text: `parecida com a planilha: ${formatAmount(c.amount, c.type)}`,
+        title: `Pode ser a mesma compra de uma linha que sobrou na planilha (${what}). Confira antes de marcar: marcar cria uma segunda.`,
+      };
+    }
+    default:
+      return { reason, tone: 'gray', text: reason, title: `O servidor deixou esta proposta desmarcada (motivo: ${reason}).` };
+  }
 }
 
 // ---- Amounts ----------------------------------------------------------------------------------------------
@@ -498,6 +578,18 @@ export function buildCardOfxConfirm(
   for (const group of sections.groups) {
     // An advance payment paired with a sheet credit: payments are outside the OFX total, so outside this one too.
     if (group.hasPayment) continue;
+    if (group.proposal.kind === 'enrich-merge' && group.proposal.target) {
+      // A ticked merge leaves ONE row with the bank amount; unticked, the row and the ones it would absorb stay as they are.
+      const target = group.proposal.target;
+      if (targets.has(target.transactionId)) continue;
+      targets.add(target.transactionId);
+      if (isGroupSelected(selection, group)) {
+        rectaCents += group.netCents;
+      } else {
+        rectaCents += signedCents(target.amount, target.type) + sumSignedCents(group.proposal.absorbed ?? []);
+      }
+      continue;
+    }
     if (group.section === 'matched' || group.section === 'futures') {
       const target = group.proposal.target;
       if (target && !targets.has(target.transactionId)) {
@@ -661,6 +753,9 @@ export function cardOfxResultLines(
   if (result.enriched > 0) {
     lines.push(countLabel(result.enriched, 'lançamento da planilha enriquecido com os dados do banco', 'lançamentos da planilha enriquecidos com os dados do banco'));
   }
+  if ((result.absorbedRows ?? 0) > 0) {
+    lines.push(countLabel(result.absorbedRows ?? 0, 'lançamento da planilha absorvido e apagado em uma mesclagem', 'lançamentos da planilha absorvidos e apagados em mesclagens'));
+  }
   if (result.consumedFutures > 0) {
     lines.push(countLabel(result.consumedFutures, 'parcela futura substituída pela compra real', 'parcelas futuras substituídas pelas compras reais'));
   }
@@ -694,6 +789,7 @@ export function cardOfxResultLines(
 export function buildCardOfxSummary(result: CardOfxConfirmResponse, formatAmount: (value: number) => string): string {
   const parts: string[] = [];
   if (result.enriched > 0) parts.push(countLabel(result.enriched, 'lançamento enriquecido', 'lançamentos enriquecidos'));
+  if ((result.absorbedRows ?? 0) > 0) parts.push(countLabel(result.absorbedRows ?? 0, 'lançamento absorvido', 'lançamentos absorvidos'));
   if (result.consumedFutures > 0) parts.push(countLabel(result.consumedFutures, 'parcela futura consumida', 'parcelas futuras consumidas'));
   if (result.created > 0) parts.push(countLabel(result.created, 'transação criada', 'transações criadas'));
   if (result.futureInstallments > 0) parts.push(countLabel(result.futureInstallments, 'parcela futura gerada', 'parcelas futuras geradas'));

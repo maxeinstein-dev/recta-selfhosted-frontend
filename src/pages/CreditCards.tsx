@@ -14,6 +14,7 @@ import {
   Plus,
   HelpCircle,
   Upload,
+  ClipboardCheck,
 } from "lucide-react";
 import { AccountActionsMenu } from "../components/AccountActionsMenu";
 import {
@@ -42,6 +43,7 @@ import { PageButton } from "../components/PageButton";
 import ConfirmModal from "../components/ConfirmModal";
 import InstallmentDeleteModal from "../components/InstallmentDeleteModal";
 import ImportHubDialog from "../components/ImportHubDialog";
+import CardOfxReviewDialog from "../components/CardOfxReviewDialog";
 import DivideTransactionDialog from "../components/people/DivideTransactionDialog";
 import { canWritePeople } from "../utils/people";
 import { AccountType, CategoryName, getCategoryDisplayName, TransactionType } from "../lib/enums";
@@ -103,6 +105,8 @@ const CreditCards = () => {
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   const [isImportOpen, setIsImportOpen] = useState(false);
+  // "Revisar lançamentos sem comprovante" do cartão selecionado (a fila exige EDITOR ou mais).
+  const [isReviewOpen, setIsReviewOpen] = useState(false);
   const [sharingTransaction, setSharingTransaction] = useState<Transaction | null>(null);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] =
@@ -616,6 +620,16 @@ const CreditCards = () => {
   return (
     <div className="px-4 sm:px-6 lg:px-8 space-y-6 dashboard-fade-in">
       <PageHeader title={t.creditCards} description={t.creditCardsDescription}>
+        {canSplitShares && selectedAccountId && (
+          <PageButton
+            onClick={() => setIsReviewOpen(true)}
+            variant="secondary"
+            icon={ClipboardCheck}
+            aria-label="Revisar lançamentos sem comprovante"
+          >
+            Revisar sem comprovante
+          </PageButton>
+        )}
         <PageButton
           onClick={() => setIsImportOpen(true)}
           variant="secondary"
@@ -1241,6 +1255,16 @@ const CreditCards = () => {
           onClose={() => setIsImportOpen(false)}
           householdId={householdId ?? undefined}
           defaultAccountId={selectedAccountId || null}
+        />
+      )}
+
+      {/* Linhas da planilha do cartão sem par no OFX: manter, mover ou excluir */}
+      {isReviewOpen && selectedAccountId && (
+        <CardOfxReviewDialog
+          open={isReviewOpen}
+          onClose={() => setIsReviewOpen(false)}
+          householdId={householdId ?? undefined}
+          accountId={selectedAccountId}
         />
       )}
 

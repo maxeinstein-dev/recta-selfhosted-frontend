@@ -69,6 +69,8 @@ export function lacksClosingDay(account: { closingDay?: number | null } | null |
 
 export interface CardQueueTotals {
   enriched: number;
+  /** Sheet rows deleted by merges. */
+  absorbedRows: number;
   consumedFutures: number;
   created: number;
   futureInstallments: number;
@@ -81,11 +83,12 @@ export interface CardQueueTotals {
 
 export function sumCardOfxResults(results: ReadonlyArray<CardOfxConfirmResponse>): CardQueueTotals {
   const totals: CardQueueTotals = {
-    enriched: 0, consumedFutures: 0, created: 0, futureInstallments: 0, reversalsImported: 0, payments: 0, createdCategories: 0,
+    enriched: 0, absorbedRows: 0, consumedFutures: 0, created: 0, futureInstallments: 0, reversalsImported: 0, payments: 0, createdCategories: 0,
     skippedProposals: 0, warnings: 0,
   };
   for (const r of results) {
     totals.enriched += r.enriched ?? 0;
+    totals.absorbedRows += r.absorbedRows ?? 0;
     totals.consumedFutures += r.consumedFutures ?? 0;
     totals.created += r.created ?? 0;
     totals.futureInstallments += r.futureInstallments ?? 0;
@@ -102,6 +105,7 @@ export function sumCardOfxResults(results: ReadonlyArray<CardOfxConfirmResponse>
 export function cardQueueTotalsLine(totals: CardQueueTotals): string {
   const parts: string[] = [];
   if (totals.enriched > 0) parts.push(countLabel(totals.enriched, 'lançamento enriquecido', 'lançamentos enriquecidos'));
+  if (totals.absorbedRows > 0) parts.push(countLabel(totals.absorbedRows, 'lançamento absorvido', 'lançamentos absorvidos'));
   if (totals.consumedFutures > 0) parts.push(countLabel(totals.consumedFutures, 'parcela futura consumida', 'parcelas futuras consumidas'));
   if (totals.created > 0) parts.push(countLabel(totals.created, 'transação criada', 'transações criadas'));
   if (totals.futureInstallments > 0) parts.push(countLabel(totals.futureInstallments, 'parcela futura gerada', 'parcelas futuras geradas'));

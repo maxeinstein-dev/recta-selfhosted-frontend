@@ -1,3 +1,4 @@
+import { useCallback, useRef } from 'react';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient, axiosInstance } from '../../utils/api';
 import type { ApiResponse } from '../../utils/api';
@@ -232,46 +233,91 @@ export interface CardOfxPreviewParams {
  */
 export function useCardOfxPreview() {
   return useMutation({
-    mutationFn: async ({ accountId, options, file }: CardOfxPreviewParams): Promise<CardOfxPreviewResponse> => {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('accountId', accountId);
-      if (options) {
-        formData.append('options', JSON.stringify(options));
-      }
-
-      const response = await axiosInstance.post<ApiResponse<CardOfxPreviewResponse>>(
-        '/transactions/import/card-ofx/preview',
-        formData,
-        {
-          // Remove the instance JSON default so the browser sets multipart + boundary.
-          headers: { 'Content-Type': undefined as unknown as string },
-        },
-      );
-      return response.data.data!;
-    },
+    mutationFn: (params: CardOfxPreviewParams): Promise<CardOfxPreviewResponse> => sharedCardOfxPreview(params),
   });
+}
+
+async function requestCardOfxPreview({ accountId, options, file }: CardOfxPreviewParams): Promise<CardOfxPreviewResponse> {
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('accountId', accountId);
+  if (options) {
+    formData.append('options', JSON.stringify(options));
+  }
+
+  const response = await axiosInstance.post<ApiResponse<CardOfxPreviewResponse>>(
+    '/transactions/import/card-ofx/preview',
+    formData,
+    {
+      // Remove the instance JSON default so the browser sets multipart + boundary.
+      headers: { 'Content-Type': undefined as unknown as string },
+    },
+  );
+  return response.data.data!;
+}
+
+// Identical previews that overlap (the same file object, card and options) share one request: StrictMode runs the effect
+// that opens the dialog twice in development. A preview asked again after the first settled is a new request.
+const fileIds = new WeakMap<File, number>();
+let nextFileId = 0;
+const inFlightPreviews = new Map<string, Promise<CardOfxPreviewResponse>>();
+
+function sharedCardOfxPreview(params: CardOfxPreviewParams): Promise<CardOfxPreviewResponse> {
+  let id = fileIds.get(params.file);
+  if (id === undefined) {
+    nextFileId += 1;
+    id = nextFileId;
+    fileIds.set(params.file, id);
+  }
+  const key = `${id}|${params.accountId}|${JSON.stringify(params.options ?? null)}`;
+  const shared = inFlightPreviews.get(key);
+  if (shared) return shared;
+  const request = requestCardOfxPreview(params).finally(() => inFlightPreviews.delete(key));
+  inFlightPreviews.set(key, request);
+  return request;
 }
 
 /**
  * Apply the chosen proposals (one request). Invalidates everything the import touches on success AND on error:
  * a failed request may already have changed part of the invoice, and the screens must not keep stale data.
+ *
+ * In a queue of several invoices the dialog calls `deferInvalidation(true)`: the invalidation of a confirm that
+ * succeeded then waits for `flushInvalidations()` (end of the queue, a stop, closing) instead of refetching the
+ * transactions, accounts, dashboard and categories after every file. A confirm that FAILED always invalidates at once.
  */
 export function useCardOfxConfirm() {
   const queryClient = useQueryClient();
+  const deferRef = useRef(false);
+  const pendingRef = useRef(false);
 
-  return useMutation({
+  const invalidateAll = useCallback(() => {
+    pendingRef.current = false;
+    // The card invoice lives under ['transactions', 'credit-card-invoice', ...]: the first key covers it
+    // (and the lists, summaries and the previous invoice the payment touches).
+    queryClient.invalidateQueries({ queryKey: ['transactions'] });
+    queryClient.invalidateQueries({ queryKey: ['accounts'] });
+    queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+    queryClient.invalidateQueries({ queryKey: ['categories'] });
+  }, [queryClient]);
+
+  const deferInvalidation = useCallback((defer: boolean) => {
+    deferRef.current = defer;
+  }, []);
+
+  const flushInvalidations = useCallback(() => {
+    if (pendingRef.current) invalidateAll();
+  }, [invalidateAll]);
+
+  const mutation = useMutation({
     mutationFn: async (payload: CardOfxConfirmRequest): Promise<CardOfxConfirmResponse> => {
       const response = await apiClient.post<CardOfxConfirmResponse>('/transactions/import/card-ofx/confirm', payload);
       return response.data!;
     },
-    onSettled: () => {
-      // The card invoice lives under ['transactions', 'credit-card-invoice', ...]: the first key covers it
-      // (and the lists, summaries and the previous invoice the payment touches).
-      queryClient.invalidateQueries({ queryKey: ['transactions'] });
-      queryClient.invalidateQueries({ queryKey: ['accounts'] });
-      queryClient.invalidateQueries({ queryKey: ['dashboard'] });
-      queryClient.invalidateQueries({ queryKey: ['categories'] });
+    onSettled: (_data, error) => {
+      if (deferRef.current && !error) pendingRef.current = true;
+      else invalidateAll();
     },
   });
+
+  return { ...mutation, deferInvalidation, flushInvalidations };
 }

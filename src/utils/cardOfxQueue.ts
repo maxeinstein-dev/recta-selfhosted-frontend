@@ -45,6 +45,36 @@ export function planCardDefaultApply(
   return { ok: true, built };
 }
 
+// ---- The buttons of the queue --------------------------------------------------------------------------------
+
+export const CARD_RECONCILED_NOTE = 'Esta fatura já está conciliada: nada a importar.';
+export const CARD_RECONCILED_QUEUE_NOTE = 'Já conciliada: nada a importar';
+
+export interface QueueControls {
+  /** "Continuar para a próxima": the file on screen has nothing to apply and the queue goes on (counted as already reconciled). */
+  canContinue: boolean;
+  /** "Confirmar esta e aplicar o padrão nas restantes": for a file with nothing to apply it leaves this one out and goes on. */
+  applyRestEnabled: boolean;
+  /** What to tell the user about the file on screen (visible text, not a tooltip); null when there is nothing to say. */
+  note: string | null;
+  /** Why the buttons are disabled when a real blocker is in the way; null otherwise. */
+  blockerText: string | null;
+}
+
+/**
+ * The queue never stalls on a file with nothing to apply: it offers "Continuar para a próxima" and keeps "aplicar o
+ * padrão nas restantes" enabled. Any other blocker keeps the buttons disabled, with its message as text.
+ */
+export function cardQueueControls(input: { busy: boolean; hasBuilt: boolean; blocker: { code: string; message: string } | null }): QueueControls {
+  if (input.busy || !input.hasBuilt) return { canContinue: false, applyRestEnabled: false, note: null, blockerText: null };
+  if (!input.blocker) return { canContinue: false, applyRestEnabled: true, note: null, blockerText: null };
+  if (input.blocker.code === 'nothing-to-do') return { canContinue: true, applyRestEnabled: true, note: CARD_RECONCILED_NOTE, blockerText: null };
+  return { canContinue: false, applyRestEnabled: false, note: null, blockerText: input.blocker.message };
+}
+
+/** The confirms of a queue of several invoices refresh the rest of the app once, at the end (one invoice: at once). */
+export const shouldDeferInvalidation = (queueLength: number): boolean => queueLength > 1;
+
 // ---- Warnings of the preview --------------------------------------------------------------------------------
 
 /** The server's own warning that the card has no closing day (the dialog shows its own notice for it). */

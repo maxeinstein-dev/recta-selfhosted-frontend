@@ -39,10 +39,12 @@ import type {
 } from '../utils/cardOfx';
 import { QueueHeader, QueueProgressList } from './ImportQueuePanel';
 import {
-  NO_CLOSING_DAY_NOTICE, cardQueueTotalsLine, lacksClosingDay, planCardDefaultApply, sumCardOfxResults, visibleCardWarnings,
+  CARD_RECONCILED_QUEUE_NOTE, NO_CLOSING_DAY_NOTICE, cardQueueControls, cardQueueTotalsLine, lacksClosingDay, planCardDefaultApply,
+  shouldDeferInvalidation, sumCardOfxResults, visibleCardWarnings,
 } from '../utils/cardOfxQueue';
 import {
-  applyDefaultsToRemaining, completeCurrent, createQueue, failCurrent, followingCount, isQueueFinished, queueSummaryLine, retryCurrent, skipCurrent,
+  applyDefaultsToRemaining, completeCurrent, createQueue, currentPhase, failCurrent, followingCount, isQueueFinished, markUpToDateCurrent,
+  queueSummaryLine, retryCurrent, skipCurrent,
 } from '../utils/importQueue';
 import type { ApplyOutcome, QueueState } from '../utils/importQueue';
 
@@ -845,12 +847,15 @@ const ResultStep = ({ result, lines, onClose, onReview }: { result: CardOfxConfi
 // Queue: final summary
 // ---------------------------------------------------------------------------
 
+/** A file the loop or the user found with nothing to apply is "already reconciled" for an invoice. */
+const CARD_STATUS_TEXT = { uptodate: 'Já conciliada' } as const;
+
 interface QueueSummaryProps {
   state: QueueState; results: ReadonlyArray<{ name: string; data: CardOfxConfirmResponse }>; onClose: () => void; onReview: () => void;
 }
 
 const QueueSummary = ({ state, results, onClose, onReview }: QueueSummaryProps) => {
-  const counts = queueSummaryLine(state, { done: ['fatura importada', 'faturas importadas'], skipped: ['pulada', 'puladas'], uptodate: ['já importada', 'já importadas'], failed: ['com falha', 'com falha'] });
+  const counts = queueSummaryLine(state, { done: ['fatura importada', 'faturas importadas'], skipped: ['pulada', 'puladas'], uptodate: ['já conciliada', 'já conciliadas'], failed: ['com falha', 'com falha'] });
   const warnings = results.flatMap((r) => (r.data.warnings ?? []).map((warning) => `${r.name}: ${warning}`));
   return (
     <div className="space-y-4 min-w-0">
@@ -861,7 +866,7 @@ const QueueSummary = ({ state, results, onClose, onReview }: QueueSummaryProps) 
           <p className={`mt-1 text-sm ${MUTED_CLS}`}>Total: {cardQueueTotalsLine(sumCardOfxResults(results.map((r) => r.data)))}.</p>
         )}
       </div>
-      <QueueProgressList state={state} />
+      <QueueProgressList state={state} statusText={CARD_STATUS_TEXT} />
       {warnings.length > 0 && (
         <div>
           <h4 className={`${H4_CLS} mb-1`}>{countLabel(warnings.length, 'aviso', 'avisos')}</h4>
@@ -974,6 +979,17 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
     accountsRef.current = accounts;
   }, [accounts]);
 
+  // A queue of several invoices refreshes the rest of the app once, at the end (or when it stops, or on closing).
+  const { deferInvalidation, flushInvalidations } = confirmMutation;
+  useEffect(() => {
+    deferInvalidation(queue !== null && shouldDeferInvalidation(queue.items.length));
+  }, [queue, deferInvalidation]);
+  const queueIsFinished = queue !== null && isQueueFinished(queue);
+  useEffect(() => {
+    if (queueIsFinished) flushInvalidations();
+  }, [queueIsFinished, flushInvalidations]);
+  useEffect(() => () => flushInvalidations(), [flushInvalidations]);
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
@@ -1016,7 +1032,9 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
     }
     return () => {
       seqRef.current += 1;
+      flushInvalidations();
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, initialFile]);
 
   // Body scroll lock (same pattern as the sibling dialogs).
@@ -1075,6 +1093,11 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
   const cardAccount = accounts.find((a) => a.id === (preview?.accountId ?? accountId));
   const showClosingNotice = lacksClosingDay(cardAccount) && !result && !queueFinished;
   const queueBusy = isPreviewing || isConfirming || applying;
+  // What the buttons of the queue do for the file on screen: a file with nothing to apply never stalls the queue.
+  const queueControls = queue ? cardQueueControls({ busy: queueBusy, hasBuilt: !!built && !!preview, blocker }) : null;
+  const queuePhase = currentPhase({
+    previewing: isPreviewing || applying, confirming: isConfirming, hasPreview: !!preview && !!built, nothingToApply: blocker?.code === 'nothing-to-do',
+  });
 
   /** The payment source chosen for the queue fills the one of the file while that one is still empty. */
   const withQueueSource = (choice: CardOfxPaymentChoice): CardOfxPaymentChoice =>
@@ -1167,6 +1190,25 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
     moveQueueTo(skipCurrent(queue));
   };
 
+  /** The file on screen has nothing to apply (already reconciled): the queue goes on, counted as "já conciliada". */
+  const handleContinueReconciled = () => {
+    if (!queue || queueBusy || confirmingRef.current || applyingRef.current || blocker?.code !== 'nothing-to-do') return;
+    setQueueStop(null);
+    moveQueueTo(markUpToDateCurrent(queue, CARD_RECONCILED_QUEUE_NOTE));
+  };
+
+  /** "Aplicar o padrão nas restantes" from a file with nothing to apply: it is left out and the loop takes the rest. */
+  const handleApplyRestFromReconciled = async () => {
+    if (!queue || queueBusy || confirmingRef.current || applyingRef.current || blocker?.code !== 'nothing-to-do') return;
+    const next = markUpToDateCurrent(queue, CARD_RECONCILED_QUEUE_NOTE);
+    if (isQueueFinished(next)) {
+      moveQueueTo(next);
+      return;
+    }
+    setQueue(next);
+    await runDefaultsLoop(next);
+  };
+
   /**
    * For the files after the one just confirmed: preview, then confirm with the groups the server marks, one at a
    * time. A file with nothing to import is left out; the first that cannot proceed stops it, with the reason.
@@ -1237,6 +1279,8 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
       }
     } finally {
       applyingRef.current = false;
+      // The loop is over (finished or stopped): the rest of the app is refreshed once for everything it confirmed.
+      flushInvalidations();
       if (mountedRef.current) setApplying(false);
     }
   };
@@ -1372,7 +1416,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
 
           {queue && !queueFinished && (
             <div className="mb-4">
-              <QueueHeader state={queue} noun="Fatura">
+              <QueueHeader state={queue} noun="Fatura" statusText={CARD_STATUS_TEXT} phase={queuePhase}>
                 <div className="space-y-2">
                   <div className="max-w-sm">
                     <label htmlFor="card-ofx-queue-source" className={LABEL_CLS}>Conta de origem dos pagamentos</label>
@@ -1385,20 +1429,29 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
                       De onde sai o pagamento da fatura anterior quando ele ainda não está registrado. Vale para a fila toda.
                     </p>
                   </div>
+                  {queueControls?.note && <p role="note" data-queue-note className="text-sm text-gray-900 dark:text-white">{queueControls.note}</p>}
                   <div className="flex flex-wrap gap-2">
+                    {queueControls?.canContinue && (
+                      <button type="button" onClick={handleContinueReconciled} className="inline-flex items-center font-light tracking-tight rounded-md transition-opacity px-3 py-1.5 text-xs text-white bg-primary-600 dark:bg-primary-500 border border-primary-600 dark:border-primary-500 hover:opacity-80">
+                        Continuar para a próxima
+                      </button>
+                    )}
                     <button type="button" onClick={handleSkip} disabled={queueBusy} className={BTN_SECONDARY_SM}>
                       <SkipForward className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
                       Pular esta fatura
                     </button>
                     {followingCount(queue) > 0 && (
-                      <button type="button" onClick={() => void handleConfirm(true)} disabled={queueBusy || !built || blocker !== null}
-                        title={blocker?.message ?? `Confirma esta fatura com as suas marcações e, nas ${followingCount(queue)} seguintes, pré-visualiza e confirma só o que o servidor marca, uma por vez; para na primeira que não puder seguir.`}
+                      <button type="button"
+                        onClick={() => (blocker?.code === 'nothing-to-do' ? void handleApplyRestFromReconciled() : void handleConfirm(true))}
+                        disabled={!queueControls?.applyRestEnabled}
+                        title={queueControls?.canContinue ? 'Esta fatura já está conciliada: segue para as restantes, pré-visualizando e confirmando só o que o servidor marca, uma por vez.' : (blocker?.message ?? `Confirma esta fatura com as suas marcações e, nas ${followingCount(queue)} seguintes, pré-visualiza e confirma só o que o servidor marca, uma por vez; para na primeira que não puder seguir.`)}
                         className={BTN_SECONDARY_SM}>
                         <FastForward className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
-                        Confirmar esta e aplicar o padrão nas restantes
+                        {queueControls?.canContinue ? 'Aplicar o padrão nas restantes' : 'Confirmar esta e aplicar o padrão nas restantes'}
                       </button>
                     )}
                   </div>
+                  {queueControls?.blockerText && <p data-queue-blocker className="text-xs text-red-600 dark:text-red-400">{queueControls.blockerText}</p>}
                 </div>
               </QueueHeader>
             </div>

@@ -173,6 +173,31 @@ export async function applyDefaultsToRemaining(
   return { state, stop: null };
 }
 
+// ---- Where the file on screen stands ----------------------------------------------------------------------
+
+/**
+ * loading: the preview request is in flight. confirming: a confirm is. ready: the preview is on screen and there is
+ * something to review. reconciled: the preview is on screen and there is nothing to apply (already in Recta).
+ * idle: no preview (it failed, or has not started).
+ */
+export type CurrentPhase = 'loading' | 'confirming' | 'ready' | 'reconciled' | 'idle';
+
+export const CURRENT_PHASE_TEXT: Record<CurrentPhase, string> = {
+  loading: 'Em análise',
+  confirming: 'Importando',
+  ready: 'Pronta para revisar',
+  reconciled: 'Já conciliada',
+  idle: 'Aguardando',
+};
+
+/** "Em análise" only while a request is in flight; with the preview on screen it is ready, or has nothing to apply. */
+export function currentPhase(input: { previewing: boolean; confirming: boolean; hasPreview: boolean; nothingToApply: boolean }): CurrentPhase {
+  if (input.confirming) return 'confirming';
+  if (input.previewing) return 'loading';
+  if (!input.hasPreview) return 'idle';
+  return input.nothingToApply ? 'reconciled' : 'ready';
+}
+
 /** "3 importadas, 1 pulada" for the final summary. */
 export function queueSummaryLine(
   state: QueueState,

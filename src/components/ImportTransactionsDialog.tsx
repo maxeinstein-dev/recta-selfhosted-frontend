@@ -9,9 +9,12 @@ import { formatCurrency, formatDate } from '../utils/format';
 import { isCardOfxHandoff } from '../utils/cardOfx';
 import ImportCardOfxDialog from './ImportCardOfxDialog';
 import { QueueHeader, QueueProgressList } from './ImportQueuePanel';
-import { planStatementDefaultApply, statementConfirmRows, statementImportNote } from '../utils/statementQueue';
 import {
-  applyDefaultsToRemaining, completeCurrent, createQueue, failCurrent, followingCount, isQueueFinished, queueSummaryLine, retryCurrent, skipCurrent,
+  STATEMENT_NOTHING_NEW_QUEUE_NOTE, planStatementDefaultApply, statementConfirmRows, statementImportNote, statementQueueControls,
+} from '../utils/statementQueue';
+import {
+  applyDefaultsToRemaining, completeCurrent, createQueue, currentPhase, failCurrent, followingCount, isQueueFinished, markUpToDateCurrent, queueSummaryLine,
+  retryCurrent, skipCurrent,
 } from '../utils/importQueue';
 import type { ApplyOutcome, QueueState } from '../utils/importQueue';
 
@@ -163,6 +166,11 @@ const ImportTransactionsDialog = ({
   const single = queue !== null && queue.items.length === 1;
   const queueBusy = isPreviewing || isConfirming || applying;
   const queueAccountId = defaultAccountId ?? '';
+  // O que os botões da fila fazem com o arquivo da tela: um arquivo sem nada novo não trava a fila.
+  const queueControls = statementQueueControls({ busy: queueBusy, preview, confirmError });
+  const queuePhase = currentPhase({
+    previewing: isPreviewing || applying, confirming: isConfirming, hasPreview: preview !== null, nothingToApply: preview !== null && planStatementDefaultApply(preview).ok === false,
+  });
   // Não fecha no meio de uma confirmação nem do loop da fila: a importação não pode ser abandonada pela metade.
   const requestClose = () => {
     if (!confirmingRef.current && !isConfirming && !applyingRef.current) onClose();
@@ -342,6 +350,27 @@ const ImportTransactionsDialog = ({
     }
   };
 
+  /** O arquivo da tela não tem nada novo: a fila segue, contado como "sem novidades". */
+  const handleContinueNothingNew = () => {
+    if (!queue || queueBusy || confirmingRef.current || applyingRef.current) return;
+    if (!statementQueueControls({ busy: false, preview, confirmError }).canContinue) return;
+    setQueueStop(null);
+    moveQueueTo(markUpToDateCurrent(queue, STATEMENT_NOTHING_NEW_QUEUE_NOTE));
+  };
+
+  /** "Aplicar o padrão nas restantes" a partir de um arquivo sem nada novo: ele fica de fora e o loop leva o resto. */
+  const handleApplyRestFromNothingNew = async () => {
+    if (!queue || queueBusy || confirmingRef.current || applyingRef.current) return;
+    if (!statementQueueControls({ busy: false, preview, confirmError }).canContinue) return;
+    const next = markUpToDateCurrent(queue, STATEMENT_NOTHING_NEW_QUEUE_NOTE);
+    if (isQueueFinished(next)) {
+      moveQueueTo(next);
+      return;
+    }
+    setQueue(next);
+    await runDefaultsLoop(next);
+  };
+
   /** Confirma o arquivo da tela; com `thenApply`, os arquivos seguintes passam pelo loop do padrão. */
   const handleConfirm = async (thenApply = false) => {
     if (!preview || applyingRef.current) return;
@@ -441,22 +470,31 @@ const ImportTransactionsDialog = ({
 
           {queue && !single && !queueFinished && (
             <div className="mb-4">
-              <QueueHeader state={queue} noun="Arquivo" statusText={{ done: 'Importado', skipped: 'Pulado', uptodate: 'Sem novidades' }}>
+              <QueueHeader state={queue} noun="Arquivo" statusText={{ done: 'Importado', skipped: 'Pulado', uptodate: 'Sem novidades' }}
+                phase={queuePhase} phaseText={{ ready: 'Pronto para revisar', reconciled: 'Sem novidades' }}>
+                {queueControls.note && <p role="note" data-queue-note className="text-sm text-gray-900 dark:text-white">{queueControls.note}</p>}
                 <div className="flex flex-wrap gap-2">
+                  {queueControls.canContinue && (
+                    <button type="button" onClick={handleContinueNothingNew} className="inline-flex items-center font-light tracking-tight rounded-md transition-opacity px-3 py-1.5 text-xs text-white bg-primary-600 dark:bg-primary-500 border border-primary-600 dark:border-primary-500 hover:opacity-80">
+                      Continuar para o próximo
+                    </button>
+                  )}
                   <button type="button" onClick={handleSkip} disabled={queueBusy} className={BTN_SECONDARY_SM}>
                     <SkipForward className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
                     Pular este arquivo
                   </button>
                   {followingCount(queue) > 0 && (
-                    <button type="button" onClick={() => void handleConfirm(true)}
-                      disabled={queueBusy || !preview || newCount === 0 || confirmError !== null}
+                    <button type="button"
+                      onClick={() => (queueControls.canContinue ? void handleApplyRestFromNothingNew() : void handleConfirm(true))}
+                      disabled={!queueControls.applyRestEnabled}
                       title={`Confirma este arquivo e, nos ${followingCount(queue)} seguintes, pré-visualiza e confirma as linhas novas, uma por vez; para no primeiro que não puder seguir.`}
                       className={BTN_SECONDARY_SM}>
                       <FastForward className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
-                      Confirmar esta e aplicar o padrão nas restantes
+                      {queueControls.canContinue ? 'Aplicar o padrão nas restantes' : 'Confirmar esta e aplicar o padrão nas restantes'}
                     </button>
                   )}
                 </div>
+                {queueControls.blockerText && <p data-queue-blocker className="text-xs text-red-600 dark:text-red-400">{queueControls.blockerText}</p>}
               </QueueHeader>
             </div>
           )}

@@ -7,7 +7,8 @@ import { useCurrency } from '../../context/CurrencyContext';
 import { formatCurrency } from '../../utils/format';
 import {
   DIRECTION_LABEL, STRATEGY_LABEL, buildPutSharesInput, clearSharesInput, compareWithServer, computeSharePreview, convertDraftStrategy,
-  draftFromServerPreview, draftFromShares, emptyDraft, emptyRow, initialDirection, reaisToCents, restLabel,
+  MAX_NOTE, MAX_SPLIT_ENTRIES, draftFromServerPreview, draftFromShares, emptyDraft, emptyRow, initialDirection, reaisToCents, restLabel,
+  savedSharesMessage,
 } from '../../utils/people';
 import type { ShareDraft, ShareDraftRow } from '../../utils/people';
 import PersonFormDialog from './PersonFormDialog';
@@ -59,6 +60,7 @@ const DivideTransactionDialog = ({ open, onClose, householdId, transaction, read
   const [saving, setSaving] = useState(false);
   const [serverCheck, setServerCheck] = useState<ServerCheck | null>(null);
   const [checking, setChecking] = useState(false);
+  const [confirmingClear, setConfirmingClear] = useState(false);
   const [newPersonRow, setNewPersonRow] = useState<string | null>(null);
   // People created from this dialog: selectable at once, before the people list refetches.
   const [createdPeople, setCreatedPeople] = useState<Person[]>([]);
@@ -81,6 +83,7 @@ const DivideTransactionDialog = ({ open, onClose, householdId, transaction, read
     setDraft(null);
     setServerCheck(null);
     setChecking(false);
+    setConfirmingClear(false);
     setNewPersonRow(null);
     checkSeqRef.current += 1;
     return () => {
@@ -175,8 +178,7 @@ const DivideTransactionDialog = ({ open, onClose, householdId, transaction, read
     setSaving(true);
     try {
       const result = await putMutation.mutateAsync({ transactionId, input: putInput });
-      const rest = formatCurrency(result.myPart, baseCurrency);
-      success(putInput.entries.length === 0 ? 'Divisão removida.' : `Divisão salva. Sua parte: ${rest}.`);
+      success(putInput.entries.length === 0 ? 'Divisão removida.' : savedSharesMessage(putInput.direction, result));
       onClose();
     } catch (err: unknown) {
       showError(getErrorMessage(err, 'Não foi possível salvar a divisão.'));
@@ -319,7 +321,7 @@ const DivideTransactionDialog = ({ open, onClose, householdId, transaction, read
                       </div>
                       <div>
                         <label htmlFor={`divide-note-${row.key}`} className="sr-only">Nota da parte {index + 1}</label>
-                        <input id={`divide-note-${row.key}`} type="text" maxLength={200} placeholder="Nota (opcional)" value={row.note}
+                        <input id={`divide-note-${row.key}`} type="text" maxLength={MAX_NOTE} placeholder="Nota (opcional)" value={row.note}
                           disabled={saving || readOnly} className={INPUT_SM_CLS} onChange={(e) => updateRow(row.key, { note: e.target.value })} />
                       </div>
                       {part?.error && <p role="alert" className={ERROR_CLS}>{part.error}</p>}
@@ -329,11 +331,12 @@ const DivideTransactionDialog = ({ open, onClose, householdId, transaction, read
               </ul>
 
               {!readOnly && (
-                <button type="button" onClick={addRow} disabled={saving} className={`${LINK_CLS} inline-flex items-center gap-1`}>
+                <button type="button" onClick={addRow} disabled={saving || draft.rows.length >= MAX_SPLIT_ENTRIES} className={`${LINK_CLS} inline-flex items-center gap-1`}>
                   <Plus className="h-3.5 w-3.5" aria-hidden="true" />
                   Adicionar pessoa
                 </button>
               )}
+              {draft.rows.length >= MAX_SPLIT_ENTRIES && <p className={`text-xs ${MUTED_CLS}`}>Uma divisão aceita no máximo {MAX_SPLIT_ENTRIES} pessoas.</p>}
 
               <dl className="grid grid-cols-3 gap-3 text-sm rounded-md bg-gray-50 dark:bg-gray-800/50 px-4 py-3" aria-label="Resumo da divisão">
                 <div>
@@ -379,10 +382,21 @@ const DivideTransactionDialog = ({ open, onClose, householdId, transaction, read
             </>
           )}
 
+          {confirmingClear && !readOnly && (
+            <div role="alertdialog" aria-label="Confirmar limpeza" className={NOTICE_BOX_CLS}>
+              <p className="font-medium">Remover todas as partes?</p>
+              <p>As partes de todas as pessoas desta transação, nos dois sentidos, serão apagadas.</p>
+              <div className="flex gap-3 pt-1">
+                <button type="button" onClick={() => void handleClearAll()} disabled={saving} className={BTN_PRIMARY}>{saving ? 'Removendo…' : 'Remover'}</button>
+                <button type="button" onClick={() => setConfirmingClear(false)} disabled={saving} className={BTN_SECONDARY}>Manter</button>
+              </div>
+            </div>
+          )}
+
           <div className="flex flex-wrap gap-3 justify-between pt-2">
             <div className="flex gap-3">
               {!readOnly && existing.length > 0 && (
-                <button type="button" onClick={() => void handleClearAll()} disabled={saving} className={BTN_SECONDARY}>Limpar divisão</button>
+                <button type="button" onClick={() => setConfirmingClear(true)} disabled={saving || confirmingClear} className={BTN_SECONDARY}>Limpar divisão</button>
               )}
               {draft && preview && !preview.isEmpty && !readOnly && (
                 <button type="button" onClick={() => void handleCheck()} disabled={saving || checking || !putInput} className={BTN_SECONDARY}>

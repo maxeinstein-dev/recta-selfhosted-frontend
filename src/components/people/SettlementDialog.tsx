@@ -51,8 +51,6 @@ const SettlementDialog = ({ open, onClose, householdId, person, balance }: Settl
   const mountedRef = useRef(true);
   // The description follows the direction until the user types their own.
   const descriptionEditedRef = useRef(false);
-  // Until the user picks a mode, the dialog may move from "no transaction" to "create" when the accounts arrive.
-  const modeTouchedRef = useRef(false);
   const accountPickedRef = useRef(false);
   const personRef = useRef(person);
   personRef.current = person;
@@ -71,16 +69,17 @@ const SettlementDialog = ({ open, onClose, householdId, person, balance }: Settl
     const current = personRef.current;
     if (!open || !current) return;
     descriptionEditedRef.current = false;
-    modeTouchedRef.current = false;
     accountPickedRef.current = false;
-    setDraft(defaultSettlementDraft(current, balanceRef.current, todayIso(), ''));
+    // Creating the real transaction is the default mode, but on NO account until the user picks one (or the one used
+    // last time in this household comes back): money is never booked on a guess.
+    setDraft({ ...defaultSettlementDraft(current, balanceRef.current, todayIso(), ''), mode: 'create' });
     setSearchText(current.name);
     setDebouncedSearch(current.name);
     setFormError(null);
   }, [open, person?.id]);
 
-  // The account: the one used last time in this household when it still exists, else the first. Picked once per
-  // opening, so choosing "Selecione a conta" afterwards is respected (the button then asks for an account).
+  // The account: only the one used last time in this household, when it still exists. Looked up once per opening, so
+  // choosing "Selecione a conta" afterwards is respected (the button then asks for an account).
   useEffect(() => {
     if (!open) accountPickedRef.current = false;
   }, [open]);
@@ -88,8 +87,8 @@ const SettlementDialog = ({ open, onClose, householdId, person, balance }: Settl
     if (!open || !draft || accountPickedRef.current || accounts.length === 0) return;
     accountPickedRef.current = true;
     const remembered = loadSettlementAccount(householdId);
-    const pick = accounts.some((a) => a.id === remembered) ? remembered : accounts[0].id;
-    setDraft((d) => (d && !d.accountId ? { ...d, accountId: pick, mode: d.mode === 'none' && !modeTouchedRef.current ? 'create' : d.mode } : d));
+    if (!accounts.some((a) => a.id === remembered)) return;
+    setDraft((d) => (d && !d.accountId ? { ...d, accountId: remembered } : d));
   }, [open, draft, accounts, householdId]);
 
   useEffect(() => {
@@ -106,10 +105,14 @@ const SettlementDialog = ({ open, onClose, householdId, person, balance }: Settl
   });
   const candidates = useMemo(() => (linking ? (candidatesData?.data ?? []) : []), [linking, candidatesData]);
 
-  const check = draft ? validateSettlement(draft) : null;
+  // The transaction to link is whatever the user sees chosen: after a new search a candidate that is no longer offered
+  // is not chosen any more (the select would show "Selecione" while a hidden id still went in the request).
+  const chosen = draft && candidates.some((c) => c.id === draft.transactionId) ? draft.transactionId : '';
+  const effective = useMemo(() => (draft ? { ...draft, transactionId: draft.mode === 'link' ? chosen : '' } : null), [draft, chosen]);
+  const check = effective ? validateSettlement(effective) : null;
   const amountCents = check?.amountCents ?? null;
   const balanceCents = reaisToCents(balance);
-  const selectedCandidate = draft ? candidates.find((c) => c.id === draft.transactionId) : undefined;
+  const selectedCandidate = chosen ? candidates.find((c) => c.id === chosen) : undefined;
   const candidateCents = selectedCandidate ? reaisToCents(Number(selectedCandidate.amount)) : null;
 
   const patch = (fields: Partial<SettlementDraft>) => setDraft((d) => (d ? { ...d, ...fields } : d));
@@ -124,8 +127,8 @@ const SettlementDialog = ({ open, onClose, householdId, person, balance }: Settl
   };
 
   const handleSave = async () => {
-    if (!draft || !person || !householdId || savingRef.current) return;
-    const input = buildSettlementInput(draft, householdId);
+    if (!draft || !effective || !person || !householdId || savingRef.current) return;
+    const input = buildSettlementInput(effective, householdId);
     if (!input) {
       setFormError('Revise os dados do acerto.');
       return;
@@ -196,7 +199,7 @@ const SettlementDialog = ({ open, onClose, householdId, person, balance }: Settl
             {MODES.map((mode) => (
               <label key={mode.value} className="flex items-center gap-2 text-sm text-gray-900 dark:text-gray-100 cursor-pointer">
                 <input type="radio" name="settle-mode" value={mode.value} checked={draft.mode === mode.value}
-                  onChange={() => { modeTouchedRef.current = true; patch({ mode: mode.value, transactionId: '' }); }} />
+                  onChange={() => patch({ mode: mode.value, transactionId: '' })} />
                 {mode.label(draft.direction)}
               </label>
             ))}
@@ -230,7 +233,7 @@ const SettlementDialog = ({ open, onClose, householdId, person, balance }: Settl
               </div>
               <div>
                 <label htmlFor="settle-transaction" className={LABEL_CLS}>{draft.direction === 'RECEIVED' ? 'Receita' : 'Despesa'}</label>
-                <select id="settle-transaction" value={draft.transactionId} disabled={saving} className={INPUT_CLS}
+                <select id="settle-transaction" value={chosen} disabled={saving} className={INPUT_CLS}
                   aria-invalid={check.errors.transaction ? true : undefined} onChange={(e) => patch({ transactionId: e.target.value })}>
                   <option value="">{loadingCandidates ? 'Buscando…' : candidates.length === 0 ? 'Nenhuma transação encontrada' : 'Selecione a transação'}</option>
                   {candidates.map((c) => (

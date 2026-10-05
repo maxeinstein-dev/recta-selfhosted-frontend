@@ -198,7 +198,7 @@ const PersonDetail = ({ householdId, person, balance, canEdit, onEdit, onSettle,
                             </span>
                           ) : (
                             <button type="button" onClick={() => setUndoId(entry.id)} disabled={busy} className={LINK_CLS}
-                              aria-label={`Desfazer o acerto de ${fmtDate(entry.date)}`}>Desfazer acerto</button>
+                              aria-label={`Desfazer acerto de ${fmtDate(entry.date)}`}>Desfazer acerto</button>
                           )
                         )}
                       </td>

@@ -9,7 +9,7 @@
  * Amounts are integer cents here; reais only on the wire.
  */
 import { normalizeLabel } from './maxfinPayload';
-import { centsToReais, isValidIsoDate, moneyText, parseMoneyToCents, parsePercentToHundredths, reaisToCents } from './people';
+import { MAX_ALIASES, MAX_PERSON_NAME, centsToReais, isValidIsoDate, moneyText, parseMoneyToCents, parsePercentToHundredths, reaisToCents } from './people';
 import type {
   OrganizeApplyInput, OrganizeApplyPerson, OrganizeApplyResult, OrganizeManualEntry, OrganizeOptions, OrganizePreview, Person,
   ReviewLine, SettlementProposal, ShareDirection, ShareProposal,
@@ -638,22 +638,30 @@ function choicesProblem(args: {
 
 /** A new person whose name is taken by a registered person (or by another new one): merge them instead. */
 export function peopleConflict(groups: readonly PersonGroup[], existing: readonly Person[]): string | null {
-  const taken = new Map<string, string>();
+  const taken = new Map<string, { id: string; name: string }>();
   for (const p of existing) {
-    taken.set(normalizeLabel(p.name), p.name);
-    for (const a of p.aliases) taken.set(normalizeLabel(a), p.name);
+    taken.set(normalizeLabel(p.name), { id: p.id, name: p.name });
+    for (const a of p.aliases) taken.set(normalizeLabel(a), { id: p.id, name: p.name });
   }
   const seenNew = new Set<string>();
   for (const group of groups) {
-    if (!group.used || group.target.kind !== 'new') continue;
-    const names = [group.name, ...group.aliases];
+    if (!group.used) continue;
+    const own = group.target.kind === 'existing' ? existing.find((p) => p.id === (group.target as { personId: string }).personId) : undefined;
+    // What the person ends up with: the server caps the aliases of one person.
+    if (group.aliases.length + (own?.aliases.length ?? 0) > MAX_ALIASES) return `"${group.name}" passaria de ${MAX_ALIASES} apelidos: tire alguns.`;
+    if ([group.name, ...group.aliases].some((n) => n.length > MAX_PERSON_NAME)) return `"${group.name}": nome e apelidos podem ter no máximo ${MAX_PERSON_NAME} caracteres.`;
+    if (group.target.kind === 'new' && !normalizeLabel(group.name)) return 'Uma pessoa nova está sem nome.';
+    // A new person brings her name too; a registered one only the aliases she receives.
+    const names = group.target.kind === 'new' ? [group.name, ...group.aliases] : group.aliases;
     for (const name of names) {
       const key = normalizeLabel(name);
-      if (taken.has(key)) return `"${name}" já é o nome ou apelido de ${taken.get(key)}: junte com essa pessoa em vez de criar outra.`;
+      const owner = taken.get(key);
+      if (owner && (group.target.kind === 'new' || owner.id !== (group.target as { personId: string }).personId)) {
+        return `"${name}" já é o nome ou apelido de ${owner.name}: junte com essa pessoa em vez de criar outra.`;
+      }
       if (seenNew.has(key)) return `"${name}" aparece em duas pessoas novas: junte-as numa só.`;
     }
     for (const name of names) seenNew.add(normalizeLabel(name));
-    if (!normalizeLabel(group.name)) return 'Uma pessoa nova está sem nome.';
   }
   return null;
 }
@@ -669,8 +677,14 @@ export function organizeBlocker(built: BuiltOrganize | null, state: { needsRefre
   return built.problem;
 }
 
-export function organizeFailureMessage(message: string): string {
-  return `${message.replace(/[.\s]+$/, '')}. A organização pode ter sido parcial: atualize a pré-visualização.`;
+/**
+ * The apply is one database transaction on the server: a 4xx answer means nothing was written. Only a network failure
+ * or an unknown answer (no status, 5xx) may have left it half done.
+ */
+export function organizeFailureMessage(message: string, status?: number): string {
+  const base = message.replace(/[.\s]+$/, '');
+  if (status !== undefined && status >= 400 && status < 500) return `${base}. Nada foi gravado: atualize a pré-visualização.`;
+  return `${base}. A organização pode ter sido parcial: atualize a pré-visualização.`;
 }
 
 const plural = (n: number, one: string, many: string): string => `${n} ${n === 1 ? one : many}`;

@@ -68,12 +68,27 @@ export function formatHundredthsInput(hundredths: number): string {
   return frac === 0 ? String(whole) : `${whole},${String(frac).padStart(2, '0').replace(/0$/, '')}`;
 }
 
-/** Shares are whole numbers >= 1 (the server rule for the shares strategy). */
+/** Limits of the server schema (people.schema.ts / split-strategies.ts), mirrored to the letter. */
+export const MAX_SHARES = 1000;
+export const MAX_SPLIT_ENTRIES = 50;
+export const MAX_ALIASES = 20;
+export const MAX_PERSON_NAME = 100;
+export const MAX_NOTE = 500;
+
+/** Shares of a person: whole numbers from 1 to 1000. */
 export function parseSharesText(text: string): number | null {
   const value = text.trim();
-  if (!/^\d{1,6}$/.test(value)) return null;
+  if (!/^\d{1,4}$/.test(value)) return null;
   const n = Number(value);
-  return n >= 1 ? n : null;
+  return n >= 1 && n <= MAX_SHARES ? n : null;
+}
+
+/** My own shares: whole numbers from 0 (the people pay it all) to 1000. */
+export function parseMySharesText(text: string): number | null {
+  const value = text.trim();
+  if (!/^\d{1,4}$/.test(value)) return null;
+  const n = Number(value);
+  return n <= MAX_SHARES ? n : null;
 }
 
 // ---- Split strategies (mirror of the server rule, for the live preview) ----------------------------------
@@ -95,8 +110,9 @@ export const SHARE_MESSAGES = {
   duplicate: 'Esta pessoa já aparece nesta divisão.',
   amount: 'Informe um valor maior que zero.',
   percent: 'Informe um percentual entre 0,01 e 100.',
-  shares: 'Informe as cotas (número inteiro maior que zero).',
-  myShares: 'As suas cotas devem ser um número inteiro maior que zero.',
+  shares: 'Informe as cotas (número inteiro de 1 a 1000).',
+  myShares: 'As suas cotas devem ser um número inteiro de 0 a 1000.',
+  tooMany: 'Uma divisão aceita no máximo 50 pessoas.',
   percentOver: 'Os percentuais somam mais de 100%.',
   zeroPart: 'A parte ficou zerada: o valor é baixo demais para esta divisão.',
   noRows: 'Adicione ao menos uma pessoa.',
@@ -241,12 +257,13 @@ export function computeSharePreview(totalCents: number, draft: ShareDraft): Shar
   });
 
   let formError: string | null = null;
-  const myShares = parseSharesText(draft.myShares);
+  const myShares = parseMySharesText(draft.myShares);
   if (draft.strategy === 'shares' && myShares === null) formError = SHARE_MESSAGES.myShares;
   if (draft.strategy === 'percent' && errors.size === 0) {
     const total = parsed.reduce((sum, r) => sum + (r.hundredths ?? 0), 0);
     if (total > 10000) formError = SHARE_MESSAGES.percentOver;
   }
+  if (rows.length > MAX_SPLIT_ENTRIES) formError = formError ?? SHARE_MESSAGES.tooMany;
   if (rows.length > 0 && totalCents <= 0) formError = formError ?? SHARE_MESSAGES.noTotal;
 
   const computable = errors.size === 0 && formError === null && rows.length > 0;
@@ -286,21 +303,36 @@ export function moneyText(cents: number): string {
 }
 
 /**
- * Switching the strategy keeps what the user already has: the computed parts become the exact amounts or the
- * percentages of the new strategy when the current draft is valid; otherwise the draft only changes strategy.
+ * Switching the strategy keeps what the user already has: the computed parts become the exact amounts of `exact`, or
+ * the percentages of `percent` ONLY when a percentage reproduces the part to the cent (a percentage with two decimals
+ * cannot say 5.00 of 10.01, and a wrong one would silently change the division). Otherwise that field is left blank
+ * for the user to fill, and an invalid draft only changes strategy.
  */
 export function convertDraftStrategy(draft: ShareDraft, strategy: SplitStrategy, totalCents: number): ShareDraft {
   if (draft.strategy === strategy) return draft;
   const preview = computeSharePreview(totalCents, draft);
   const usable = preview.valid && !preview.isEmpty && totalCents > 0;
+  const before = preview.parts.map((p) => p.cents);
   const rows = draft.rows.map((row, index) => {
-    const part = usable ? preview.parts[index].cents : null;
+    const part = usable ? before[index] : null;
     if (part === null) return row;
     if (strategy === 'exact') return { ...row, amountText: formatCentsInput(part) };
-    if (strategy === 'percent') return { ...row, percentText: formatHundredthsInput(Math.round((part * 10000) / totalCents)) };
+    if (strategy === 'percent') {
+      const hundredths = Math.round((part * 10000) / totalCents);
+      const exact = hundredths >= 1 && hundredths <= 10000 && floorShare(totalCents, hundredths, 10000) === part;
+      return { ...row, percentText: exact ? formatHundredthsInput(hundredths) : '' };
+    }
     return row;
   });
-  return { ...draft, strategy, rows };
+  let next: ShareDraft = { ...draft, strategy, rows };
+  if (usable && strategy === 'percent') {
+    // The rows may each be exact and still not add up (the whole-transaction remainder rule): then none is trusted.
+    const after = computeSharePreview(totalCents, next);
+    if (!after.valid || after.parts.some((p, index) => p.cents !== before[index])) {
+      next = { ...next, rows: rows.map((row) => ({ ...row, percentText: '' })) };
+    }
+  }
+  return next;
 }
 
 /** The PUT body of a valid draft; null when the draft is invalid or empty (an empty one clears: see clearSharesInput). */
@@ -317,7 +349,7 @@ export function buildPutSharesInput(totalCents: number, draft: ShareDraft): PutS
     return entry;
   });
   const input: PutSharesInput = { direction: draft.direction, strategy: draft.strategy, entries };
-  if (draft.strategy === 'shares') input.myShares = parseSharesText(draft.myShares) ?? 1;
+  if (draft.strategy === 'shares') input.myShares = parseMySharesText(draft.myShares) ?? 1;
   return input;
 }
 
@@ -358,9 +390,24 @@ export function draftFromServerPreview(draft: ShareDraft, server: SharesPreviewR
   };
 }
 
+/** The toast after saving: what is left for me when they owe me, what I owe when it is the other way round. */
+export function savedSharesMessage(direction: ShareDirection, result: { shares: ReadonlyArray<{ direction: string; amount: number }>; myPart: number }): string {
+  if (direction === 'THEY_OWE_ME') return `Divisão salva. Sua parte: ${moneyText(reaisToCents(result.myPart))}.`;
+  const owed = result.shares.filter((s) => s.direction === direction).reduce((sum, s) => sum + reaisToCents(s.amount), 0);
+  return `Divisão salva. Você deve ${moneyText(owed)}.`;
+}
+
 /** "Sua parte" when they owe me; the whole amount I owe when it is the other direction. */
 export function restLabel(direction: ShareDirection): string {
   return direction === 'THEY_OWE_ME' ? 'Sua parte' : 'Sobra da transação';
+}
+
+/**
+ * Whether the household member may change people, shares and settlements (the server asks for EDITOR or more). A
+ * household that is not known yet counts as no.
+ */
+export function canWritePeople(household: { role?: string } | null | undefined): boolean {
+  return !!household && household.role !== 'VIEWER';
 }
 
 // ---- Balances -----------------------------------------------------------------------------------------------
@@ -609,7 +656,11 @@ export interface PersonFormValidation {
 export function validatePersonForm(name: string, aliases: readonly string[], others: ReadonlyArray<Pick<Person, 'id' | 'name' | 'aliases'>>, editingId: string | null): PersonFormValidation {
   const trimmed = name.trim();
   if (!trimmed) return { ok: false, name: 'Informe o nome.' };
-  const mine = [trimmed, ...cleanAliases(trimmed, aliases)];
+  if (trimmed.length > MAX_PERSON_NAME) return { ok: false, name: `O nome pode ter no máximo ${MAX_PERSON_NAME} caracteres.` };
+  const cleaned = cleanAliases(trimmed, aliases);
+  if (cleaned.length > MAX_ALIASES) return { ok: false, conflict: `No máximo ${MAX_ALIASES} apelidos.` };
+  if (cleaned.some((a) => a.length > MAX_PERSON_NAME)) return { ok: false, conflict: `Um apelido pode ter no máximo ${MAX_PERSON_NAME} caracteres.` };
+  const mine = [trimmed, ...cleaned];
   for (const other of others) {
     if (other.id === editingId) continue;
     const taken = new Set([normalizeLabel(other.name), ...other.aliases.map(normalizeLabel)]);

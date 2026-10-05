@@ -3,7 +3,7 @@ import { UserPlus } from 'lucide-react';
 import { useCreatePerson, usePeople, useUpdatePerson } from '../../hooks/api/usePeople';
 import type { Person } from '../../hooks/api/usePeople';
 import { useToastContext } from '../../context/ToastContext';
-import { cleanAliases, parseAliasText, personSaveFailureMessage, validatePersonForm } from '../../utils/people';
+import { MAX_PERSON_NAME, cleanAliases, parseAliasText, personSaveFailureMessage, validatePersonForm } from '../../utils/people';
 import { BTN_PRIMARY, BTN_SECONDARY, CHECKBOX_CLS, DialogShell, ERROR_CLS, INPUT_CLS, LABEL_CLS, MUTED_CLS } from './ui';
 
 interface PersonFormDialogProps {
@@ -84,7 +84,7 @@ const PersonFormDialog = ({ open, onClose, householdId, person, onSaved, initial
       <div className="space-y-4 min-w-0">
         <div>
           <label htmlFor="person-name" className={LABEL_CLS}>Nome</label>
-          <input id="person-name" type="text" value={name} maxLength={80} disabled={saving} className={INPUT_CLS} autoFocus
+          <input id="person-name" type="text" value={name} maxLength={MAX_PERSON_NAME} disabled={saving} className={INPUT_CLS} autoFocus
             onChange={(e) => setName(e.target.value)} />
         </div>
         <div>

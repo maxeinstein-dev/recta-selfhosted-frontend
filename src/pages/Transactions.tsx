@@ -23,6 +23,7 @@ import TransactionModal from '../components/TransactionModal';
 import ImportTransactionsDialog from '../components/ImportTransactionsDialog';
 import ImportMaxFinDialog from '../components/ImportMaxFinDialog';
 import DivideTransactionDialog from '../components/people/DivideTransactionDialog';
+import { canWritePeople } from '../utils/people';
 import ConfirmModal from '../components/ConfirmModal';
 import { Transaction } from '../types';
 import { PageButton } from '../components/PageButton';
@@ -50,7 +51,7 @@ const Transactions = () => {
   const { registerHandler, unregisterHandler } = useCommandMenu();
   const { householdId, household } = useDefaultHousehold();
   // Dividing writes shares: EDITOR or more.
-  const canSplitShares = (household as { role?: string } | undefined)?.role !== 'VIEWER';
+  const canSplitShares = canWritePeople(household);
   const { data: authUser } = useAuthUser();
   const { data: households } = useHouseholds();
   const [searchParams, setSearchParams] = useSearchParams();

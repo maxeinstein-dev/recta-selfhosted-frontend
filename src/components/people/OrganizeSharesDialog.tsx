@@ -405,7 +405,7 @@ const OrganizeSharesDialog = ({ open, onClose, householdId }: OrganizeSharesDial
       success(organizeSummary(data));
       if (mountedRef.current) setResult(data);
     } catch (err: unknown) {
-      const message = organizeFailureMessage(getErrorMessage(err, 'Não foi possível aplicar as divisões.'));
+      const message = organizeFailureMessage(getErrorMessage(err, 'Não foi possível aplicar as divisões.'), (err as { status?: number } | null)?.status);
       showToast(message, 'error', ERROR_TOAST_MS);
       if (mountedRef.current) setApplyError(message);
     } finally {

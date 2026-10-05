@@ -63,28 +63,54 @@ interface DialogShellProps {
   children: ReactNode;
 }
 
-/** Portal, backdrop, body scroll lock and the close guard shared by the people dialogs. */
+// Open shells, oldest first. Only the topmost one answers ESC (the nested person form must not take the dialog under
+// it along), and the page scroll stays locked until the last one is gone, whatever order they unmount in.
+const openShells: symbol[] = [];
+let savedOverflow = '';
+
+function lockScroll(): void {
+  if (openShells.length === 1) {
+    savedOverflow = window.getComputedStyle(document.body).overflow;
+    document.body.style.overflow = 'hidden';
+  }
+}
+
+function unlockScroll(): void {
+  if (openShells.length === 0) document.body.style.overflow = savedOverflow;
+}
+
+const FOCUSABLE = 'input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]):not([data-shell-close])';
+
+/** Portal, backdrop, scroll lock, ESC for the topmost shell only, focus in and back, and the close guard. */
 export const DialogShell = ({ open, onClose, canClose, titleId, title, icon, widthClass = 'max-w-2xl', zClass = 'z-[60]', children }: DialogShellProps) => {
   const canCloseRef = useRef(canClose);
   canCloseRef.current = canClose;
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
-    const originalStyle = window.getComputedStyle(document.body).overflow;
-    document.body.style.overflow = 'hidden';
-    return () => {
-      document.body.style.overflow = originalStyle;
-    };
-  }, [open]);
-
-  useEffect(() => {
-    if (!open) return;
+    const id = Symbol('shell');
+    const active = document.activeElement as HTMLElement | null;
+    const before = active && active !== document.body ? active : null;
+    openShells.push(id);
+    lockScroll();
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape' && canCloseRef.current) onClose();
+      if (e.key !== 'Escape' || openShells[openShells.length - 1] !== id) return;
+      if (canCloseRef.current) onCloseRef.current();
     };
     window.addEventListener('keydown', handleEscape);
-    return () => window.removeEventListener('keydown', handleEscape);
-  }, [open, onClose]);
+    // The first control, else the panel itself, so the keyboard starts inside the dialog.
+    const panel = panelRef.current;
+    if (panel && !panel.contains(document.activeElement)) (panel.querySelector<HTMLElement>(FOCUSABLE) ?? panel).focus();
+    return () => {
+      window.removeEventListener('keydown', handleEscape);
+      openShells.splice(openShells.indexOf(id), 1);
+      unlockScroll();
+      if (before && before.isConnected) before.focus();
+    };
+  }, [open]);
 
   if (!open) return null;
   const requestClose = () => {
@@ -94,14 +120,14 @@ export const DialogShell = ({ open, onClose, canClose, titleId, title, icon, wid
     <div className={`fixed inset-0 ${zClass} overflow-y-auto`}>
       <div className="fixed inset-0 bg-black/40 animate-fade-in transition-opacity duration-300 ease-out" onClick={requestClose} aria-hidden="true" />
       <div className="flex min-h-full items-center justify-center p-4">
-        <div role="dialog" aria-modal="true" aria-labelledby={titleId}
-          className={`relative w-full ${widthClass} p-6 border rounded-lg bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 max-h-[90vh] overflow-y-auto min-w-0 animate-slide-in-bottom`}>
+        <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}
+          className={`relative w-full ${widthClass} p-6 border rounded-lg bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 max-h-[90vh] overflow-y-auto min-w-0 animate-slide-in-bottom focus:outline-none`}>
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center min-w-0">
               {icon}
               <h3 id={titleId} className="text-lg font-light tracking-tight text-gray-900 dark:text-white truncate">{title}</h3>
             </div>
-            <button type="button" onClick={requestClose} disabled={!canClose} aria-label="Fechar modal"
+            <button type="button" data-shell-close onClick={requestClose} disabled={!canClose} aria-label="Fechar modal"
               className="text-gray-400 dark:text-gray-500 hover:opacity-70 transition-opacity p-1 disabled:opacity-40 disabled:cursor-not-allowed">
               <X className="h-5 w-5" aria-hidden="true" />
             </button>

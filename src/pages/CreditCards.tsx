@@ -43,6 +43,7 @@ import ConfirmModal from "../components/ConfirmModal";
 import InstallmentDeleteModal from "../components/InstallmentDeleteModal";
 import ImportCardOfxDialog from "../components/ImportCardOfxDialog";
 import DivideTransactionDialog from "../components/people/DivideTransactionDialog";
+import { canWritePeople } from "../utils/people";
 import { AccountType, CategoryName, getCategoryDisplayName, TransactionType } from "../lib/enums";
 import { CreditCardsSummary } from "../components/CreditCardsSummary";
 import { TransactionActionsMenu } from "../components/TransactionActionsMenu";
@@ -70,7 +71,7 @@ const CreditCards = () => {
   const { success, error: showError } = useToastContext();
   const { householdId, household } = useDefaultHousehold();
   // Dividing writes shares: EDITOR or more.
-  const canSplitShares = (household as { role?: string } | undefined)?.role !== "VIEWER";
+  const canSplitShares = canWritePeople(household);
   
   const payInvoiceMutation = usePayCreditCardInvoice();
   const undoPaymentMutation = useUndoCreditCardPayment();

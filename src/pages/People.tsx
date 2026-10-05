@@ -6,7 +6,7 @@ import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
 import { usePeople, usePeopleBalances } from '../hooks/api/usePeople';
 import type { Person } from '../hooks/api/usePeople';
 import { formatCurrency } from '../utils/format';
-import { balanceSentence, balanceStatus, mergePeopleRows, summarizeBalances } from '../utils/people';
+import { balanceSentence, balanceStatus, canWritePeople, mergePeopleRows, summarizeBalances } from '../utils/people';
 import { PageHeader } from '../components/PageHeader';
 import { PageButton } from '../components/PageButton';
 import PersonFormDialog from '../components/people/PersonFormDialog';
@@ -27,7 +27,7 @@ const People = () => {
   const { baseCurrency } = useCurrency();
   const { householdId, household } = useDefaultHousehold();
   // Writing needs EDITOR or more; a viewer only reads.
-  const canEdit = (household as { role?: string } | undefined)?.role !== 'VIEWER';
+  const canEdit = canWritePeople(household);
   const money = (cents: number): string => formatCurrency(cents / 100, baseCurrency);
 
   const [showInactive, setShowInactive] = useState(false);

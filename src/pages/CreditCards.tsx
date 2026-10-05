@@ -38,6 +38,7 @@ import { EmptyState } from "../components/EmptyState";
 import { AccountsSkeleton } from "../components/PageSkeletons";
 import { useToastContext } from "../context/ToastContext";
 import { updateFailureMessage } from "../utils/transactionConflict";
+import { effectiveClosingDay } from "../utils/closingDay";
 import TransactionModal from "../components/TransactionModal";
 import { CreditCardModal } from "../components/CreditCardModal";
 import { PageButton } from "../components/PageButton";
@@ -172,6 +173,9 @@ const CreditCards = () => {
   const selectedAccount = useMemo(() => {
     return creditCards.find((acc) => acc.id === selectedAccountId);
   }, [creditCards, selectedAccountId]);
+
+  // The closing day is also the best day to buy; without one it is the due day - 7.
+  const effectiveClosing = effectiveClosingDay(selectedAccount);
 
 
   // Helper function to convert backend transaction to frontend format
@@ -785,31 +789,26 @@ const CreditCards = () => {
                     </span>
                   </div>
 
-                  {selectedAccount.closingDay && (
+                  {effectiveClosing && (
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-2 text-sm font-medium text-gray-500 dark:text-gray-300">
                         <Calendar className="h-4 w-4" />
                         {t.closingDay}
                       </div>
                       <span className="text-sm font-light text-gray-900 dark:text-white">
-                        {selectedAccount.closingDay}
+                        {effectiveClosing}
                       </span>
                     </div>
                   )}
 
-                  {selectedAccount.dueDay && (
+                  {effectiveClosing && (
                     <div className="flex justify-between items-center">
                       <div className="flex items-center gap-2 text-sm font-medium text-gray-500 dark:text-gray-300">
                         <CheckCircle2 className="h-4 w-4" />
                         {t.bestDayToBuy}
                       </div>
                       <span className="text-sm font-light text-green-500">
-                        {(() => {
-                          const offset = selectedAccount.bestDayOffset ?? 7;
-                          const baseDay = selectedAccount.closingDay ?? selectedAccount.dueDay ?? 1;
-                          const result = baseDay - offset;
-                          return result <= 0 ? 30 + result : result;
-                        })()}
+                        {effectiveClosing}
                       </span>
                     </div>
                   )}
@@ -854,15 +853,10 @@ const CreditCards = () => {
                         })}
                       </span>
                     </div>
-                    {selectedAccount.dueDay && (
+                    {effectiveClosing && (
                       <span className="text-xs text-primary-600 dark:text-primary-400 font-light mt-1">
                         {t.bestDayToBuy}:{" "}
-                        {(() => {
-                          const offset = selectedAccount.bestDayOffset ?? 7;
-                          const baseDay = selectedAccount.closingDay ?? selectedAccount.dueDay ?? 1;
-                          const result = baseDay - offset;
-                          return result <= 0 ? 30 + result : result;
-                        })()}
+                        {effectiveClosing}
                       </span>
                     )}
                   </div>

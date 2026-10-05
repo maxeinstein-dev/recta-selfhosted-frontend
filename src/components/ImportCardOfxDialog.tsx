@@ -27,10 +27,10 @@ import { monthKeyLabel } from '../utils/maxfinWorkbook';
 import {
   PROPOSAL_KIND_LABEL, buildCardOfxConfirm, buildCardOfxSections, buildCardOfxSummary, cardOfxConfirmBlocker, cardOfxFailureMessage,
   cardOfxMonthSourceLabel, cardOfxResultLines, clearGroups, defaultPaymentChoice, isGroupSelected, isKnownProposalKind,
-  isPaymentActionable, lineKindLabel, mergeAbsorbedNotice, mergeSummary, newLinesNotice, paymentNeedsSource, paymentSourceAccounts,
-  proposalReasonChip, reconcileGroupSelection, reconcilePaymentChoice, selectAllGroups, setGroupSelected, validateCardOfxFile,
+  isPaymentActionable, lineKindLabel, mergeAbsorbedNotice, mergeSummary, nearChange, nearChangeText, neighbourMonthLabel, newLinesNotice, paymentNeedsSource, paymentSourceAccounts,
+  proposalHeadline, proposalReasonChip, reconcileGroupSelection, reconcilePaymentChoice, selectAllGroups, setGroupSelected, validateCardOfxFile,
 } from '../utils/cardOfx';
-import { buildClosingView, closingBasisLabel, closingHeadline, closingResidualVerdict, closingRows } from '../utils/cardOfxClosing';
+import { buildClosingView, closingBasisLabel, closingHeadline, closingResidualStatus, closingRows } from '../utils/cardOfxClosing';
 import type { ClosingView } from '../utils/cardOfxClosing';
 import CardOfxReviewDialog from './CardOfxReviewDialog';
 import type {
@@ -191,6 +191,7 @@ const CLOSING_TOTAL_HINT =
 const ClosingPanel = ({ view, currency }: { view: ClosingView; currency: CurrencyCode }) => {
   const rows = closingRows(view);
   const delta = view.deltaCents;
+  const residual = closingResidualStatus(view, (cents) => money(cents, currency));
   return (
     <section aria-labelledby="card-ofx-closing-title" className={BOX_CLS}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
@@ -231,8 +232,8 @@ const ClosingPanel = ({ view, currency }: { view: ClosingView; currency: Currenc
           ))}
         </ul>
         <p className="mt-1 flex flex-wrap items-center gap-2 text-xs">
-          <Chip tone={view.explained ? 'green' : 'orange'}>{view.explained ? 'explicada' : 'não explicada'}</Chip>
-          <span className={MUTED_CLS}>{closingResidualVerdict(view)}</span>
+          <Chip tone={residual.tone}>{residual.chip}</Chip>
+          <span className={MUTED_CLS}>{residual.verdict}</span>
         </p>
         {view.sheetOnlyOutsideCents !== 0 && (
           <p className={`mt-1 text-xs ${MUTED_CLS}`}>
@@ -338,13 +339,21 @@ const ResultCell = ({ result }: { result: CardOfxResult }) => (
   </div>
 );
 
-/** A merge: one bank line that is the sum of several sheet rows; the first stays, the others are absorbed (deleted). */
-const MergeCell = ({ proposal, currency }: { proposal: CardOfxGroupView['proposal']; currency: CurrencyCode }) => {
+/**
+ * A match that needs explaining: a merge (one bank line that is the sum of several sheet rows; the first stays, the
+ * others are absorbed and deleted), a near amount (the row takes the bank amount), a purchase of the neighbouring month,
+ * or a sum by merchant.
+ */
+const MergeCell = ({ proposal, netCents, currency }: { proposal: CardOfxGroupView['proposal']; netCents: number; currency: CurrencyCode }) => {
   const absorbed = proposal.absorbed ?? [];
   const notice = mergeAbsorbedNotice(proposal);
+  const near = nearChange(proposal, netCents);
+  const month = neighbourMonthLabel(proposal);
   return (
     <div className="space-y-1 min-w-0">
-      <p className="font-medium text-gray-900 dark:text-white">{mergeSummary(proposal)}</p>
+      <p className="font-medium text-gray-900 dark:text-white">{proposalHeadline(proposal)}</p>
+      {near && <p data-near-change className="text-xs text-gray-900 dark:text-white">{nearChangeText(near, (cents) => money(cents, currency))}</p>}
+      {month && <p className={`text-xs ${MUTED_CLS}`}>Linha da planilha de {month}.</p>}
       <ul className="space-y-0.5">
         {proposal.target && (
           <li className="min-w-0">
@@ -424,8 +433,8 @@ const GroupRow = ({ group, checked, disabled, currency, onToggle }: GroupRowProp
       {twoColumns && (
         <>
           <td className={`${TD_CLS} min-w-[180px]`}>
-            {proposal.kind === 'enrich-merge' && proposal.target
-              ? <MergeCell proposal={proposal} currency={currency} />
+            {proposalHeadline(proposal) !== null && proposal.target
+              ? <MergeCell proposal={proposal} netCents={group.netCents} currency={currency} />
               : proposal.target ? <TargetCell target={proposal.target} currency={currency} /> : <span className={MUTED_CLS}>—</span>}
           </td>
           <td className={`${TD_CLS} min-w-[180px]`}>
@@ -434,7 +443,7 @@ const GroupRow = ({ group, checked, disabled, currency, onToggle }: GroupRowProp
         </>
       )}
       {section === 'reversal' && <td className={`${TD_CLS} whitespace-nowrap`}>{money(group.netCents, currency)}</td>}
-      {section === 'other' && <td className={`${TD_CLS} ${MUTED_CLS}`}>{proposal.kind}</td>}
+      {section === 'other' && <td className={`${TD_CLS} ${MUTED_CLS}`}>Tipo de proposta desconhecido</td>}
     </tr>
   );
 };
@@ -442,7 +451,7 @@ const GroupRow = ({ group, checked, disabled, currency, onToggle }: GroupRowProp
 const SECTION_HEADERS: Record<CardOfxGroupSection, string[]> = {
   matched: ['No OFX', 'Na planilha', 'Como fica'],
   futures: ['No OFX', 'Parcela futura', 'Como fica'],
-  new: ['No OFX'],
+  new: ['Compra do OFX (será criada)'],
   reversal: ['No OFX', 'Soma'],
   other: ['No OFX', 'Tipo'],
 };

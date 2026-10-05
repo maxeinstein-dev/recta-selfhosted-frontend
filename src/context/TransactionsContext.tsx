@@ -58,6 +58,7 @@ import { useCategories } from '../hooks/api/useCategories';
 
 // Import parseDateFromAPI and formatDateForAPI from utils
 import { parseDateFromAPI, formatDateForAPI } from '../utils/format';
+import { CONFLICT_MESSAGE, isConflict } from '../utils/transactionConflict';
 
 const TransactionsContext = createContext<TransactionsContextType>({} as TransactionsContextType);
 
@@ -535,7 +536,14 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
     if (transaction.totalInstallments !== undefined) updateData.totalInstallments = transaction.totalInstallments || null;
     if (transaction.attachmentUrl !== undefined) updateData.attachmentUrl = transaction.attachmentUrl || null;
 
-    const updated = await updateTransaction.mutateAsync({ id, ...updateData });
+    let updated;
+    try {
+      updated = await updateTransaction.mutateAsync({ id, ...updateData });
+    } catch (err) {
+      // 409: another request changed the row at the same moment; say so in pt-BR (the callers show err.message).
+      if (isConflict(err)) throw Object.assign(new Error(CONFLICT_MESSAGE), { status: 409 });
+      throw err;
+    }
 
     if (transaction.type) {
       analyticsHelpers.logTransactionUpdated(transaction.type);

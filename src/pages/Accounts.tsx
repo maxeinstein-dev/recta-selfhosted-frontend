@@ -63,8 +63,11 @@ import { arSA as arSALocale } from "date-fns/locale/ar-SA";
 import { CategoryName, getCategoryDisplayName, TransactionType, getCategoryIconName } from "../lib/enums";
 import { EmptyState } from "../components/EmptyState";
 import type React from "react";
+import { useToastContext } from "../context/ToastContext";
+import { updateFailureMessage } from "../utils/transactionConflict";
 
 const Accounts = () => {
+  const { error: showError } = useToastContext();
   const { accounts: allAccounts, deleteAccount, deleteTransaction, updateTransaction, loading, customCategories } = useTransactions();
   const { baseCurrency } = useCurrency();
   const { t, locale } = useI18n();
@@ -597,7 +600,11 @@ const Accounts = () => {
   const handleMarkAsPaid = async (id: string, paid: boolean): Promise<void> => {
     const transaction = transactions.find(t => t.id === id);
     if (transaction) {
+      try {
       await updateTransaction(id, { paid });
+    } catch (err) {
+      showError(updateFailureMessage(err));
+    }
     }
   };
 

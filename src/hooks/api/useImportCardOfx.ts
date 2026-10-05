@@ -43,10 +43,12 @@ export interface CardOfxLine {
 }
 
 /** The server may add kinds later: a proposal of a kind this client does not know is shown but never sent. */
-export type CardOfxProposalKind = 'enrich-exact' | 'enrich-plan' | 'enrich-sum' | 'enrich-merge' | 'consume-future' | 'create' | 'reversal';
+export type CardOfxProposalKind = 'enrich-exact' | 'enrich-plan' | 'enrich-sum' | 'enrich-merge' | 'enrich-neighbour' | 'enrich-group' | 'enrich-near' | 'consume-future' | 'create' | 'reversal';
 
 /** Why the server leaves a proposal unticked. The server may add reasons: the UI never relies on this list. */
-export type CardOfxProposalReason = 'ambiguous' | 'no-shared-words' | 'mixed-categories' | 'sheet-residue';
+export type CardOfxProposalReason =
+  | 'ambiguous' | 'no-shared-words' | 'mixed-categories' | 'sheet-residue' | 'neighbour-ambiguous' | 'neighbour-weak'
+  | 'neighbour-month-not-imported' | 'near-amount' | 'near-ambiguous' | 'pool-too-large';
 
 /** The stored transaction a proposal changes: the sheet row (enrich) or the future installment (consume). */
 export interface CardOfxTarget {

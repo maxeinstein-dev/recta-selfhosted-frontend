@@ -5,6 +5,7 @@
  * Types come from the hook modules through type-only imports (erased at runtime).
  */
 import { AccountType } from '../lib/enums';
+import { monthKeyLabel } from './maxfinWorkbook';
 import { categoryChoiceKey, countLabel, effectiveCategoryTarget, toCents, toSignedCents } from './maxfinPayload';
 import type {
   MaxFinCategoryMapEntry, MaxFinCategoryMapInput, MaxFinCategoryTargetInput, MaxFinTransactionType,
@@ -60,6 +61,9 @@ const KIND_SECTION: Record<CardOfxProposalKind, Exclude<CardOfxGroupSection, 'ot
   'enrich-plan': 'matched',
   'enrich-sum': 'matched',
   'enrich-merge': 'matched',
+  'enrich-neighbour': 'matched',
+  'enrich-group': 'matched',
+  'enrich-near': 'matched',
   'consume-future': 'futures',
   create: 'new',
   reversal: 'reversal',
@@ -70,6 +74,9 @@ export const PROPOSAL_KIND_LABEL: Record<CardOfxProposalKind, string> = {
   'enrich-plan': 'plano antecipado',
   'enrich-sum': 'soma',
   'enrich-merge': 'mesclagem',
+  'enrich-neighbour': 'mês vizinho',
+  'enrich-group': 'por comerciante',
+  'enrich-near': 'valor próximo',
   'consume-future': 'parcela futura',
   create: 'nova',
   reversal: 'compra e estorno',
@@ -102,6 +109,46 @@ export function mergeAbsorbedNotice(proposal: Pick<CardOfxProposal, 'kind' | 'ab
   const n = proposal.kind === 'enrich-merge' ? (proposal.absorbed?.length ?? 0) : 0;
   if (n === 0) return null;
   return `${countLabel(n, 'lançamento absorvido será apagado', 'lançamentos absorvidos serão apagados')}; a descrição e o valor ${n === 1 ? 'dele ficam' : 'deles ficam'} nas notas da linha que permanece.`;
+}
+
+/** The sheet row takes the bank amount (enrich-near): what it holds now, what it will hold and the difference, integer cents. */
+export function nearChange(
+  proposal: Pick<CardOfxProposal, 'kind' | 'target'>,
+  lineNetCents: number,
+): { oldCents: number; newCents: number; diffCents: number } | null {
+  if (proposal.kind !== 'enrich-near' || !proposal.target) return null;
+  const oldCents = signedCents(proposal.target.amount, proposal.target.type);
+  return { oldCents, newCents: lineNetCents, diffCents: lineNetCents - oldCents };
+}
+
+/** "R$ 10,00 → R$ 10,03 (+3 centavos)" for a near-amount adoption; null for any other proposal. */
+export function nearChangeText(change: { oldCents: number; newCents: number; diffCents: number }, formatCents: (cents: number) => string): string {
+  const abs = Math.abs(change.diffCents);
+  const sign = change.diffCents > 0 ? '+' : change.diffCents < 0 ? '−' : '';
+  return `${formatCents(change.oldCents)} → ${formatCents(change.newCents)} (${sign}${abs} ${abs === 1 ? 'centavo' : 'centavos'})`;
+}
+
+/** One line saying what kind of match the proposal is, for the kinds that need explaining; null for the plain ones. */
+export function proposalHeadline(proposal: Pick<CardOfxProposal, 'kind' | 'target' | 'absorbed'>): string | null {
+  switch (proposal.kind) {
+    case 'enrich-merge':
+      return mergeSummary(proposal);
+    case 'enrich-near':
+      return 'Valor próximo: a planilha passa a ter o valor do banco';
+    case 'enrich-neighbour':
+      return 'Compra do mês vizinho';
+    case 'enrich-group':
+      return 'Soma por comerciante';
+    default:
+      return null;
+  }
+}
+
+/** For a neighbour match: the sheet month the row comes from ("setembro/2026"), from its source ref; null when unknown. */
+export function neighbourMonthLabel(proposal: Pick<CardOfxProposal, 'kind' | 'target'>): string | null {
+  if (proposal.kind !== 'enrich-neighbour') return null;
+  const key = /^maxfin:(\d{4}-\d{2}):/.exec(proposal.target?.sourceRef ?? '')?.[1];
+  return key ? monthKeyLabel(key) : null;
 }
 
 export type CardOfxReasonTone = 'orange' | 'yellow' | 'gray';
@@ -156,8 +203,38 @@ export function proposalReasonChip(
         title: `Pode ser a mesma compra de uma linha que sobrou na planilha (${what}). Confira antes de marcar: marcar cria uma segunda.`,
       };
     }
+    case 'neighbour-weak':
+      return {
+        reason, tone: 'yellow', text: 'mês vizinho, pouca semelhança',
+        title: 'A compra parece ser de uma linha da planilha do mês vizinho, mas as descrições têm pouco em comum: confira antes de marcar.',
+      };
+    case 'neighbour-ambiguous':
+      return {
+        reason, tone: 'orange', text: 'mês vizinho, mais de uma opção',
+        title: 'A linha do OFX ou a da planilha do mês vizinho tem outros candidatos: confira qual é o par certo antes de marcar.',
+      };
+    case 'neighbour-month-not-imported':
+      return {
+        reason, tone: 'yellow', text: 'fatura do mês vizinho ainda não importada',
+        title: 'A linha da planilha é de um mês cuja fatura ainda não foi importada: ela pode ser conciliada com o OFX daquele mês.',
+      };
+    case 'near-amount':
+      return {
+        reason, tone: 'yellow', text: 'valor próximo, sem sinal forte',
+        title: 'Os valores diferem por poucos centavos e a descrição não confirma que é a mesma compra: marcar troca o valor da planilha pelo do banco.',
+      };
+    case 'near-ambiguous':
+      return {
+        reason, tone: 'orange', text: 'valor próximo, mais de uma opção',
+        title: 'Mais de uma linha tem valor a poucos centavos de diferença: confira qual é o par certo antes de marcar.',
+      };
+    case 'pool-too-large':
+      return {
+        reason, tone: 'yellow', text: 'muitas compras do comerciante',
+        title: 'O comerciante tem compras demais para o servidor garantir que esta é a única combinação que fecha o valor: confira antes de marcar.',
+      };
     default:
-      return { reason, tone: 'gray', text: reason, title: `O servidor deixou esta proposta desmarcada (motivo: ${reason}).` };
+      return { reason, tone: 'gray', text: 'desmarcada pelo servidor', title: 'O servidor deixou esta proposta desmarcada por um motivo que esta versão não conhece: confira antes de marcar.' };
   }
 }
 
@@ -578,8 +655,8 @@ export function buildCardOfxConfirm(
   for (const group of sections.groups) {
     // An advance payment paired with a sheet credit: payments are outside the OFX total, so outside this one too.
     if (group.hasPayment) continue;
-    if (group.proposal.kind === 'enrich-merge' && group.proposal.target) {
-      // A ticked merge leaves ONE row with the bank amount; unticked, the row and the ones it would absorb stay as they are.
+    if ((group.proposal.kind === 'enrich-merge' || group.proposal.kind === 'enrich-near') && group.proposal.target) {
+      // A ticked merge (or near-amount adoption) leaves ONE row with the bank amount; unticked, the row and the ones it would absorb stay as they are.
       const target = group.proposal.target;
       if (targets.has(target.transactionId)) continue;
       targets.add(target.transactionId);

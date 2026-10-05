@@ -4,7 +4,8 @@
  * request, the blocker, the honest reading of a partial answer (done / skipped / blocked / failed, row by row), the
  * months with their totals and the "kept" view. Like cardOfx.ts: no React, no axios, integer cents.
  */
-import { AccountType } from '../lib/enums';
+import { AccountType, CATEGORY_NAME_DISPLAY } from '../lib/enums';
+import type { CategoryName } from '../lib/enums';
 import { countLabel, toSignedCents } from './maxfinPayload';
 import { monthKeyLabel } from './maxfinWorkbook';
 import { signedCents } from './cardOfx';
@@ -267,16 +268,33 @@ export const REVIEW_STATUS_LABEL: Record<CardOfxReviewStatus, string> = {
   failed: 'falhou',
 };
 
+const BLOCKED_TEXT = 'Tem divisão com pessoas, acerto, recorrência ou anexo';
+
 const REASON_TEXT: Record<string, string> = {
-  'changed-meanwhile': 'mudou enquanto era aplicado',
-  'not-in-queue': 'não está mais na lista',
-  'blocked': 'tem partilha, divisão, acerto, recorrência ou anexo',
+  'changed-meanwhile': 'Mudou enquanto era aplicado',
+  'not-in-queue': 'Não está mais na lista',
+  blocked: BLOCKED_TEXT,
+  'has-shares-split-settlement-recurrence-or-attachment': BLOCKED_TEXT,
+  'has-shares-or-settlement': 'Tem divisão com pessoas ou acerto',
 };
 
-/** A reason code of the server in words; an unknown code is shown as it came. */
+/** A reason code of the server in words. A code this client does not know is never shown: it reads as an unexpected error. */
 export function reviewReasonText(reason: string | undefined): string {
   if (!reason) return '';
-  return REASON_TEXT[reason] ?? reason;
+  return REASON_TEXT[reason] ?? 'Erro inesperado ao aplicar';
+}
+
+/**
+ * The category of a row for its chip: a system category by its name in Portuguese, a custom one ("CUSTOM:<id>") by the
+ * name the household gave it, and "Categoria" when that name is not known. A plain name is shown as it is.
+ */
+export function categoryChipLabel(raw: string | null | undefined, customNames: Readonly<Record<string, string>>): string | null {
+  const value = (raw ?? '').trim();
+  if (!value) return null;
+  if (value.startsWith('CUSTOM:')) return customNames[value.slice('CUSTOM:'.length)] || 'Categoria';
+  const known = (CATEGORY_NAME_DISPLAY as Record<string, string>)[value as CategoryName];
+  if (known) return known;
+  return /^[A-Z0-9_]+$/.test(value) ? 'Categoria' : value;
 }
 
 export interface ReviewOutcome {

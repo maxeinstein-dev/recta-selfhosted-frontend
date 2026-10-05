@@ -37,6 +37,7 @@ import { Transaction, Account } from "../types";
 import { EmptyState } from "../components/EmptyState";
 import { AccountsSkeleton } from "../components/PageSkeletons";
 import { useToastContext } from "../context/ToastContext";
+import { updateFailureMessage } from "../utils/transactionConflict";
 import TransactionModal from "../components/TransactionModal";
 import { CreditCardModal } from "../components/CreditCardModal";
 import { PageButton } from "../components/PageButton";
@@ -424,7 +425,11 @@ const CreditCards = () => {
   const handleMarkAsPaid = async (id: string, paid: boolean): Promise<void> => {
     const transaction = transactions.find(t => t.id === id);
     if (transaction) {
+      try {
       await updateTransaction(id, { paid });
+    } catch (err) {
+      showError(updateFailureMessage(err));
+    }
     }
   };
 

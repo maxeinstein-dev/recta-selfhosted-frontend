@@ -113,7 +113,8 @@ function effectOf(group: CardOfxGroupView, selected: boolean, inPeriod: (date: s
   const target = proposal.target;
   if (!target) return NO_EFFECT;
   if (selected) {
-    const cents = proposal.kind === 'enrich-merge' || proposal.kind === 'consume-future' ? group.netCents : signedCents(target.amount, target.type);
+    // Merges, consumed futures and near-amount adoptions write the bank amount into the row; the other matches keep the sheet's.
+    const cents = proposal.kind === 'enrich-merge' || proposal.kind === 'consume-future' || proposal.kind === 'enrich-near' ? group.netCents : signedCents(target.amount, target.type);
     const counted = inPeriod(proposal.result?.date ?? target.date) ? cents : 0;
     // An advance payment line is not in the OFX total; the sheet credit it pairs with stays in the card total.
     const advance = group.lines.length > 0 && group.lines.every((line) => line.kind === 'payment') ? counted : 0;
@@ -244,7 +245,35 @@ export function closingHeadline(view: Pick<ClosingView, 'deltaCents'>, formatCen
     : `O cartão fica ${amount} a mais que o total do OFX.`;
 }
 
-/** The residual in words: explained (within 5 cents) or not. */
-export function closingResidualVerdict(view: Pick<ClosingView, 'explained'>): string {
-  return view.explained ? 'Diferença explicada pelos itens acima.' : 'Parte da diferença não é explicada pelos itens acima: confira as datas e as linhas do cartão no período.';
+export interface ClosingResidualStatus {
+  tone: 'green' | 'yellow' | 'orange';
+  /** The chip: "explicada" only when nothing is left; the cents that remain are named. */
+  chip: string;
+  /** The sentence under the rows. */
+  verdict: string;
+}
+
+/**
+ * The residual in words. `explained` is the server's flag (|residual| within 5 cents; for a recomputed selection the
+ * same rule): it is shown as it is, but "explicada" is said only when no cent is left, so a residual of a few cents
+ * never reads as fully accounted for.
+ */
+export function closingResidualStatus(
+  view: Pick<ClosingView, 'explained' | 'components'>,
+  formatCents: (cents: number) => string,
+): ClosingResidualStatus {
+  const left = Math.abs(view.components.residual);
+  if (left === 0 && view.explained) return { tone: 'green', chip: 'explicada', verdict: 'Diferença explicada pelos itens acima.' };
+  if (view.explained) {
+    return {
+      tone: 'yellow',
+      chip: `dentro da tolerância: restam ${formatCents(left)}`,
+      verdict: `Os itens acima explicam a diferença, exceto ${formatCents(left)} (arredondamento do banco, dentro da tolerância de ${CLOSING_TOLERANCE_CENTS} centavos).`,
+    };
+  }
+  return {
+    tone: 'orange',
+    chip: `não explicada: restam ${formatCents(left)}`,
+    verdict: 'Parte da diferença não é explicada pelos itens acima: confira as datas e as linhas do cartão no período.',
+  };
 }

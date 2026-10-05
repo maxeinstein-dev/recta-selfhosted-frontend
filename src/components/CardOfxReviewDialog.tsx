@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ClipboardCheck, RefreshCw } from 'lucide-react';
 import { useAccounts } from '../hooks/api/useAccounts';
+import { useCategories } from '../hooks/api/useCategories';
 import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
 import { useCardOfxReviewActions, useCardOfxReviewQueue } from '../hooks/api/useCardOfxReview';
 import type { CardOfxReviewActionsResponse, CardOfxReviewItem, CardOfxReviewQueue, CardOfxReviewView } from '../hooks/api/useCardOfxReview';
@@ -10,7 +11,7 @@ import { formatCurrency } from '../utils/format';
 import { countLabel } from '../utils/maxfinPayload';
 import { signedCents } from '../utils/cardOfx';
 import {
-  DELETE_WARNING, EMPTY_REVIEW_DRAFT, KEPT_EXPLANATION, REVIEW_ACTION_LABEL, REVIEW_EXPLANATION, REVIEW_LIMIT, REVIEW_STATUS_LABEL,
+  DELETE_WARNING, categoryChipLabel, EMPTY_REVIEW_DRAFT, KEPT_EXPLANATION, REVIEW_ACTION_LABEL, REVIEW_EXPLANATION, REVIEW_LIMIT, REVIEW_STATUS_LABEL,
   allowedActions, buildReviewActions, choiceOf, confirmLines, decidedCount, draftAfterResults, lingeringOutcomes, moveTargetAccounts,
   isRefusedBeforeWriting, moveTargetProblem, reconcileReviewDraft, reviewBlocker, reviewFailureMessage, reviewHeadline, reviewOutcomeReason, reviewSections,
   reviewSummaryLine, reviewViewLabel, setBulkChoice, setRowChoice, setRowTarget, summarizeReviewResponse, unkeepRequest,
@@ -46,6 +47,11 @@ const CardOfxReviewDialog = ({ open, onClose, accountId, householdId: householdI
 
   const { data: accountsData } = useAccounts({ householdId: householdId ?? '' });
   const accounts = useMemo(() => accountsData?.accounts ?? [], [accountsData]);
+  const { data: categoriesData } = useCategories({ householdId });
+  const customNames = useMemo(
+    () => Object.fromEntries((categoriesData ?? []).filter((c) => !c.isSystem).map((c) => [c.id, c.name])),
+    [categoriesData],
+  );
   const targets = useMemo(() => moveTargetAccounts(accounts), [accounts]);
   const accountName = (id: string): string => accounts.find((a) => a.id === id)?.name ?? '—';
 
@@ -68,6 +74,13 @@ const CardOfxReviewDialog = ({ open, onClose, accountId, householdId: householdI
   const [bulkAction, setBulkAction] = useState<ReviewChoiceAction>('keep');
   const [bulkTarget, setBulkTarget] = useState('');
   const [bulkNote, setBulkNote] = useState<string | null>(null);
+
+  // The confirmation opens below a long list: bring it into view.
+  const confirmRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = confirmRef.current;
+    if (confirming && el && typeof el.scrollIntoView === 'function') el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }, [confirming]);
 
   // Latest-wins: a read only touches state while it is the newest read of a mounted, open dialog.
   const seqRef = useRef(0);
@@ -260,7 +273,7 @@ const CardOfxReviewDialog = ({ open, onClose, accountId, householdId: householdI
     const reason = reviewOutcomeReason(outcome);
     return (
       <Chip tone={outcome.status === 'failed' ? 'red' : 'yellow'} title={reason || undefined}>
-        {REVIEW_STATUS_LABEL[outcome.status]}{reason ? `: ${reason}` : ''}
+        {REVIEW_STATUS_LABEL[outcome.status]}{reason ? `: ${reason.charAt(0).toLowerCase()}${reason.slice(1)}` : ''}
       </Chip>
     );
   };
@@ -387,7 +400,13 @@ const CardOfxReviewDialog = ({ open, onClose, accountId, householdId: householdI
               </span>
             </div>
             <div className={TABLE_WRAP_CLS}>
-              <table className="w-full text-sm">
+              <table className="w-full min-w-[760px] table-fixed text-sm">
+                <colgroup>
+                  <col className="w-28" />
+                  <col />
+                  <col className="w-40" />
+                  <col className="w-64" />
+                </colgroup>
                 <thead>
                   <tr className={THEAD_ROW_CLS}>
                     <th className={TH_CLS}>Data</th>
@@ -406,7 +425,7 @@ const CardOfxReviewDialog = ({ open, onClose, accountId, householdId: householdI
                         <td className={`${TD_CLS} min-w-[220px]`}>
                           <p className="truncate max-w-[320px]" title={item.description}>{item.description}</p>
                           <div className="flex flex-wrap items-center gap-1 mt-0.5 empty:hidden">
-                            {item.categoryName && <Chip tone="gray">{item.categoryName}</Chip>}
+                            {categoryChipLabel(item.categoryName, customNames) && <Chip tone="gray">{categoryChipLabel(item.categoryName, customNames)}</Chip>}
                             {item.blocked && (
                               <Chip tone="yellow" title="Tem partilha, divisão, acerto, recorrência ou anexo: só pode ser mantido sem comprovante.">
                                 bloqueado: só manter
@@ -463,7 +482,7 @@ const CardOfxReviewDialog = ({ open, onClose, accountId, householdId: householdI
         {!kept && queue && items.length > 0 && (
           <div className="pt-3 border-t border-gray-200 dark:border-gray-800 space-y-3">
             {confirming ? (
-              <div role="alertdialog" aria-labelledby="card-review-confirm-title" className={NOTICE_BOX_CLS}>
+              <div ref={confirmRef} role="alertdialog" aria-labelledby="card-review-confirm-title" className={NOTICE_BOX_CLS}>
                 <p id="card-review-confirm-title" className="font-medium">Confirmar {countLabel(built.counts.total, 'decisão', 'decisões')}?</p>
                 <ul className="list-disc list-inside">
                   {confirmLines(built.counts, accountName, money).map((line, index) => <li key={index}>{line}</li>)}

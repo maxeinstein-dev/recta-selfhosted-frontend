@@ -22,6 +22,7 @@ import {
 import TransactionModal from '../components/TransactionModal';
 import ImportTransactionsDialog from '../components/ImportTransactionsDialog';
 import ImportMaxFinDialog from '../components/ImportMaxFinDialog';
+import DivideTransactionDialog from '../components/people/DivideTransactionDialog';
 import ConfirmModal from '../components/ConfirmModal';
 import { Transaction } from '../types';
 import { PageButton } from '../components/PageButton';
@@ -47,7 +48,9 @@ const Transactions = () => {
   const { baseCurrency } = useCurrency();
   const { t, locale } = useI18n();
   const { registerHandler, unregisterHandler } = useCommandMenu();
-  const { householdId } = useDefaultHousehold();
+  const { householdId, household } = useDefaultHousehold();
+  // Dividing writes shares: EDITOR or more.
+  const canSplitShares = (household as { role?: string } | undefined)?.role !== 'VIEWER';
   const { data: authUser } = useAuthUser();
   const { data: households } = useHouseholds();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -56,6 +59,7 @@ const Transactions = () => {
   const [isMaxFinOpen, setMaxFinOpen] = useState<boolean>(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [viewingTransaction, setViewingTransaction] = useState<Transaction | null>(null);
+  const [sharingTransaction, setSharingTransaction] = useState<Transaction | null>(null);
   const [searchInput, setSearchInput] = useState<string>(''); // Input value (updates immediately)
   const [searchTerm, setSearchTerm] = useState<string>(''); // Debounced value (used in query)
   const [dateRange, setDateRange] = useState<DateRange>({ startDate: null, endDate: null }); // Applied date range (used in query)
@@ -867,6 +871,7 @@ const Transactions = () => {
             setEditingTransaction(null);
             setIsModalOpen(true);
           }}
+          onSplitShares={canSplitShares ? setSharingTransaction : undefined}
           formatTransactionDescription={formatTransactionDescription}
           getCategoryIcon={getCategoryIcon}
           isTransactionSharedAndUserParticipated={isTransactionSharedAndUserParticipated}
@@ -906,6 +911,14 @@ const Transactions = () => {
           open={isImportOpen}
           onClose={() => setImportOpen(false)}
           householdId={householdId ?? undefined}
+        />
+      )}
+      {sharingTransaction?.id && (
+        <DivideTransactionDialog
+          open
+          onClose={() => setSharingTransaction(null)}
+          householdId={householdId ?? undefined}
+          transaction={{ id: sharingTransaction.id, description: sharingTransaction.description, amount: sharingTransaction.amount }}
         />
       )}
       {isMaxFinOpen && (

@@ -42,6 +42,7 @@ import { PageButton } from "../components/PageButton";
 import ConfirmModal from "../components/ConfirmModal";
 import InstallmentDeleteModal from "../components/InstallmentDeleteModal";
 import ImportCardOfxDialog from "../components/ImportCardOfxDialog";
+import DivideTransactionDialog from "../components/people/DivideTransactionDialog";
 import { AccountType, CategoryName, getCategoryDisplayName, TransactionType } from "../lib/enums";
 import { CreditCardsSummary } from "../components/CreditCardsSummary";
 import { TransactionActionsMenu } from "../components/TransactionActionsMenu";
@@ -67,7 +68,9 @@ const CreditCards = () => {
   const { t, locale } = useI18n();
   const { baseCurrency } = useCurrency();
   const { success, error: showError } = useToastContext();
-  const { householdId } = useDefaultHousehold();
+  const { householdId, household } = useDefaultHousehold();
+  // Dividing writes shares: EDITOR or more.
+  const canSplitShares = (household as { role?: string } | undefined)?.role !== "VIEWER";
   
   const payInvoiceMutation = usePayCreditCardInvoice();
   const undoPaymentMutation = useUndoCreditCardPayment();
@@ -99,6 +102,7 @@ const CreditCards = () => {
   const [paymentAmount, setPaymentAmount] = useState<number>(0);
   const [isTransactionModalOpen, setIsTransactionModalOpen] = useState(false);
   const [isCardOfxOpen, setIsCardOfxOpen] = useState(false);
+  const [sharingTransaction, setSharingTransaction] = useState<Transaction | null>(null);
   const [isAccountModalOpen, setIsAccountModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] =
     useState<Transaction | null>(null);
@@ -988,6 +992,7 @@ const CreditCards = () => {
                                 setEditingTransaction(null);
                                 setIsTransactionModalOpen(true);
                               }}
+                              onSplitShares={canSplitShares && !isPayment && t_item.type === TransactionType.EXPENSE ? setSharingTransaction : undefined}
                             />
                           </div>
                         </div>
@@ -1237,6 +1242,16 @@ const CreditCards = () => {
           onClose={() => setIsCardOfxOpen(false)}
           accountId={selectedAccountId}
           householdId={householdId ?? undefined}
+        />
+      )}
+
+      {/* Dividir uma compra da fatura com pessoas */}
+      {sharingTransaction?.id && (
+        <DivideTransactionDialog
+          open
+          onClose={() => setSharingTransaction(null)}
+          householdId={householdId ?? undefined}
+          transaction={{ id: sharingTransaction.id, description: sharingTransaction.description, amount: sharingTransaction.amount }}
         />
       )}
 

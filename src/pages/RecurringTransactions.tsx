@@ -10,7 +10,9 @@ import { useAsyncOperation } from '../hooks/useAsyncOperation';
 import { useCurrencyMask } from '../hooks/useCurrencyMask';
 import { formatCurrency, formatDate } from '../utils/format';
 import { parseCurrencyValue } from '../utils/currency';
-import { Plus, Info, X } from 'lucide-react';
+import { Plus, Info, X, Repeat } from 'lucide-react';
+import DetectRecurringDialog from '../components/DetectRecurringDialog';
+import { canWritePeople } from '../utils/people';
 import ConfirmModal from '../components/ConfirmModal';
 import { RecurringTransactionsActionsMenu } from '../components/RecurringTransactionsActionsMenu';
 import { RecurringTransaction } from '../types';
@@ -24,9 +26,13 @@ import { PageButton } from '../components/PageButton';
 import { RecurringTransactionsSkeleton } from '../components/PageSkeletons';
 import { CategoryType, getCategoriesByType, getCategoryNameFromDisplay, AccountType, TransactionType, CategoryName, RecurrenceFrequency } from '../lib/enums';
 import { DatePicker } from '../components/DatePicker';
+import { FOLLOW_LAST_BADGE, FOLLOW_LAST_HELP, FOLLOW_LAST_LABEL } from '../utils/recurringFollow';
 
 const RecurringTransactions = () => {
-  const { householdId } = useDefaultHousehold();
+  const { householdId, household } = useDefaultHousehold();
+  // Creating recurrences needs EDITOR or more; a viewer only reads.
+  const canWrite = canWritePeople(household);
+  const [isDetectOpen, setIsDetectOpen] = useState<boolean>(false);
   const { 
     recurringTransactions, 
     accounts,
@@ -114,6 +120,7 @@ const RecurringTransactions = () => {
       nextDueDate: new Date(),
       accountId: '',
       isActive: true,
+      followLastAmount: false,
     },
   });
 
@@ -130,6 +137,7 @@ const RecurringTransactions = () => {
         nextDueDate: editingRecurring.nextDueDate instanceof Date ? editingRecurring.nextDueDate : new Date(editingRecurring.nextDueDate),
         accountId: editingRecurring.accountId || '',
         isActive: editingRecurring.isActive,
+        followLastAmount: editingRecurring.followLastAmount === true,
       });
       currencyMask.setValue(editingRecurring.amount || 0);
       setValue('amount', editingRecurring.amount || 0);
@@ -145,6 +153,7 @@ const RecurringTransactions = () => {
         nextDueDate: new Date(),
         accountId: '',
         isActive: true,
+        followLastAmount: false,
       });
       currencyMask.setValue('');
       setValue('amount', 0);
@@ -199,6 +208,7 @@ const RecurringTransactions = () => {
         nextDueDate: data.nextDueDate,
         accountId: data.accountId || undefined,
         isActive: data.isActive,
+        followLastAmount: data.followLastAmount === true,
       };
 
       if (editingRecurring?.id) {
@@ -287,6 +297,16 @@ const RecurringTransactions = () => {
           </span>
         }
       >
+        {canWrite && (
+          <PageButton
+            onClick={() => setIsDetectOpen(true)}
+            variant="secondary"
+            icon={Repeat}
+            aria-label="Detectar recorrentes"
+          >
+            Detectar recorrentes
+          </PageButton>
+        )}
         <PageButton
           onClick={() => {
             setEditingRecurring(null);
@@ -324,6 +344,14 @@ const RecurringTransactions = () => {
                       {!recurring.isActive && (
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-light border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400">
                           {t.pause}
+                        </span>
+                      )}
+                      {recurring.followLastAmount && (
+                        <span
+                          title={FOLLOW_LAST_HELP}
+                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-light border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400"
+                        >
+                          {FOLLOW_LAST_BADGE}
                         </span>
                       )}
                     </div>
@@ -648,6 +676,21 @@ const RecurringTransactions = () => {
                 </label>
               </div>
 
+              <div>
+                <div className="flex items-center">
+                  <input
+                    id="recurring-follow-last"
+                    type="checkbox"
+                    {...register('followLastAmount')}
+                    className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                  />
+                  <label htmlFor="recurring-follow-last" className="ml-2 block text-sm font-light text-gray-900 dark:text-white">
+                    {FOLLOW_LAST_LABEL}
+                  </label>
+                </div>
+                <p className="mt-1 ml-6 text-xs font-light text-gray-500 dark:text-gray-400">{FOLLOW_LAST_HELP}</p>
+              </div>
+
               <div className="flex justify-end space-x-3 pt-6 border-t border-gray-100 dark:border-gray-800">
                 <button
                   type="button"
@@ -673,6 +716,8 @@ const RecurringTransactions = () => {
         </div>,
         document.body
       )}
+
+      <DetectRecurringDialog open={isDetectOpen} onClose={() => setIsDetectOpen(false)} householdId={householdId ?? undefined} canWrite={canWrite} />
 
       <ConfirmModal
         isOpen={confirmModal.isOpen}

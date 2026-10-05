@@ -27,7 +27,7 @@ import { monthKeyLabel } from '../utils/maxfinWorkbook';
 import {
   PROPOSAL_KIND_LABEL, buildCardOfxConfirm, buildCardOfxSections, buildCardOfxSummary, cardOfxConfirmBlocker, cardOfxFailureMessage,
   cardOfxMonthSourceLabel, cardOfxResultLines, clearGroups, defaultPaymentChoice, isGroupSelected, isKnownProposalKind,
-  isPaymentActionable, lineKindLabel, newLinesNotice, paymentSourceAccounts, reconcileGroupSelection, reconcilePaymentChoice,
+  isPaymentActionable, lineKindLabel, newLinesNotice, paymentNeedsSource, paymentSourceAccounts, reconcileGroupSelection, reconcilePaymentChoice,
   selectAllGroups, setGroupSelected, validateCardOfxFile,
 } from '../utils/cardOfx';
 import type {
@@ -505,6 +505,8 @@ const PaymentBlock = ({ payment, choice, accounts, problem, disabled, currency, 
   const when = fmtDate(payment.date);
   const { recorded } = payment;
   const sources = paymentSourceAccounts(accounts);
+  const actionable = isPaymentActionable(payment);
+  const needsSource = paymentNeedsSource(payment);
   return (
     <section aria-labelledby="card-ofx-payment-title" className={BOX_CLS}>
       <h4 id="card-ofx-payment-title" className={H4_CLS}>Pagamento da fatura de {month}</h4>
@@ -516,23 +518,26 @@ const PaymentBlock = ({ payment, choice, accounts, problem, disabled, currency, 
         </p>
       )}
       {payment.proposal === 'ok' && <p className={`text-sm ${MUTED_CLS}`}>Mesmo valor e data: nada a fazer.</p>}
-      {payment.proposal === 'adjust' && (
-        <label htmlFor="card-ofx-payment" className="inline-flex items-center gap-2 text-sm text-gray-900 dark:text-gray-100 cursor-pointer">
-          <input id="card-ofx-payment" type="checkbox" checked={choice.apply} disabled={disabled} className={CHECKBOX_CLS}
-            onChange={(e) => onChange({ apply: e.target.checked })} />
-          Ajustar o pagamento registrado para {amount} em {when} (mesma conta de origem)
-        </label>
-      )}
-      {payment.proposal === 'create' && (
+      {actionable && (
         <>
-          {!recorded && <p className={`text-sm ${MUTED_CLS}`}>Nenhum pagamento registrado para essa fatura.</p>}
+          {payment.proposal === 'create' && !recorded && <p className={`text-sm ${MUTED_CLS}`}>Nenhum pagamento registrado para essa fatura.</p>}
           <label htmlFor="card-ofx-payment" className="inline-flex items-center gap-2 text-sm text-gray-900 dark:text-gray-100 cursor-pointer">
             <input id="card-ofx-payment" type="checkbox" checked={choice.apply} disabled={disabled} className={CHECKBOX_CLS}
               onChange={(e) => onChange({ apply: e.target.checked })} />
-            Registrar o pagamento de {amount} em {when}
+            {payment.proposal === 'adjust' && recorded
+              ? `Substituir o pagamento registrado (${formatCurrency(recorded.amount, currency)} em ${fmtDate(recorded.date)}) por um novo de ${amount} em ${when}`
+              : `Registrar o pagamento de ${amount} em ${when}`}
           </label>
-          {choice.apply && (
+          {payment.proposal === 'adjust' && (
+            <p className={`text-xs ${MUTED_CLS}`}>
+              O pagamento atual é desfeito e registrado de novo; se houver mais de um pagamento registrado para essa fatura, eles viram um só.
+            </p>
+          )}
+          {needsSource && choice.apply && (
             <div className="max-w-sm">
+              {payment.proposal === 'adjust' && (
+                <p className={`mb-1 text-xs ${MUTED_CLS}`}>O pagamento registrado não tem conta de origem: escolha de qual conta ele sai.</p>
+              )}
               <label htmlFor="card-ofx-payment-source" className={LABEL_CLS}>Conta de origem</label>
               <select id="card-ofx-payment-source" value={choice.sourceAccountId} disabled={disabled} className={INPUT_CLS}
                 aria-describedby={problem ? 'card-ofx-payment-problem' : undefined} onChange={(e) => onChange({ sourceAccountId: e.target.value })}>
@@ -541,6 +546,9 @@ const PaymentBlock = ({ payment, choice, accounts, problem, disabled, currency, 
               </select>
               {problem && <p id="card-ofx-payment-problem" className="mt-1 text-xs text-red-600 dark:text-red-400">{problem}</p>}
             </div>
+          )}
+          {payment.proposal === 'adjust' && !needsSource && (
+            <p className={`text-xs ${MUTED_CLS}`}>O novo pagamento sai da mesma conta de origem.</p>
           )}
         </>
       )}
@@ -585,13 +593,13 @@ const OrphanLines = ({ lines, currency }: { lines: CardOfxLine[]; currency: Curr
 
 interface PreviewFooterProps {
   built: CardOfxBuiltConfirm; blocker: CardOfxBlocker | null; payment: CardOfxPayment | null; busy: boolean; isConfirming: boolean;
-  confirmError: string | null; currency: CurrencyCode; accountName: (id: string) => string; sourceAccountId: string;
+  confirmError: string | null; currency: CurrencyCode; accountName: (id: string) => string;
   onBack: () => void; onConfirm: () => void; onRefresh: () => void;
 }
 
 /** Numbers come from buildCardOfxConfirm, the same groups the request is built from. */
 const PreviewFooter = ({
-  built, blocker, payment, busy, isConfirming, confirmError, currency, accountName, sourceAccountId, onBack, onConfirm, onRefresh,
+  built, blocker, payment, busy, isConfirming, confirmError, currency, accountName, onBack, onConfirm, onRefresh,
 }: PreviewFooterProps) => {
   const { totals } = built;
   // After a failed confirm the preview is stale: nothing about the payment is promised until it is refreshed.
@@ -603,11 +611,13 @@ const PreviewFooter = ({
   }
   if (totals.created.groups > 0) parts.push(`${countLabel(totals.created.lines, 'nova', 'novas')} (${money(totals.created.cents, currency)})`);
   if (totals.reversal.groups > 0) parts.push(countLabel(totals.reversal.groups, 'par compra/estorno', 'pares compra/estorno'));
+  // Exactly what the request carries: the source account appears only when the payment needs one.
+  const sourceId = built.payload.payment?.sourceAccountId ?? '';
+  const sourceText = sourceId ? `, da conta ${accountName(sourceId)}` : '';
   const promise = payment && totals.payment.action
     ? totals.payment.action === 'adjust'
-      ? `O pagamento da fatura de ${monthKeyLabel(payment.invoiceMonthKey)} será ajustado para ${formatCurrency(payment.amount, currency)} em ${fmtDate(payment.date)}.`
-      : `O pagamento da fatura de ${monthKeyLabel(payment.invoiceMonthKey)} será registrado: ${formatCurrency(payment.amount, currency)} em ${fmtDate(payment.date)}`
-        + `${sourceAccountId ? `, da conta ${accountName(sourceAccountId)}` : ''}.`
+      ? `O pagamento registrado da fatura de ${monthKeyLabel(payment.invoiceMonthKey)} será desfeito e registrado de novo: ${formatCurrency(payment.amount, currency)} em ${fmtDate(payment.date)}${sourceText}.`
+      : `O pagamento da fatura de ${monthKeyLabel(payment.invoiceMonthKey)} será registrado: ${formatCurrency(payment.amount, currency)} em ${fmtDate(payment.date)}${sourceText}.`
     : null;
   return (
     <div className="pt-3 border-t border-gray-200 dark:border-gray-800 space-y-3">
@@ -832,7 +842,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
       setSelection((current) => reconcileGroupSelection(prev?.proposals ?? [], current, groups));
       setPaymentChoice((current) => reconcilePaymentChoice(prev?.payment ?? null, current, data.payment));
       setCategoryChoices((current) =>
-        resolveCategoryChoices(data.categoryMap ?? [], current, loadSavedCategoryChoices(householdId), customIdsRef.current));
+        resolveCategoryChoices(data.categoryMap ?? [], current, loadSavedCategoryChoices(data.householdId || householdId), customIdsRef.current));
       setMonthInput(monthToInputValue(data.month));
       return 'ok';
     } catch (err: unknown) {
@@ -889,7 +899,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
     const key = categoryChoiceKey(entry.type, entry.key);
     const target = selectValueToTarget(value, entry.key);
     setCategoryChoices((prev) => ({ ...prev, [key]: target }));
-    saveCategoryChoices(householdId, { [key]: target });
+    saveCategoryChoices(preview?.householdId || householdId, { [key]: target });
   };
 
   const handleBack = () => {
@@ -974,7 +984,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
                     onChange={handleCategoryChange} />
                 </GroupSection>
                 <GroupSection id="card-ofx-reversal" title="Compra e estorno" groups={sections.reversal} {...groupSectionProps}
-                  hint="Compra estornada na mesma fatura (soma zero): vêm desmarcadas; marque para registrar as duas."
+                  hint="Compra estornada na mesma fatura (soma zero). A marcação inicial é a sugestão do servidor; marque para registrar as duas."
                   bulk={{ selectAll: 'Marcar todos os pares', clear: 'Desmarcar todos os pares' }} />
                 <GroupSection id="card-ofx-other" title="Propostas desconhecidas" groups={sections.other} {...groupSectionProps}
                   hint="Tipo de proposta que esta versão não conhece: não é enviada." />
@@ -988,7 +998,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
               </div>
 
               <PreviewFooter built={built} blocker={blocker} payment={preview.payment} busy={busy} isConfirming={isConfirming}
-                confirmError={confirmError} currency={baseCurrency} accountName={accountName} sourceAccountId={paymentChoice.sourceAccountId}
+                confirmError={confirmError} currency={baseCurrency} accountName={accountName}
                 onBack={handleBack} onConfirm={() => void handleConfirm()} onRefresh={() => void handleRefresh()} />
             </div>
           ) : (

@@ -270,8 +270,18 @@ export function clearGroups(
 export interface CardOfxPaymentChoice {
   /** The checkbox of the payment block. */
   apply: boolean;
-  /** Account the payment comes from: only used (and required) when the proposal is `create`. */
+  /** Account the payment comes from: only used (and required) when `paymentNeedsSource`. */
   sourceAccountId: string;
+}
+
+/**
+ * The payment needs a source account chosen by the user: a payment to create, and an adjustment whose recorded
+ * payment has no source account (the server answers 400 for that one without it; with a recorded account it
+ * reuses that one).
+ */
+export function paymentNeedsSource(payment: Pick<CardOfxPayment, 'proposal' | 'recorded'> | null | undefined): boolean {
+  if (payment?.proposal === 'create') return true;
+  return payment?.proposal === 'adjust' && !payment.recorded?.sourceAccountId;
 }
 
 /** adjust and create are the only proposals there is something to apply for ('ok' or an unknown value: nothing). */
@@ -300,27 +310,28 @@ export function reconcilePaymentChoice(
   };
 }
 
-/** What confirm receives: `sourceAccountId` only when the proposal is create and the payment is applied. */
+/** What confirm receives: `sourceAccountId` only when the payment is applied and needs a source account. */
 export function paymentDecision(
-  payment: Pick<CardOfxPayment, 'proposal'> | null | undefined,
+  payment: Pick<CardOfxPayment, 'proposal' | 'recorded'> | null | undefined,
   choice: CardOfxPaymentChoice,
 ): CardOfxPaymentDecision | null {
-  if (payment?.proposal === 'adjust') return { apply: choice.apply };
-  if (payment?.proposal === 'create') {
-    return choice.apply ? { apply: true, sourceAccountId: choice.sourceAccountId } : { apply: false };
-  }
-  return null;
+  if (payment?.proposal !== 'adjust' && payment?.proposal !== 'create') return null;
+  if (!choice.apply) return { apply: false };
+  return paymentNeedsSource(payment) ? { apply: true, sourceAccountId: choice.sourceAccountId } : { apply: true };
 }
 
 export const PAYMENT_SOURCE_PROBLEM = {
   missing: 'Escolha a conta de origem do pagamento da fatura anterior (ou desmarque o pagamento).',
   notFound: 'A conta de origem do pagamento não foi encontrada: escolha outra.',
   isCard: 'A conta de origem do pagamento não pode ser um cartão de crédito.',
+  inactive: 'A conta de origem do pagamento está inativa: escolha outra.',
 } as const;
 
 export interface CardOfxAccountRef {
   id: string;
   type: string;
+  /** Inactive accounts cannot pay; absent counts as active. */
+  isActive?: boolean;
 }
 
 /** Why the chosen account cannot pay the invoice; null when it can. */
@@ -329,12 +340,13 @@ export function paymentSourceProblem(sourceAccountId: string, accounts: readonly
   const account = accounts.find((a) => a.id === sourceAccountId);
   if (!account) return PAYMENT_SOURCE_PROBLEM.notFound;
   if (account.type === AccountType.CREDIT) return PAYMENT_SOURCE_PROBLEM.isCard;
+  if (account.isActive === false) return PAYMENT_SOURCE_PROBLEM.inactive;
   return null;
 }
 
-/** Accounts the payment can come from: every account that is not a credit card (the card itself included). */
+/** Accounts the payment can come from: every active account that is not a credit card (the card itself included). */
 export function paymentSourceAccounts<T extends CardOfxAccountRef>(accounts: readonly T[]): T[] {
-  return accounts.filter((a) => a.type !== AccountType.CREDIT);
+  return accounts.filter((a) => a.type !== AccountType.CREDIT && a.isActive !== false);
 }
 
 // ---- Category map -----------------------------------------------------------------------------------------
@@ -489,8 +501,14 @@ export function buildCardOfxConfirm(
     if (group.section === 'matched' || group.section === 'futures') {
       const target = group.proposal.target;
       if (target && !targets.has(target.transactionId)) {
+        const consumed = group.section === 'futures';
+        const ticked = isGroupSelected(selection, group);
+        // A future installment left alone belongs to the month of its own date, not to this invoice.
+        if (consumed && !ticked && !(target.date >= preview.period.start && target.date <= preview.period.end)) continue;
         targets.add(target.transactionId);
-        rectaCents += signedCents(target.amount, target.type);
+        // Consuming a future writes the bank amount into it; every other target keeps the amount it has.
+        const written = consumed && ticked ? group.lines.find((line) => line.type === target.type)?.amount : undefined;
+        rectaCents += signedCents(written ?? target.amount, target.type);
       }
     } else if ((group.section === 'new' || group.section === 'reversal') && isGroupSelected(selection, group)) {
       rectaCents += group.netCents;
@@ -504,7 +522,7 @@ export function buildCardOfxConfirm(
   const payment = preview.payment ?? null;
   const decision = paymentDecision(payment, paymentChoice);
   const paymentAction = decision?.apply ? (payment?.proposal === 'create' ? 'create' : 'adjust') : null;
-  const paymentProblem = payment?.proposal === 'create' && paymentChoice.apply
+  const paymentProblem = paymentNeedsSource(payment) && paymentChoice.apply
     ? paymentSourceProblem(paymentChoice.sourceAccountId, context.accounts)
     : null;
 
@@ -651,7 +669,7 @@ export function cardOfxResultLines(
     : null;
   if (result.created > 0) {
     const created = countLabel(result.created, 'transação criada', 'transações criadas');
-    lines.push(futures ? `${created} (${futures})` : created);
+    lines.push(futures ? `${created}, mais ${countLabel(result.futureInstallments, 'parcela futura', 'parcelas futuras')}` : created);
   } else if (futures) {
     lines.push(futures);
   }

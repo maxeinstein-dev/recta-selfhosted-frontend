@@ -926,9 +926,15 @@ interface ImportMaxFinDialogProps {
   onClose: () => void;
   /** Defaults to the household from useDefaultHousehold (same as the sibling dialog). */
   householdId?: string;
+  /**
+   * File handed over by the single import entry point: it is set as if chosen in step 1. With
+   * `initialAccountIds` filled for every block the preview starts as soon as the dialog opens.
+   */
+  initialFile?: File | null;
+  initialAccountIds?: MaxFinAccountsInput | null;
 }
 
-const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp }: ImportMaxFinDialogProps) => {
+const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp, initialFile = null, initialAccountIds = null }: ImportMaxFinDialogProps) => {
   const { householdId: defaultHouseholdId } = useDefaultHousehold();
   const householdId = householdIdProp ?? defaultHouseholdId;
   const { success, error: showError, showToast } = useToastContext();
@@ -990,6 +996,11 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp }: Imp
   const armedAtRef = useRef(0);
   // Latest custom categories, read after awaits so a refetch that lands mid-preview is not lost.
   const customIdsRef = useRef(customIdsByType);
+  // What the single import entry point handed over (read when the dialog opens) and whether its preview still has to start.
+  const handoffRef = useRef({ file: initialFile, accounts: initialAccountIds });
+  handoffRef.current = { file: initialFile, accounts: initialAccountIds };
+  const autoStartRef = useRef(false);
+  const handlePreviewRef = useRef<() => void>(() => undefined);
 
   useEffect(() => {
     customIdsRef.current = customIdsByType;
@@ -1005,8 +1016,12 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp }: Imp
   // Reset everything whenever the dialog opens; closing it invalidates any preview still in flight.
   useEffect(() => {
     if (!open) return;
-    setFile(null);
-    setAccountIds(EMPTY_ACCOUNTS);
+    const handed = handoffRef.current;
+    const handedProblem = handed.file ? validateMaxFinFile(handed.file) : null;
+    const handedFile = handed.file && !handedProblem ? handed.file : null;
+    setFile(handedFile);
+    setAccountIds(handed.accounts ?? EMPTY_ACCOUNTS);
+    autoStartRef.current = !!handedFile && !!handed.accounts && MAXFIN_SECTION_ORDER.every((key) => !!handed.accounts?.[key]);
     setPreview(null);
     setPendingOptions(null);
     setMonthOverride(null);
@@ -1014,7 +1029,7 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp }: Imp
     setCategoryChoices({});
     setSelected({});
     setArmed(false);
-    setFormError(null);
+    setFormError(handedProblem);
     setConfirmError(null);
     setResult(null);
     setWorkbook(null);
@@ -1054,6 +1069,14 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp }: Imp
       return MAXFIN_SECTION_ORDER.every((key) => next[key] === prev[key]) ? prev : next;
     });
   }, [open, accounts, householdId]);
+
+  // A file handed over with every account chosen starts its preview once the state above has landed.
+  useEffect(() => {
+    if (!open || !autoStartRef.current || !file) return;
+    if (!MAXFIN_SECTION_ORDER.every((key) => !!accountIds[key])) return;
+    autoStartRef.current = false;
+    handlePreviewRef.current();
+  }, [open, file, accountIds]);
 
   // Body scroll lock (same pattern as ImportTransactionsDialog).
   useEffect(() => {
@@ -1177,6 +1200,8 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp }: Imp
     }
     void runPreview(monthOverride ? { monthOverride } : undefined);
   };
+
+  handlePreviewRef.current = handlePreview;
 
   // Option changes re-run the preview: the server recomputes paid flags, statuses and future installments.
   const handleOptionChange = async (patch: Partial<MaxFinImportOptions>) => {

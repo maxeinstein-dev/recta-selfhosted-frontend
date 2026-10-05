@@ -87,6 +87,8 @@ const ImportTransactionsDialog = ({
   // Só a última pré-visualização da fila mexe no estado.
   const seqRef = useRef(0);
   const startFileRef = useRef<(index: number) => void>(() => undefined);
+  // Índice do arquivo da fila confirmado por último: não pode ser confirmado de novo no intervalo antes de a fila avançar.
+  const confirmedIndexRef = useRef(-1);
   // Preview que o loop obteve do arquivo em que parou: aparece como está, sem pedir de novo ao servidor.
   const loopPreviewRef = useRef<{ index: number; data: ImportPreview } | null>(null);
 
@@ -110,6 +112,7 @@ const ImportTransactionsDialog = ({
       setQueueImported(0);
       setApplying(false);
       applyingRef.current = false;
+      confirmedIndexRef.current = -1;
       const queued = queueFilesRef.current;
       if (queued.length > 0 && defaultAccountId) {
         setQueue(createQueue(queued.map((f) => f.name)));
@@ -187,14 +190,14 @@ const ImportTransactionsDialog = ({
   };
 
   /** Coloca o arquivo da fila em `index` na tela: estado limpo e pré-visualização. */
-  const startFile = (index: number, adopt?: ImportPreview) => {
+  const startFile = (index: number, adopt?: ImportPreview, autoPreview = true) => {
     const target = queueFilesRef.current[index];
     seqRef.current += 1;
     setFile(target ?? null);
     setPreview(adopt ?? null);
     setFormError(null);
     setConfirmError(null);
-    if (target && !adopt) void runQueuePreview(target);
+    if (target && !adopt && autoPreview) void runQueuePreview(target);
   };
   startFileRef.current = startFile;
 
@@ -247,7 +250,10 @@ const ImportTransactionsDialog = ({
       }
       loopPreviewRef.current = { index, data };
       const plan = planStatementDefaultApply(data);
-      if (!plan.ok) return { ok: true, upToDate: true, note: plan.reason };
+      if (!plan.ok) {
+        if (plan.code === 'nothing-new') return { ok: true, upToDate: true, note: plan.reason };
+        return { ok: false, written: false, reason: plan.reason };
+      }
       confirmingRef.current = true;
       try {
         const result = await confirmMutation.mutateAsync({ householdId, accountId: queueAccountId, rows: plan.rows });
@@ -281,7 +287,9 @@ const ImportTransactionsDialog = ({
         setQueueStop(`${run.stop.name}: ${run.stop.reason}`);
         // Atribuído dentro de applyOne (o TS não acompanha o closure).
         const got = loopPreviewRef.current as { index: number; data: ImportPreview } | null;
-        startFile(run.state.index, got && got.index === run.state.index ? got.data : undefined);
+        // Um arquivo cuja pré-visualização acabou de falhar não é pedido de novo: a tela oferece tentar.
+        const adopt = got && got.index === run.state.index ? got.data : undefined;
+        startFile(run.state.index, adopt, adopt !== undefined);
         if (run.state.items[run.state.index]?.status === 'failed') setConfirmError(run.stop.reason);
       }
     } finally {
@@ -337,6 +345,7 @@ const ImportTransactionsDialog = ({
   /** Confirma o arquivo da tela; com `thenApply`, os arquivos seguintes passam pelo loop do padrão. */
   const handleConfirm = async (thenApply = false) => {
     if (!preview || applyingRef.current) return;
+    if (queue && confirmedIndexRef.current === queue.index) return;
     setFormError(null);
     if (!householdId || !accountId) {
       setFormError('Selecione a conta de destino.');
@@ -359,6 +368,7 @@ const ImportTransactionsDialog = ({
       );
       if (queue && !single) {
         if (!mountedRef.current) return;
+        confirmedIndexRef.current = queue.index;
         setQueueImported((prev) => prev + imported);
         setQueueStop(null);
         const next = completeCurrent(queue, statementImportNote(imported));

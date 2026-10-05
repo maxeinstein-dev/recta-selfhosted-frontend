@@ -834,7 +834,9 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
   // Preview the loop got for the file it stopped at: shown as is, without asking the server again.
   const loopPreviewRef = useRef<{ index: number; data: CardOfxPreviewResponse } | null>(null);
   // Latest startFile, for the open effect.
-  const startFileRef = useRef<(index: number, adopt?: CardOfxPreviewResponse) => void>(() => undefined);
+  const startFileRef = useRef<(index: number, adopt?: CardOfxPreviewResponse, autoPreview?: boolean) => void>(() => undefined);
+  // Index of the file of the queue that was confirmed last: it cannot be confirmed again in the gap before the queue moves on.
+  const confirmedIndexRef = useRef(-1);
 
   useEffect(() => {
     customIdsRef.current = customIdsByType;
@@ -873,6 +875,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
     setQueueResults([]);
     setApplying(false);
     applyingRef.current = false;
+    confirmedIndexRef.current = -1;
     loopPreviewRef.current = null;
     const queued = queueFilesRef.current;
     if (queued.length > 0) {
@@ -977,7 +980,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
   // ---- Queue ----------------------------------------------------------------------------------------------
 
   /** Puts the file of the queue at `index` on screen: clean state, then its preview (or the one already at hand). */
-  const startFile = (index: number, adopt?: CardOfxPreviewResponse) => {
+  const startFile = (index: number, adopt?: CardOfxPreviewResponse, autoPreview = true) => {
     const target = queueFilesRef.current[index];
     const problem = target ? validateCardOfxFile(target) : null;
     seqRef.current += 1;
@@ -993,7 +996,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
     lastPreviewRef.current = null;
     if (!target || problem) return;
     if (adopt) adoptPreview(adopt);
-    else void runPreviewRef.current(target);
+    else if (autoPreview) void runPreviewRef.current(target);
   };
   startFileRef.current = startFile;
 
@@ -1091,7 +1094,9 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
         setQueueStop(`${run.stop.name}: ${run.stop.reason}`);
         // Assigned inside applyOne (TS does not follow the closure).
         const got = loopPreviewRef.current as { index: number; data: CardOfxPreviewResponse } | null;
-        startFile(run.state.index, got && got.index === run.state.index ? got.data : undefined);
+        // A file whose preview just failed is not asked for again: the file step offers to try.
+        const adopt = got && got.index === run.state.index ? got.data : undefined;
+        startFile(run.state.index, adopt, adopt !== undefined);
         // A confirm that failed may have applied part of it: the preview on screen is stale until it is refreshed.
         if (run.state.items[run.state.index]?.status === 'failed') setConfirmError(run.stop.reason);
       }
@@ -1143,7 +1148,14 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
   const handleToggleGroup = (group: CardOfxGroupView, checked: boolean) => setSelection((prev) => setGroupSelected(prev, group, checked));
   const handleSelectAll = (groups: CardOfxGroupView[]) => setSelection((prev) => selectAllGroups(prev, groups));
   const handleClear = (groups: CardOfxGroupView[]) => setSelection((prev) => clearGroups(prev, groups));
-  const handlePaymentChange = (patch: Partial<CardOfxPaymentChoice>) => setPaymentChoice((prev) => ({ ...prev, ...patch }));
+  const handlePaymentChange = (patch: Partial<CardOfxPaymentChoice>) => {
+    setPaymentChoice((prev) => ({ ...prev, ...patch }));
+    // The first source picked in a queue becomes the one of the queue, so the loop does not stop at file 2 asking for it.
+    if (queue && patch.sourceAccountId && !queueSourceRef.current) {
+      queueSourceRef.current = patch.sourceAccountId;
+      setQueueSource(patch.sourceAccountId);
+    }
+  };
 
   const handleCategoryChange = (entry: MaxFinCategoryMapEntry, value: string) => {
     const key = categoryChoiceKey(entry.type, entry.key);
@@ -1161,6 +1173,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
   /** Confirms the file on screen with the user's marks; with `thenApply`, the following files go through the default loop. */
   const handleConfirm = async (thenApply = false) => {
     if (!built || blocker || isConfirming || confirmingRef.current || applyingRef.current) return;
+    if (queue && confirmedIndexRef.current === queue.index) return;
     confirmingRef.current = true;
     // The dialog stays shut from the confirm to the end of the loop.
     if (thenApply) applyingRef.current = true;
@@ -1171,6 +1184,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
       success(text);
       if (!mountedRef.current) return;
       if (queue) {
+        confirmedIndexRef.current = queue.index;
         setQueueResults((prev) => [...prev, { name: file?.name ?? '', data }]);
         setQueueStop(null);
         const next = completeCurrent(queue, text.replace(/^Fatura importada:\s*/, ''));

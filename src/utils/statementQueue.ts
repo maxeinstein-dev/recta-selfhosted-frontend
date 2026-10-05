@@ -13,11 +13,16 @@ export function statementConfirmRows(preview: Pick<ImportPreview, 'rows'>): Conf
 export const STATEMENT_EMPTY_FILE = 'Nenhuma transação encontrada no arquivo.';
 export const STATEMENT_NOTHING_NEW = 'Nenhuma transação nova neste arquivo: todas as linhas já estão no Recta.';
 
-export type StatementDefaultPlan = { ok: true; rows: ConfirmImportRow[] } | { ok: false; code: 'nothing-new'; reason: string };
+export type StatementDefaultPlan =
+  | { ok: true; rows: ConfirmImportRow[] }
+  /** Every row is already in Recta: nothing to import (left out). */
+  | { ok: false; code: 'nothing-new'; reason: string }
+  /** No row at all: the file is empty or could not be parsed (stops the loop). */
+  | { ok: false; code: 'empty'; reason: string };
 
-/** The default for a statement is every new row. A file with no rows, or with nothing new, has nothing to import (left out). */
+/** The default for a statement is every new row. A file with only duplicates is up to date; one with no rows at all is an error. */
 export function planStatementDefaultApply(preview: Pick<ImportPreview, 'rows'>): StatementDefaultPlan {
-  if (preview.rows.length === 0) return { ok: false, code: 'nothing-new', reason: STATEMENT_EMPTY_FILE };
+  if (preview.rows.length === 0) return { ok: false, code: 'empty', reason: STATEMENT_EMPTY_FILE };
   const rows = statementConfirmRows(preview);
   if (rows.length === 0) return { ok: false, code: 'nothing-new', reason: STATEMENT_NOTHING_NEW };
   return { ok: true, rows };

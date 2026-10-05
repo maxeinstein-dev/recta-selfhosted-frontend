@@ -805,7 +805,7 @@ const CreditCards = () => {
                       </div>
                       <span className="text-sm font-light text-green-500">
                         {(() => {
-                          const offset = selectedAccount.bestDayOffset ?? 10;
+                          const offset = selectedAccount.bestDayOffset ?? 7;
                           const baseDay = selectedAccount.closingDay ?? selectedAccount.dueDay ?? 1;
                           const result = baseDay - offset;
                           return result <= 0 ? 30 + result : result;
@@ -858,7 +858,7 @@ const CreditCards = () => {
                       <span className="text-xs text-primary-600 dark:text-primary-400 font-light mt-1">
                         {t.bestDayToBuy}:{" "}
                         {(() => {
-                          const offset = selectedAccount.bestDayOffset ?? 10;
+                          const offset = selectedAccount.bestDayOffset ?? 7;
                           const baseDay = selectedAccount.closingDay ?? selectedAccount.dueDay ?? 1;
                           const result = baseDay - offset;
                           return result <= 0 ? 30 + result : result;

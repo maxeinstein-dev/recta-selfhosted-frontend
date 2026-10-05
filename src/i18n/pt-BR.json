@@ -91,7 +91,7 @@
   "closingDayHint": "Dia em que a fatura fecha. Ex: se fecha no dia 7, a fatura inclui compras do dia 7 do mês anterior até o dia 6 do mês atual.",
   "bestDayToBuy": "Melhor dia para compra",
   "bestDayOffset": "Dias antes do fechamento (melhor dia)",
-  "bestDayOffsetHint": "Quantos dias antes do fechamento da fatura indica o melhor dia para compra. Padrão: 10.",
+  "bestDayOffsetHint": "Quantos dias antes do fechamento da fatura indica o melhor dia para compra. Padrão: 7.",
   "payInvoice": "Pagar Fatura",
   "payInvoiceDescription": "Selecione a conta de onde sairá o dinheiro para pagar esta fatura de",
   "paymentAccount": "Conta de Origem",

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ArrowLeft, FileUp, Upload, X } from 'lucide-react';
+import { ArrowLeft, FastForward, FileUp, RefreshCw, SkipForward, Upload, X } from 'lucide-react';
 import { useAccounts } from '../hooks/api/useAccounts';
 import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
 import { useToastContext } from '../context/ToastContext';
@@ -8,6 +8,13 @@ import { useCurrency } from '../context/CurrencyContext';
 import { formatCurrency, formatDate } from '../utils/format';
 import { isCardOfxHandoff } from '../utils/cardOfx';
 import ImportCardOfxDialog from './ImportCardOfxDialog';
+import { QueueHeader, QueueProgressList } from './ImportQueuePanel';
+import { planStatementDefaultApply, statementConfirmRows, statementImportNote } from '../utils/statementQueue';
+import {
+  applyDefaultsToRemaining, canConfirmCurrent, completeCurrent, createQueue, failCurrent, followingCount, isQueueFinished, queueSummaryLine,
+  remainingCount, retryCurrent, skipCurrent,
+} from '../utils/importQueue';
+import type { ApplyOutcome, QueueState } from '../utils/importQueue';
 
 import {
   useImportPreview,
@@ -21,9 +28,17 @@ interface ImportTransactionsDialogProps {
   /** Se omitido, usa o household padrão (mesmo padrão de Transactions.tsx). */
   householdId?: string;
   defaultAccountId?: string | null;
+  /**
+   * Several statements for the account `defaultAccountId`, already in the order to import (oldest first): they go one
+   * after the other, each one previewed only after the previous one was confirmed (or skipped). Read when the dialog opens.
+   */
+  initialFiles?: File[];
 }
 
 const ACCEPTED_EXTENSIONS = ['.csv', '.ofx'];
+const NO_FILES: File[] = [];
+const BTN_SECONDARY_SM =
+  'inline-flex items-center px-3 py-1.5 text-xs font-light tracking-tight text-gray-900 dark:text-white bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-md hover:opacity-70 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed';
 
 const getErrorMessage = (err: unknown, fallback: string): string =>
   err instanceof Error && err.message ? err.message : fallback;
@@ -33,6 +48,7 @@ const ImportTransactionsDialog = ({
   onClose,
   householdId: householdIdProp,
   defaultAccountId,
+  initialFiles,
 }: ImportTransactionsDialogProps) => {
   const { householdId: defaultHouseholdId } = useDefaultHousehold();
   const householdId = householdIdProp ?? defaultHouseholdId;
@@ -56,6 +72,32 @@ const ImportTransactionsDialog = ({
   const [cardOfx, setCardOfx] = useState<{ accountId: string; file: File } | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Fila de extratos (prop `initialFiles`): um arquivo por vez, o próximo só depois de confirmar ou pular o anterior.
+  const queueFilesRef = useRef<File[]>(initialFiles ?? NO_FILES);
+  queueFilesRef.current = initialFiles ?? NO_FILES;
+  const [queue, setQueue] = useState<QueueState | null>(null);
+  const [queueStop, setQueueStop] = useState<string | null>(null);
+  const [queueImported, setQueueImported] = useState(0);
+  const [confirmError, setConfirmError] = useState<string | null>(null);
+  // O loop "aplicar o padrão nas restantes" está rodando: o dialog não fecha.
+  const [applying, setApplying] = useState(false);
+  const applyingRef = useRef(false);
+  // Gêmeo síncrono de isConfirming: bloqueia fechar e um segundo confirmar antes do React renderizar.
+  const confirmingRef = useRef(false);
+  const mountedRef = useRef(true);
+  // Só a última pré-visualização da fila mexe no estado.
+  const seqRef = useRef(0);
+  const startFileRef = useRef<(index: number) => void>(() => undefined);
+  // Preview que o loop obteve do arquivo em que parou: aparece como está, sem pedir de novo ao servidor.
+  const loopPreviewRef = useRef<{ index: number; data: ImportPreview } | null>(null);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
   // Reseta o estado sempre que o dialog abre/fecha.
   useEffect(() => {
     if (open) {
@@ -64,7 +106,22 @@ const ImportTransactionsDialog = ({
       setPreview(null);
       setFormError(null);
       setCardOfx(null);
+      setConfirmError(null);
+      setQueueStop(null);
+      setQueueImported(0);
+      setApplying(false);
+      applyingRef.current = false;
+      const queued = queueFilesRef.current;
+      if (queued.length > 0 && defaultAccountId) {
+        setQueue(createQueue(queued.map((f) => f.name)));
+        startFileRef.current(0);
+      } else {
+        setQueue(null);
+      }
     }
+    return () => {
+      seqRef.current += 1;
+    };
   }, [open, defaultAccountId]);
 
   // ESC + trava scroll do body (mesmo padrão de ConfirmModal/TransactionModal).
@@ -74,7 +131,7 @@ const ImportTransactionsDialog = ({
     const originalStyle = window.getComputedStyle(document.body).overflow;
     document.body.style.overflow = 'hidden';
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape' && !confirmingRef.current && !applyingRef.current) onClose();
     };
     window.addEventListener('keydown', handleEscape);
     return () => {
@@ -99,6 +156,134 @@ const ImportTransactionsDialog = ({
 
   const isPreviewing = previewMutation.isPending;
   const isConfirming = confirmMutation.isPending;
+  const queueFinished = queue !== null && isQueueFinished(queue);
+  // Um arquivo só: sem o painel da fila, e fecha ao confirmar (como o fluxo avulso).
+  const single = queue !== null && queue.items.length === 1;
+  const queueBusy = isPreviewing || isConfirming || applying;
+  const queueAccountId = defaultAccountId ?? '';
+  // Não fecha no meio de uma confirmação nem do loop da fila: a importação não pode ser abandonada pela metade.
+  const requestClose = () => {
+    if (!confirmingRef.current && !isConfirming && !applyingRef.current) onClose();
+  };
+
+  /** Pré-visualiza um arquivo da fila (latest-wins). Resolve para se o preview entrou na tela. */
+  const runQueuePreview = async (target: File): Promise<boolean> => {
+    seqRef.current += 1;
+    const run = seqRef.current;
+    if (!householdId || !queueAccountId) {
+      setFormError(!householdId ? 'Nenhuma household selecionada.' : 'Selecione a conta de destino.');
+      return false;
+    }
+    try {
+      const result = await previewMutation.mutateAsync({ householdId, accountId: queueAccountId, file: target });
+      if (!mountedRef.current || run !== seqRef.current) return false;
+      setPreview(result);
+      setConfirmError(null);
+      return true;
+    } catch (err: unknown) {
+      if (!mountedRef.current || run !== seqRef.current) return false;
+      showError(getErrorMessage(err, 'Não foi possível pré-visualizar o arquivo.'));
+      return false;
+    }
+  };
+
+  /** Coloca o arquivo da fila em `index` na tela: estado limpo e pré-visualização. */
+  const startFile = (index: number, adopt?: ImportPreview) => {
+    const target = queueFilesRef.current[index];
+    seqRef.current += 1;
+    setFile(target ?? null);
+    setPreview(adopt ?? null);
+    setFormError(null);
+    setConfirmError(null);
+    if (target && !adopt) void runQueuePreview(target);
+  };
+  startFileRef.current = startFile;
+
+  const moveQueueTo = (next: QueueState) => {
+    setQueue(next);
+    if (isQueueFinished(next)) {
+      seqRef.current += 1;
+      setFile(null);
+      setPreview(null);
+      setConfirmError(null);
+    } else {
+      startFile(next.index);
+    }
+  };
+
+  const handleSkip = () => {
+    if (!queue || queueBusy || confirmingRef.current || applyingRef.current) return;
+    setQueueStop(null);
+    moveQueueTo(skipCurrent(queue));
+  };
+
+  /** Depois de uma confirmação que falhou: pré-visualiza de novo; o que já entrou volta como duplicada. */
+  const handleQueueRefresh = async () => {
+    if (!file) return;
+    if (await runQueuePreview(file)) setQueue((current) => (current ? retryCurrent(current) : current));
+  };
+
+  /** Este arquivo e os seguintes: pré-visualiza e confirma só as linhas novas, um por vez; para no primeiro que não puder seguir. */
+  const handleApplyDefaults = async () => {
+    if (!queue || queueBusy || applyingRef.current || confirmingRef.current || !canConfirmCurrent(queue) || !householdId) return;
+    applyingRef.current = true;
+    setApplying(true);
+    setQueueStop(null);
+    seqRef.current += 1;
+    loopPreviewRef.current = null;
+    let imported = 0;
+    const applyOne = async (index: number): Promise<ApplyOutcome> => {
+      const target = queueFilesRef.current[index];
+      let data: ImportPreview;
+      try {
+        data = await previewMutation.mutateAsync({ householdId, accountId: queueAccountId, file: target });
+      } catch (err: unknown) {
+        return { ok: false, written: false, reason: getErrorMessage(err, 'Não foi possível pré-visualizar o arquivo.') };
+      }
+      loopPreviewRef.current = { index, data };
+      const plan = planStatementDefaultApply(data);
+      if (!plan.ok) return { ok: false, written: false, reason: plan.reason };
+      confirmingRef.current = true;
+      try {
+        const result = await confirmMutation.mutateAsync({ householdId, accountId: queueAccountId, rows: plan.rows });
+        const count = result?.imported ?? plan.rows.length;
+        imported += count;
+        success(statementImportNote(count) + '.');
+        return { ok: true, note: statementImportNote(count) };
+      } catch (err: unknown) {
+        const message = getErrorMessage(err, 'Não foi possível confirmar a importação.');
+        showError(message);
+        return { ok: false, written: true, reason: message };
+      } finally {
+        confirmingRef.current = false;
+      }
+    };
+    try {
+      const run = await applyDefaultsToRemaining(queue, applyOne, {
+        shouldStop: () => !mountedRef.current,
+        onProgress: (state) => {
+          if (mountedRef.current) setQueue(state);
+        },
+      });
+      if (!mountedRef.current) return;
+      setQueueImported((prev) => prev + imported);
+      setQueue(run.state);
+      if (isQueueFinished(run.state)) {
+        seqRef.current += 1;
+        setFile(null);
+        setPreview(null);
+      } else if (run.stop) {
+        setQueueStop(`${run.stop.name}: ${run.stop.reason}`);
+        // Atribuído dentro de applyOne (o TS não acompanha o closure).
+        const got = loopPreviewRef.current as { index: number; data: ImportPreview } | null;
+        startFile(run.state.index, got && got.index === run.state.index ? got.data : undefined);
+        if (run.state.items[run.state.index]?.status === 'failed') setConfirmError(run.stop.reason);
+      }
+    } finally {
+      applyingRef.current = false;
+      if (mountedRef.current) setApplying(false);
+    }
+  };
 
   const handleFileChange = (selected: File | null) => {
     setFormError(null);
@@ -152,10 +337,9 @@ const ImportTransactionsDialog = ({
       return;
     }
     // Só vão as linhas que o preview marcou como novas; o servidor confere duplicatas de novo ao gravar.
-    const newRows = preview.rows
-      .filter((row) => !row.duplicate)
-      .map(({ date, description, amount, type }) => ({ date, description, amount, type }));
-    if (newRows.length === 0) return;
+    const newRows = statementConfirmRows(preview);
+    if (newRows.length === 0 || confirmingRef.current) return;
+    confirmingRef.current = true;
     try {
       const result = await confirmMutation.mutateAsync({ householdId, accountId, rows: newRows });
       const imported = result?.imported ?? newRows.length;
@@ -164,9 +348,24 @@ const ImportTransactionsDialog = ({
           ? '1 transação importada com sucesso.'
           : `${imported} transações importadas com sucesso.`,
       );
-      onClose();
+      if (queue && !single) {
+        if (!mountedRef.current) return;
+        setQueueImported((prev) => prev + imported);
+        setQueueStop(null);
+        moveQueueTo(completeCurrent(queue, statementImportNote(imported)));
+      } else {
+        onClose();
+      }
     } catch (err: unknown) {
-      showError(getErrorMessage(err, 'Não foi possível confirmar a importação.'));
+      const message = getErrorMessage(err, 'Não foi possível confirmar a importação.');
+      showError(message);
+      // Na fila, o arquivo fica bloqueado até a pré-visualização ser atualizada (o que entrou volta como duplicada).
+      if (queue && mountedRef.current) {
+        setConfirmError(message);
+        setQueue(failCurrent(queue, message));
+      }
+    } finally {
+      confirmingRef.current = false;
     }
   };
 
@@ -184,7 +383,7 @@ const ImportTransactionsDialog = ({
       {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/40 animate-fade-in transition-opacity duration-300 ease-out"
-        onClick={onClose}
+        onClick={requestClose}
         aria-hidden="true"
       />
 
@@ -203,13 +402,39 @@ const ImportTransactionsDialog = ({
               </h3>
             </div>
             <button
-              onClick={onClose}
+              onClick={requestClose}
+              disabled={isConfirming || applying}
               aria-label="Fechar modal"
-              className="text-gray-400 dark:text-gray-500 hover:opacity-70 transition-opacity p-1"
+              className="text-gray-400 dark:text-gray-500 hover:opacity-70 transition-opacity p-1 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <X className="h-5 w-5" aria-hidden="true" />
             </button>
           </div>
+
+          {queue && !single && !queueFinished && (
+            <div className="mb-4">
+              <QueueHeader state={queue} noun="Arquivo" statusText={{ done: 'Importado', skipped: 'Pulado' }}>
+                <div className="flex flex-wrap gap-2">
+                  <button type="button" onClick={handleSkip} disabled={queueBusy} className={BTN_SECONDARY_SM}>
+                    <SkipForward className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+                    Pular este arquivo
+                  </button>
+                  <button type="button" onClick={() => void handleApplyDefaults()} disabled={queueBusy || !canConfirmCurrent(queue)}
+                    title="Este arquivo e os seguintes: pré-visualiza e confirma as linhas novas, uma por vez; para no primeiro que não puder seguir."
+                    className={BTN_SECONDARY_SM}>
+                    <FastForward className="h-3.5 w-3.5 mr-1.5" aria-hidden="true" />
+                    Aplicar o padrão nas restantes ({remainingCount(queue)})
+                  </button>
+                </div>
+              </QueueHeader>
+            </div>
+          )}
+
+          {queueStop && !single && !applying && !queueFinished && (
+            <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">
+              A aplicação do padrão parou: {queueStop}
+            </p>
+          )}
 
           {formError && (
             <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">
@@ -217,7 +442,47 @@ const ImportTransactionsDialog = ({
             </p>
           )}
 
-          {preview === null ? (
+          {queue && queueFinished ? (
+            <div className="space-y-4 min-w-0">
+              <div>
+                <h4 className="text-sm font-medium text-gray-900 dark:text-white">Importação concluída</h4>
+                <p className="mt-1 text-sm text-gray-900 dark:text-white">
+                  {queueSummaryLine(queue, { done: ['arquivo importado', 'arquivos importados'], skipped: ['pulado', 'pulados'], failed: ['com falha', 'com falha'] }) || 'Nenhum arquivo foi importado'}.
+                </p>
+                <p className="mt-1 text-sm text-gray-600 dark:text-gray-400">Total: {statementImportNote(queueImported)}.</p>
+              </div>
+              <QueueProgressList state={queue} statusText={{ done: 'Importado', skipped: 'Pulado' }} />
+              <div className="flex justify-end pt-2">
+                <button type="button" onClick={requestClose} autoFocus
+                  className="px-4 py-2.5 text-sm font-light tracking-tight text-white bg-primary-600 dark:bg-primary-500 border border-primary-600 dark:border-primary-500 rounded-md hover:opacity-80 transition-opacity">
+                  Fechar
+                </button>
+              </div>
+            </div>
+          ) : applying && queue ? (
+            <p role="status" className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+              <RefreshCw className="h-4 w-4 animate-spin" aria-hidden="true" />
+              Aplicando o padrão: {queue.items[queue.index]?.name ?? ''}…
+            </p>
+          ) : preview === null && queue ? (
+            /* Fila: o arquivo da vez é pré-visualizado sozinho; aqui só a nova tentativa depois de um erro */
+            <div className="space-y-4 min-w-0">
+              <p className="flex items-center gap-2 text-sm text-gray-600 dark:text-gray-400">
+                <FileUp className="h-4 w-4 flex-shrink-0" aria-hidden="true" />
+                <span className="truncate">{file?.name ?? ''}</span>
+              </p>
+              <div className="flex gap-3 justify-end pt-2">
+                <button type="button" onClick={requestClose}
+                  className="px-4 py-2.5 text-sm font-light tracking-tight text-gray-900 dark:text-white bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-md hover:opacity-70 transition-opacity">
+                  Cancelar
+                </button>
+                <button type="button" onClick={() => file && void runQueuePreview(file)} disabled={isPreviewing || !file}
+                  className="px-4 py-2.5 text-sm font-light tracking-tight text-white bg-primary-600 dark:bg-primary-500 border border-primary-600 dark:border-primary-500 rounded-md hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed">
+                  {isPreviewing ? 'Analisando…' : 'Pré-visualizar'}
+                </button>
+              </div>
+            </div>
+          ) : preview === null ? (
             /* Passo 1: conta destino + arquivo */
             <div className="space-y-4 min-w-0">
               <div>
@@ -276,7 +541,7 @@ const ImportTransactionsDialog = ({
               <div className="flex gap-3 justify-end pt-2">
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={requestClose}
                   className="px-4 py-2.5 text-sm font-light tracking-tight text-gray-900 dark:text-white bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-md hover:opacity-70 transition-opacity"
                 >
                   Cancelar
@@ -369,24 +634,37 @@ const ImportTransactionsDialog = ({
                 </div>
               )}
 
-              <div className="flex gap-3 justify-between pt-2">
-                <button
-                  type="button"
-                  onClick={handleBack}
-                  disabled={isConfirming}
-                  className="inline-flex items-center px-4 py-2.5 text-sm font-light tracking-tight text-gray-900 dark:text-white bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-md hover:opacity-70 transition-opacity disabled:opacity-50"
-                >
-                  <ArrowLeft className="h-4 w-4 mr-2" aria-hidden="true" />
-                  Voltar
-                </button>
+              {confirmError && (
+                <div className="flex flex-wrap items-center gap-3">
+                  <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+                    {confirmError} Atualize a pré-visualização antes de confirmar de novo.
+                  </p>
+                  <button type="button" onClick={() => void handleQueueRefresh()} disabled={queueBusy} className={BTN_SECONDARY_SM}>
+                    Atualizar pré-visualização
+                  </button>
+                </div>
+              )}
+
+              <div className={`flex gap-3 ${queue ? 'justify-end' : 'justify-between'} pt-2`}>
+                {!queue && (
+                  <button
+                    type="button"
+                    onClick={handleBack}
+                    disabled={isConfirming}
+                    className="inline-flex items-center px-4 py-2.5 text-sm font-light tracking-tight text-gray-900 dark:text-white bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-md hover:opacity-70 transition-opacity disabled:opacity-50"
+                  >
+                    <ArrowLeft className="h-4 w-4 mr-2" aria-hidden="true" />
+                    Voltar
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleConfirm}
-                  disabled={isConfirming || newCount === 0}
+                  disabled={isConfirming || newCount === 0 || confirmError !== null}
                   title={newCount === 0 ? 'Não há transações novas para importar' : undefined}
                   className="px-4 py-2.5 text-sm font-light tracking-tight text-white bg-primary-600 dark:bg-primary-500 border border-primary-600 dark:border-primary-500 rounded-md hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {isConfirming ? 'Importando…' : 'Confirmar importação'}
+                  {isConfirming ? 'Importando…' : queue && followingCount(queue) > 0 ? 'Confirmar e continuar' : 'Confirmar importação'}
                 </button>
               </div>
             </div>

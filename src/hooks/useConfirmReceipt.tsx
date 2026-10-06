@@ -7,6 +7,8 @@ import { useI18n } from '../context/I18nContext';
 import ConfirmReceiptDialog from '../components/ConfirmReceiptDialog';
 import { formatCurrency } from '../utils/format';
 import { confirmCopy, dayText, followsLastAmount as followsLast } from '../utils/confirmReceipt';
+import { confirmExplanation } from '../utils/forecastStrategy';
+import { monthKeyOf } from '../utils/referenceMonth';
 import type { ConfirmPatch, ConfirmableTx } from '../utils/confirmReceipt';
 import { recurrenceUpdatedMessage } from '../utils/recurringFollow';
 import { reaisToCents } from '../utils/people';
@@ -58,11 +60,18 @@ export function useConfirmReceipt(): { request: (tx: PendingTx) => void; dialog:
       )
     : false;
 
+  // How the expected amount was reached, when the recurrence has a forecast strategy (the reference month decides the days)
+  const recurrence = pending?.recurringTransactionId ? recurringTransactions.find((r) => r.id === pending.recurringTransactionId) : undefined;
+  const explanation = pending && recurrence
+    ? confirmExplanation(recurrence, pending.type === 'INCOME' ? 'INCOME' : 'EXPENSE', pending.competenceMonth || monthKeyOf(pending.date), (cents) => formatCurrency(cents / 100, baseCurrency))
+    : null;
+
   const dialog = (
     <ConfirmReceiptDialog
       transaction={pending}
       baseCurrency={baseCurrency}
       followsLastAmount={follows}
+      explanation={explanation}
       onConfirm={onConfirm}
       onConfirmed={onConfirmed}
       onClose={() => setPending(null)}

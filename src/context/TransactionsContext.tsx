@@ -60,6 +60,7 @@ import { useCategories } from '../hooks/api/useCategories';
 import { parseDateFromAPI, formatDateForAPI } from '../utils/format';
 import { CONFLICT_MESSAGE, isConflict } from '../utils/transactionConflict';
 import { effectiveClosingDay } from '../utils/closingDay';
+import { normalizeStrategy } from '../utils/forecastStrategy';
 
 const TransactionsContext = createContext<TransactionsContextType>({} as TransactionsContextType);
 
@@ -303,6 +304,13 @@ const convertRecurringTransactionFromBackend = (r: BackendRecurringTransaction, 
     isActive: r.isActive ?? true,
     followLastAmount: r.followLastAmount === true,
     competenceOffsetMonths: r.competenceOffsetMonths ?? null,
+    forecastStrategy: normalizeStrategy(r.forecastStrategy),
+    forecastWindow: r.forecastWindow ?? null,
+    dailyRate: r.dailyRate != null ? Number(r.dailyRate) : null,
+    safetyBusinessDays: r.safetyBusinessDays ?? 0,
+    nonWorkingDays: r.nonWorkingDays ?? [],
+    optionalHolidays: r.optionalHolidays ?? [],
+    forecast: r.forecast ?? null,
     lastOccurrenceDate: r.lastOccurrenceDate === undefined ? undefined : (r.lastOccurrenceDate ?? null),
   };
 };
@@ -679,6 +687,14 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
       isActive: recurring.isActive,
       ...(recurring.followLastAmount !== undefined && { followLastAmount: recurring.followLastAmount }),
       ...(recurring.competenceOffsetMonths != null && { competenceOffsetMonths: recurring.competenceOffsetMonths }),
+      ...(recurring.forecastStrategy !== undefined && {
+        forecastStrategy: recurring.forecastStrategy,
+        forecastWindow: recurring.forecastWindow ?? null,
+        dailyRate: recurring.dailyRate ?? null,
+        safetyBusinessDays: recurring.safetyBusinessDays ?? 0,
+        nonWorkingDays: recurring.nonWorkingDays ?? [],
+        optionalHolidays: recurring.optionalHolidays ?? [],
+      }),
     });
 
     analyticsHelpers.logRecurringTransactionCreated(recurring.type, recurring.frequency);
@@ -700,6 +716,15 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
     if (recurring.followLastAmount !== undefined) updateData.followLastAmount = recurring.followLastAmount;
     // Reference offset: a number sets it, null clears it (same month), absent leaves it alone.
     if (recurring.competenceOffsetMonths !== undefined) updateData.competenceOffsetMonths = recurring.competenceOffsetMonths;
+    // Forecast strategy: sent whole (the form always has all of it), absent leaves the stored one alone.
+    if (recurring.forecastStrategy !== undefined) {
+      updateData.forecastStrategy = recurring.forecastStrategy;
+      updateData.forecastWindow = recurring.forecastWindow ?? null;
+      updateData.dailyRate = recurring.dailyRate ?? null;
+      updateData.safetyBusinessDays = recurring.safetyBusinessDays ?? 0;
+      updateData.nonWorkingDays = recurring.nonWorkingDays ?? [];
+      updateData.optionalHolidays = recurring.optionalHolidays ?? [];
+    }
     if (recurring.startDate) updateData.startDate = formatDateForAPI(recurring.startDate);
     if (recurring.endDate !== undefined) {
       updateData.endDate = recurring.endDate ? formatDateForAPI(recurring.endDate) : null;

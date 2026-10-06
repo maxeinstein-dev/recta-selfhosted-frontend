@@ -7,6 +7,8 @@ import {
 } from '../utils/confirmReceipt';
 import type { ConfirmDraft, ConfirmPatch, ConfirmableTx } from '../utils/confirmReceipt';
 import { monthLabel, referenceChip } from '../utils/referenceMonth';
+import { impliedDaysNote } from '../utils/forecastStrategy';
+import type { ConfirmExplanation } from '../utils/forecastStrategy';
 import { BTN_PRIMARY, BTN_SECONDARY, DialogShell, ERROR_CLS, INPUT_CLS, LABEL_CLS, MUTED_CLS, NOTICE_BOX_CLS } from './people/ui';
 
 export interface ConfirmReceiptDialogProps {
@@ -15,6 +17,11 @@ export interface ConfirmReceiptDialogProps {
   baseCurrency: string;
   /** True when confirming a new amount also makes the recurrence follow it ("as próximas ocorrências passam a usar ..."). */
   followsLastAmount?: boolean;
+  /**
+   * How the expected amount is reached when the recurrence has a forecast strategy (fixed, conservative, per business day):
+   * shown under the title, and, for the per-day mode, the days the received amount stands for. Null/absent = the last value.
+   */
+  explanation?: ConfirmExplanation | null;
   /** Reads the clock, so a scenario can pin "today". */
   today?: () => Date;
   /** Sends the update (PATCH {amount?, date, paid:true, notes?}); rejects with the server error (409 carries `status`). */
@@ -32,7 +39,7 @@ export interface ConfirmReceiptDialogProps {
  * reference month stays as it is. Opening shows the expected amount and date; confirming again (a double click, another
  * tab) never moves the balance twice.
  */
-const ConfirmReceiptDialog = ({ transaction, baseCurrency, followsLastAmount = false, today = () => new Date(), onConfirm, onConfirmed, onClose, t = {} }: ConfirmReceiptDialogProps) => {
+const ConfirmReceiptDialog = ({ transaction, baseCurrency, followsLastAmount = false, explanation = null, today = () => new Date(), onConfirm, onConfirmed, onClose, t = {} }: ConfirmReceiptDialogProps) => {
   const copy = confirmCopy(transaction?.type);
   const format = (cents: number): string => formatCurrency(cents / 100, baseCurrency);
   const [draft, setDraft] = useState<ConfirmDraft>({ amountText: '', dateKey: '', note: '' });
@@ -62,7 +69,11 @@ const ConfirmReceiptDialog = ({ transaction, baseCurrency, followsLastAmount = f
 
   const expectedCents = transaction ? Math.abs(reaisToCents(transaction.amount)) : 0;
   const check = useMemo(() => validateConfirm(draft, format), [draft, baseCurrency]); // eslint-disable-line react-hooks/exhaustive-deps
-  const hint = transaction ? differenceHint(expectedCents, check.amountCents, transaction.type, followsLastAmount, format) : null;
+  const hint = transaction ? differenceHint(expectedCents, check.amountCents, transaction.type, followsLastAmount, format, explanation?.strategy) : null;
+  // Per business day: the days the received amount stands for, and a suggestion when they differ from the calculated ones
+  const daysNote = explanation?.perDay
+    ? impliedDaysNote(check.amountCents, explanation.perDay.rateCents, explanation.perDay.countedDays, explanation.perDay.businessDays, explanation.perDay.referenceMonth, format)
+    : null;
   const chip = transaction ? referenceChip({ date: transaction.date, competenceMonth: transaction.competenceMonth, type: transaction.type }) : null;
 
   const kept = transaction ? keptReferenceMonth(transaction, draft.dateKey) : null;
@@ -115,12 +126,22 @@ const ConfirmReceiptDialog = ({ transaction, baseCurrency, followsLastAmount = f
             {chip ? <> · <span>{chip}</span></> : null}
           </p>
 
+          {explanation && (
+            <p className={`text-xs ${MUTED_CLS}`} data-testid="confirm-how">
+              Como foi calculado: {explanation.how}.
+              {explanation.todayCents !== expectedCents ? ` Com a configuração de hoje o cálculo daria ${format(explanation.todayCents)}.` : ''}
+            </p>
+          )}
+
           <div>
             <label htmlFor="confirm-amount" className={LABEL_CLS}>{amountLabel}</label>
             <input id="confirm-amount" type="text" inputMode="numeric" autoComplete="off" value={maskCents(draft.amountText, format).display} disabled={saving}
               className={INPUT_CLS} placeholder="R$ 0,00" aria-invalid={check.errors.amount ? true : undefined}
               onChange={(e) => edit((d) => ({ ...d, amountText: maskCents(e.target.value, format).display }))} />
             {check.errors.amount && <p role="alert" className={`mt-1 ${ERROR_CLS}`}>{check.errors.amount}</p>}
+            {daysNote && (
+              <p className={`mt-1 text-xs ${MUTED_CLS}`} data-testid="confirm-implied">Equivale a {daysNote.implied}.</p>
+            )}
           </div>
 
           <div>
@@ -144,6 +165,10 @@ const ConfirmReceiptDialog = ({ transaction, baseCurrency, followsLastAmount = f
           )}
 
           {hint && <div className={NOTICE_BOX_CLS} aria-live="polite"><p data-testid="confirm-hint">{hint}</p></div>}
+
+          {daysNote?.suggestion && (
+            <div className={NOTICE_BOX_CLS} aria-live="polite"><p data-testid="confirm-implied-suggestion">{daysNote.suggestion}</p></div>
+          )}
 
           {formError && <p role="alert" className={ERROR_CLS}>{formError}</p>}
 

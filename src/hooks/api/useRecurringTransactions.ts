@@ -3,6 +3,7 @@ import { apiClient } from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
 import { CategoryType, RecurrenceFrequency, CategoryName } from '../../lib/enums';
 import type { Transaction } from './useTransactions';
+import type { ForecastDetail, ForecastStrategy } from '../../utils/forecastStrategy';
 
 export interface RecurringTransaction {
   id: string;
@@ -22,6 +23,15 @@ export interface RecurringTransaction {
   lastOccurrenceDate?: string | null;
   /** Months between an occurrence's date and the month it refers to; null = same month. Absent on an older server. */
   competenceOffsetMonths?: number | null;
+  /** How the amount of the next occurrence is forecast. Absent on an older server (= the last value). */
+  forecastStrategy?: ForecastStrategy;
+  forecastWindow?: number | null;
+  dailyRate?: number | null;
+  safetyBusinessDays?: number;
+  nonWorkingDays?: string[];
+  optionalHolidays?: string[];
+  /** What the next occurrence is expected to carry and how it was reached (list only). */
+  forecast?: ForecastDetail | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -111,6 +121,12 @@ export function useCreateRecurringTransaction() {
       isActive?: boolean;
       followLastAmount?: boolean;
       competenceOffsetMonths?: number | null;
+      forecastStrategy?: ForecastStrategy;
+      forecastWindow?: number | null;
+      dailyRate?: number | null;
+      safetyBusinessDays?: number;
+      nonWorkingDays?: string[];
+      optionalHolidays?: string[];
     }) => {
       const response = await apiClient.post<RecurringTransaction>('/recurring-transactions', data);
       return response.data!;

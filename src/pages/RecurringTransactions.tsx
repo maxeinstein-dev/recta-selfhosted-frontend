@@ -27,9 +27,15 @@ import { RecurringTransactionsSkeleton } from '../components/PageSkeletons';
 import { CategoryType, getCategoriesByType, getCategoryNameFromDisplay, AccountType, TransactionType, CategoryName, RecurrenceFrequency } from '../lib/enums';
 import { DatePicker } from '../components/DatePicker';
 import { ReferenceOffsetField, DueToConfirmPanel } from '../components/transactions';
+import { ForecastStrategyField } from '../components/transactions/ForecastStrategyField';
 import { useConfirmReceipt } from '../hooks/useConfirmReceipt';
 import { offsetToSend, recurrenceChip } from '../utils/referenceMonth';
 import { FOLLOW_LAST_BADGE, FOLLOW_LAST_HELP, FOLLOW_LAST_LABEL } from '../utils/recurringFollow';
+import {
+  STRATEGY_LABEL, amountLabelFor, draftFromRecurrence, emptyForecastDraft, forecastDetailOf, forecastPayload, nextForecastText, nextReferenceMonth,
+  referenceAmountForPerDay, validateForecast,
+} from '../utils/forecastStrategy';
+import type { ForecastDraft } from '../utils/forecastStrategy';
 
 const RecurringTransactions = () => {
   const { householdId, household } = useDefaultHousehold();
@@ -60,6 +66,7 @@ const RecurringTransactions = () => {
   const currencyMask = useCurrencyMask();
   const confirmReceipt = useConfirmReceipt();
   const [competenceOffset, setCompetenceOffset] = useState<number | null>(null);
+  const [forecastDraft, setForecastDraft] = useState<ForecastDraft>(emptyForecastDraft());
 
   // Verificar se o usuário já viu o modal de ajuda
   useEffect(() => {
@@ -108,7 +115,7 @@ const RecurringTransactions = () => {
     register,
     control,
     handleSubmit,
-    formState: { errors, isSubmitting },
+    formState: { errors, isSubmitting, submitCount },
     reset,
     watch,
     setValue,
@@ -145,6 +152,7 @@ const RecurringTransactions = () => {
         followLastAmount: editingRecurring.followLastAmount === true,
       });
       setCompetenceOffset(editingRecurring.competenceOffsetMonths ?? null);
+      setForecastDraft(draftFromRecurrence(editingRecurring));
       currencyMask.setValue(editingRecurring.amount || 0);
       setValue('amount', editingRecurring.amount || 0);
     } else {
@@ -162,11 +170,24 @@ const RecurringTransactions = () => {
         followLastAmount: false,
       });
       setCompetenceOffset(null);
+      setForecastDraft(emptyForecastDraft());
       currencyMask.setValue('');
       setValue('amount', 0);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [editingRecurring?.id, reset, setValue]);
+
+  // Per business day: the amount stored with the recurrence is only a reference (the server needs one); it follows the
+  // forecast of the next month so the list and the old screens show something sensible. The forecast itself comes from the rate.
+  const kind = watch('type') === TransactionType.INCOME ? 'INCOME' : 'EXPENSE';
+  const nextRefMonth = nextReferenceMonth(watch('nextDueDate') || new Date(), competenceOffset);
+  const perDayAmount = forecastDraft.strategy === 'PER_BUSINESS_DAY' ? referenceAmountForPerDay(forecastDraft, nextRefMonth) : null;
+  useEffect(() => {
+    if (perDayAmount === null) return;
+    setValue('amount', perDayAmount, { shouldValidate: perDayAmount > 0 });
+    currencyMask.setValue(perDayAmount || '');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [perDayAmount]);
 
   // Limpar categoria quando o tipo mudar para evitar incompatibilidade
   const currentType = watch('type');
@@ -201,6 +222,11 @@ const RecurringTransactions = () => {
   }, [isModalOpen, isHelpModalOpen]);
 
   const onSubmit = async (data: RecurringTransactionFormData) => {
+    const forecastCheck = validateForecast(forecastDraft, String(data.frequency));
+    if (!forecastCheck.ok) {
+      showError(Object.values(forecastCheck.errors)[0] ?? t.error);
+      return;
+    }
     try {
       const recurringData: Omit<RecurringTransaction, 'id' | 'userId'> = {
         description: data.description,
@@ -215,8 +241,10 @@ const RecurringTransactions = () => {
         nextDueDate: data.nextDueDate,
         accountId: data.accountId || undefined,
         isActive: data.isActive,
-        followLastAmount: data.followLastAmount === true,
+        // Only the "último valor" strategy follows the confirmed value
+        followLastAmount: forecastDraft.strategy === 'LAST' && data.followLastAmount === true,
         competenceOffsetMonths: offsetToSend(competenceOffset),
+        ...forecastPayload(forecastDraft),
       };
 
       if (editingRecurring?.id) {
@@ -282,6 +310,14 @@ const RecurringTransactions = () => {
     }
   };
 
+
+  /** What the next occurrence is expected to carry (only the strategies that compute it: conservative and per business day). */
+  const forecastOf = (recurring: RecurringTransaction) => {
+    if (recurring.forecastStrategy !== 'CONSERVATIVE' && recurring.forecastStrategy !== 'PER_BUSINESS_DAY') return null;
+    return forecastDetailOf(recurring, recurring.type === TransactionType.INCOME ? 'INCOME' : 'EXPENSE', nextReferenceMonth(recurring.nextDueDate, recurring.competenceOffsetMonths));
+  };
+  const forecastLine = (recurring: RecurringTransaction): string | null =>
+    nextForecastText(forecastOf(recurring), recurring.type === TransactionType.INCOME ? 'INCOME' : 'EXPENSE', (cents) => formatCurrency(cents / 100, baseCurrency));
 
   if (loading) {
     return <RecurringTransactionsSkeleton />;
@@ -361,6 +397,14 @@ const RecurringTransactions = () => {
                           {recurrenceChip(recurring.competenceOffsetMonths)}
                         </span>
                       )}
+                      {recurring.forecastStrategy && recurring.forecastStrategy !== 'LAST' && (
+                        <span
+                          data-testid="forecast-chip"
+                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-light border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400"
+                        >
+                          {STRATEGY_LABEL[recurring.forecastStrategy].toLowerCase()}
+                        </span>
+                      )}
                       {recurring.followLastAmount && (
                         <span
                           title={FOLLOW_LAST_HELP}
@@ -371,7 +415,7 @@ const RecurringTransactions = () => {
                       )}
                     </div>
                     <div className="mt-2 flex flex-wrap items-center gap-2 text-sm font-light text-gray-500 dark:text-gray-400">
-                      <span>{formatCurrency(recurring.amount, baseCurrency)}</span>
+                      <span>{formatCurrency(forecastOf(recurring)?.amount ?? recurring.amount, baseCurrency)}</span>
                       <span className="hidden sm:inline">•</span>
                       <span>{recurring.category}</span>
                       <span className="hidden sm:inline">•</span>
@@ -384,6 +428,9 @@ const RecurringTransactions = () => {
                       <span className="hidden sm:inline">•</span>
                       <span>{t.next} {formatDate(recurring.nextDueDate)}</span>
                     </div>
+                    {forecastLine(recurring) && (
+                      <p className="mt-1 text-sm font-light text-gray-500 dark:text-gray-400" data-testid="forecast-line">{forecastLine(recurring)}</p>
+                    )}
                   </div>
                   <RecurringTransactionsActionsMenu
                     recurring={recurring}
@@ -518,9 +565,9 @@ const RecurringTransactions = () => {
                 )}
               </div>
 
-              <div>
+              <div hidden={forecastDraft.strategy === 'PER_BUSINESS_DAY'}>
                 <label className="block text-sm font-light text-gray-500 dark:text-gray-400 mb-2">
-                  {t.amount}
+                  {amountLabelFor(forecastDraft.strategy, t.amount)}
                 </label>
                 <input
                   type="text"
@@ -692,20 +739,31 @@ const RecurringTransactions = () => {
                 </label>
               </div>
 
-              <div>
-                <div className="flex items-center">
-                  <input
-                    id="recurring-follow-last"
-                    type="checkbox"
-                    {...register('followLastAmount')}
-                    className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
-                  />
-                  <label htmlFor="recurring-follow-last" className="ml-2 block text-sm font-light text-gray-900 dark:text-white">
-                    {FOLLOW_LAST_LABEL}
-                  </label>
-                </div>
-                <p className="mt-1 ml-6 text-xs font-light text-gray-500 dark:text-gray-400">{FOLLOW_LAST_HELP}</p>
-              </div>
+              <ForecastStrategyField
+                draft={forecastDraft}
+                onChange={setForecastDraft}
+                kind={kind}
+                frequency={String(watch('frequency') || '')}
+                referenceMonth={nextRefMonth}
+                showErrors={submitCount > 0}
+                format={(cents) => formatCurrency(cents / 100, baseCurrency)}
+                lastExtra={
+                  <div>
+                    <div className="flex items-center">
+                      <input
+                        id="recurring-follow-last"
+                        type="checkbox"
+                        {...register('followLastAmount')}
+                        className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                      />
+                      <label htmlFor="recurring-follow-last" className="ml-2 block text-sm font-light text-gray-900 dark:text-white">
+                        {FOLLOW_LAST_LABEL}
+                      </label>
+                    </div>
+                    <p className="mt-1 ml-6 text-xs font-light text-gray-500 dark:text-gray-400">{FOLLOW_LAST_HELP}</p>
+                  </div>
+                }
+              />
 
               <ReferenceOffsetField value={competenceOffset} onChange={setCompetenceOffset} />
 

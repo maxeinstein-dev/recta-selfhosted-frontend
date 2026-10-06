@@ -92,7 +92,7 @@ const NO_EFFECT: Effect = { recorded: 0, uncreated: 0, held: 0, advance: 0 };
 /** The proposal can be recomputed exactly: known kind, every ref among the lines, and a target when it is a match. */
 function recomputable(group: CardOfxGroupView): boolean {
   if (group.section === 'other' || group.missingRefs.length > 0) return false;
-  if (group.section === 'new' || group.section === 'reversal') return true;
+  if (group.section === 'new' || group.section === 'reversal' || group.section === 'advance') return true;
   return !!group.proposal.target;
 }
 
@@ -108,6 +108,14 @@ function effectOf(group: CardOfxGroupView, selected: boolean, inPeriod: (date: s
     if (!selected) return { ...NO_EFFECT, uncreated: group.netCents };
     const recorded = group.lines.reduce((sum, line) => sum + (inPeriod(line.date) ? signedCents(line.amount, line.type) : 0), 0);
     return { ...NO_EFFECT, recorded };
+  }
+  if (group.section === 'advance') {
+    // Ticked: the credit (a negative amount) joins the card on the bank day and counts as an advance payment.
+    // Unticked: nothing is recorded and the payment is not in the OFX total, so there is nothing to explain.
+    if (!selected) return NO_EFFECT;
+    const line = group.lines.find((l) => l.ref === proposal.refs[0]) ?? group.lines[0];
+    const cents = line && inPeriod(line.date) ? signedCents(line.amount, line.type) : 0;
+    return { ...NO_EFFECT, recorded: cents, advance: cents };
   }
   if (group.section === 'reversal') return selected ? NO_EFFECT : { ...NO_EFFECT, uncreated: group.netCents };
   const target = proposal.target;
@@ -205,8 +213,8 @@ const ROW_TEXT: Record<ClosingRowKey, { label: string; hint: string; sign: 1 | -
     sign: -1,
   },
   advancePayments: {
-    label: 'Créditos da planilha de pagamentos antecipados',
-    hint: 'Créditos da planilha pareados com pagamentos antecipados: estão no total do cartão e não no total do OFX.',
+    label: 'Créditos de pagamentos antecipados',
+    hint: 'Créditos do cartão (da planilha, ou registrados a partir do OFX) de pagamentos antecipados: estão no total do cartão e não no total do OFX.',
     sign: -1,
   },
   residual: {

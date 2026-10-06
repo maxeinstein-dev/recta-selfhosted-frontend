@@ -54,7 +54,7 @@ export function isCardOfxHandoff(accountType: string | null | undefined, fileNam
 // ---- Proposal kinds ---------------------------------------------------------------------------------------
 
 /** Where a group is shown. `other`: a kind this client does not know (shown, never sent). */
-export type CardOfxGroupSection = 'matched' | 'futures' | 'new' | 'reversal' | 'other';
+export type CardOfxGroupSection = 'matched' | 'futures' | 'new' | 'reversal' | 'advance' | 'other';
 
 const KIND_SECTION: Record<CardOfxProposalKind, Exclude<CardOfxGroupSection, 'other'>> = {
   'enrich-exact': 'matched',
@@ -67,6 +67,7 @@ const KIND_SECTION: Record<CardOfxProposalKind, Exclude<CardOfxGroupSection, 'ot
   'consume-future': 'futures',
   create: 'new',
   reversal: 'reversal',
+  'advance-payment': 'advance',
 };
 
 export const PROPOSAL_KIND_LABEL: Record<CardOfxProposalKind, string> = {
@@ -80,6 +81,7 @@ export const PROPOSAL_KIND_LABEL: Record<CardOfxProposalKind, string> = {
   'consume-future': 'parcela futura',
   create: 'nova',
   reversal: 'compra e estorno',
+  'advance-payment': 'pagamento antecipado',
 };
 
 export function isKnownProposalKind(kind: string): kind is CardOfxProposalKind {
@@ -128,6 +130,9 @@ export function nearChangeText(change: { oldCents: number; newCents: number; dif
   return `${formatCents(change.oldCents)} → ${formatCents(change.newCents)} (${sign}${abs} ${abs === 1 ? 'centavo' : 'centavos'})`;
 }
 
+/** What an advance payment line becomes. */
+export const ADVANCE_PAYMENT_HEADLINE = 'Pagamento antecipado de fatura: vira um crédito no cartão';
+
 /** One line saying what kind of match the proposal is, for the kinds that need explaining; null for the plain ones. */
 export function proposalHeadline(proposal: Pick<CardOfxProposal, 'kind' | 'target' | 'absorbed'>): string | null {
   switch (proposal.kind) {
@@ -139,6 +144,8 @@ export function proposalHeadline(proposal: Pick<CardOfxProposal, 'kind' | 'targe
       return 'Compra do mês vizinho';
     case 'enrich-group':
       return 'Soma por comerciante';
+    case 'advance-payment':
+      return ADVANCE_PAYMENT_HEADLINE;
     default:
       return null;
   }
@@ -233,9 +240,58 @@ export function proposalReasonChip(
         reason, tone: 'yellow', text: 'muitas compras do comerciante',
         title: 'O comerciante tem compras demais para o servidor garantir que esta é a única combinação que fecha o valor: confira antes de marcar.',
       };
+    case 'sheet-credit-near': {
+      const c = proposal.counterpart ?? null;
+      if (!c) {
+        return {
+          reason, tone: 'orange', text: 'parece o crédito que já está na planilha',
+          title: 'Sobrou na planilha um crédito de valor quase igual: este pagamento pode ser o mesmo. Confira antes de marcar: marcar registra um segundo crédito.',
+        };
+      }
+      const what = `${c.description} · ${formatDate(c.date)} · ${formatAmount(c.amount, c.type)}`;
+      return {
+        reason, tone: 'orange', text: 'parece o crédito que já está na planilha',
+        title: `Pode ser o mesmo pagamento de um crédito que sobrou na planilha (${what}). Confira antes de marcar: marcar registra um segundo crédito.`,
+      };
+    }
+    case 'changed-in-statement': {
+      const c = proposal.counterpart ?? null;
+      const what = c ? ` como ${c.description} · ${formatDate(c.date)} · ${formatAmount(c.amount, c.type)}` : '';
+      return {
+        reason, tone: 'orange', text: 'a compra mudou neste arquivo: confira antes de importar',
+        title: `Esta compra já está registrada${what}: o extrato foi atualizado (valor, data ou descrição). Marcar cria uma segunda.`,
+      };
+    }
     default:
       return { reason, tone: 'gray', text: 'desmarcada pelo servidor', title: 'O servidor deixou esta proposta desmarcada por um motivo que esta versão não conhece: confira antes de marcar.' };
   }
+}
+
+/**
+ * The recorded row a proposal may duplicate, as one visible line, for the reasons that name one ('sheet-credit-near' on
+ * an advance payment, 'changed-in-statement' on a new purchase); null otherwise.
+ */
+export function counterpartNote(
+  proposal: Pick<CardOfxProposal, 'reason' | 'counterpart'>,
+  formatAmount: (value: number, type: string) => string,
+  formatDate: (isoDate: string) => string,
+): string | null {
+  const c = proposal.counterpart ?? null;
+  if (!c) return null;
+  const what = `${c.description} · ${formatDate(c.date)} · ${formatAmount(c.amount, c.type)}`;
+  if (proposal.reason === 'sheet-credit-near') return `Crédito na planilha: ${what}`;
+  if (proposal.reason === 'changed-in-statement') return `Já registrada: ${what}`;
+  return null;
+}
+
+/** "Crédito de R$ 100,00 no cartão, na data do banco (05/10/2026)" for an advance payment group; null when it has no line. */
+export function advancePaymentEffect(
+  lines: ReadonlyArray<Pick<CardOfxLine, 'amount' | 'date'>>,
+  formatAmount: (value: number) => string,
+  formatDate: (isoDate: string) => string,
+): string | null {
+  const line = lines[0];
+  return line ? `Crédito de ${formatAmount(line.amount)} no cartão, na data do banco (${formatDate(line.date)})` : null;
 }
 
 // ---- Amounts ----------------------------------------------------------------------------------------------
@@ -273,6 +329,8 @@ export interface CardOfxSections {
   futures: CardOfxGroupView[];
   created: CardOfxGroupView[];
   reversal: CardOfxGroupView[];
+  /** `advance-payment`: a payment line that becomes a credit on the card. */
+  advance: CardOfxGroupView[];
   other: CardOfxGroupView[];
   /** Lines already in Recta and in no proposal. */
   reconciled: CardOfxLine[];
@@ -328,6 +386,7 @@ export function buildCardOfxSections(
     futures: groups.filter((g) => g.section === 'futures'),
     created: groups.filter((g) => g.section === 'new'),
     reversal: groups.filter((g) => g.section === 'reversal'),
+    advance: groups.filter((g) => g.section === 'advance'),
     other: groups.filter((g) => g.section === 'other'),
     reconciled: [],
     paymentLine: null,
@@ -336,13 +395,15 @@ export function buildCardOfxSections(
     orphans: [],
     sheetOnly: preview.sheetOnly ?? [],
   };
+  const advanceRefs = new Set(groups.filter((g) => g.section === 'advance').flatMap((g) => g.lines.map((line) => line.ref)));
   for (const line of preview.lines) {
     if (line.ref === paymentRef) {
       if (!sections.paymentLine) sections.paymentLine = line;
       continue;
     }
     if (claimed.has(line.ref)) {
-      if (line.kind === 'payment') sections.pairedAdvancePayments.push(line);
+      // Paired with a sheet credit only when an enrich group holds it (an advance-payment group has its own section).
+      if (line.kind === 'payment' && !advanceRefs.has(line.ref)) sections.pairedAdvancePayments.push(line);
       continue;
     }
     if (line.status === 'reconciled') sections.reconciled.push(line);
@@ -567,6 +628,8 @@ export interface CardOfxTotals {
   consumed: CardOfxKindTotals;
   created: CardOfxKindTotals & { futureInstallments: number };
   reversal: CardOfxKindTotals;
+  /** Ticked advance payments: credits that will be recorded on the card (outside the OFX total). */
+  advance: CardOfxKindTotals;
   /** Lines already in Recta (payments excluded), at the OFX amounts. */
   reconciled: { lines: number; cents: number };
   /** Card transactions of the month that no OFX line matched (they stay as they are). */
@@ -622,8 +685,9 @@ export function buildCardOfxConfirm(
   const consumed = emptyKindTotals();
   const created = { ...emptyKindTotals(), futureInstallments: 0 };
   const reversal = emptyKindTotals();
+  const advance = emptyKindTotals();
   for (const group of selected) {
-    const bucket = group.section === 'matched' ? enriched : group.section === 'futures' ? consumed : group.section === 'new' ? created : reversal;
+    const bucket = group.section === 'matched' ? enriched : group.section === 'futures' ? consumed : group.section === 'new' ? created : group.section === 'advance' ? advance : reversal;
     bucket.groups += 1;
     bucket.lines += group.lines.length;
     bucket.cents += group.netCents;
@@ -653,7 +717,7 @@ export function buildCardOfxConfirm(
   const targets = new Set<string>();
   let rectaCents = reconciledCents;
   for (const group of sections.groups) {
-    // An advance payment paired with a sheet credit: payments are outside the OFX total, so outside this one too.
+    // An advance payment (paired with a sheet credit, or recorded from the OFX): payments are outside the OFX total, so outside this one too.
     if (group.hasPayment) continue;
     if ((group.proposal.kind === 'enrich-merge' || group.proposal.kind === 'enrich-near') && group.proposal.target) {
       // A ticked merge (or near-amount adoption) leaves ONE row with the bank amount; unticked, the row and the ones it would absorb stay as they are.
@@ -719,6 +783,7 @@ export function buildCardOfxConfirm(
       consumed,
       created,
       reversal,
+      advance,
       reconciled: { lines: reconciledLines.length, cents: reconciledCents },
       sheetOnly: { count: sheetOnly.length, cents: sheetOnlyCents },
       ofxCents,
@@ -848,6 +913,9 @@ export function cardOfxResultLines(
   if (result.reversalsImported > 0) {
     lines.push(countLabel(result.reversalsImported, 'lançamento de compra e estorno importado', 'lançamentos de compra e estorno importados'));
   }
+  if ((result.advancePayments ?? 0) > 0) {
+    lines.push(countLabel(result.advancePayments ?? 0, 'pagamento antecipado registrado', 'pagamentos antecipados registrados'));
+  }
   if (result.payment) {
     const verb = result.payment.action === 'adjusted' ? 'ajustado' : 'registrado';
     lines.push(`Pagamento da fatura anterior ${verb}: ${formatAmount(result.payment.amount)} em ${formatDate(result.payment.date)}`);
@@ -871,6 +939,7 @@ export function buildCardOfxSummary(result: CardOfxConfirmResponse, formatAmount
   if (result.created > 0) parts.push(countLabel(result.created, 'transação criada', 'transações criadas'));
   if (result.futureInstallments > 0) parts.push(countLabel(result.futureInstallments, 'parcela futura gerada', 'parcelas futuras geradas'));
   if (result.reversalsImported > 0) parts.push(countLabel(result.reversalsImported, 'compra/estorno importado', 'compras/estornos importados'));
+  if ((result.advancePayments ?? 0) > 0) parts.push(countLabel(result.advancePayments ?? 0, 'pagamento antecipado registrado', 'pagamentos antecipados registrados'));
   if (result.payment) {
     parts.push(`pagamento ${result.payment.action === 'adjusted' ? 'ajustado' : 'registrado'} (${formatAmount(result.payment.amount)})`);
   }

@@ -44,12 +44,12 @@ export interface CardOfxLine {
 }
 
 /** The server may add kinds later: a proposal of a kind this client does not know is shown but never sent. */
-export type CardOfxProposalKind = 'enrich-exact' | 'enrich-plan' | 'enrich-sum' | 'enrich-merge' | 'enrich-neighbour' | 'enrich-group' | 'enrich-near' | 'consume-future' | 'create' | 'reversal';
+export type CardOfxProposalKind = 'enrich-exact' | 'enrich-plan' | 'enrich-sum' | 'enrich-merge' | 'enrich-neighbour' | 'enrich-group' | 'enrich-near' | 'consume-future' | 'create' | 'reversal' | 'advance-payment';
 
 /** Why the server leaves a proposal unticked. The server may add reasons: the UI never relies on this list. */
 export type CardOfxProposalReason =
   | 'ambiguous' | 'no-shared-words' | 'mixed-categories' | 'sheet-residue' | 'neighbour-ambiguous' | 'neighbour-weak'
-  | 'neighbour-month-not-imported' | 'near-amount' | 'near-ambiguous' | 'pool-too-large';
+  | 'neighbour-month-not-imported' | 'near-amount' | 'near-ambiguous' | 'pool-too-large' | 'sheet-credit-near' | 'changed-in-statement';
 
 /** The stored transaction a proposal changes: the sheet row (enrich) or the future installment (consume). */
 export interface CardOfxTarget {
@@ -82,7 +82,10 @@ export interface CardOfxProposal {
   absorbed?: CardOfxTarget[];
   /** Why the server leaves the proposal unticked; null or absent when it is ticked. A string this client does not know is shown as is. */
   reason?: CardOfxProposalReason | string | null;
-  /** reason 'sheet-residue' on history: the card row left over that the new purchase may be a copy of. */
+  /**
+   * reason 'sheet-residue' on history: the card row left over that the new purchase may be a copy of; 'sheet-credit-near' (advance-payment):
+   * the left-over sheet credit the payment may be a copy of; 'changed-in-statement' (create): the row already recorded under another ref.
+   */
   counterpart?: CardOfxTarget | null;
   result: CardOfxResult | null;
   /** create: future installments that will be generated. */
@@ -207,6 +210,8 @@ export interface CardOfxConfirmResponse {
   created: number;
   futureInstallments: number;
   reversalsImported: number;
+  /** Advance payments recorded as credits on the card (kind 'advance-payment'); absent on a server that predates them. */
+  advancePayments?: number;
   payment: { action: 'adjusted' | 'created'; transactionId: string; amount: number; date: string } | null;
   /** Groups that no longer exist when confirm recomputes the reconciliation. */
   skipped: number;

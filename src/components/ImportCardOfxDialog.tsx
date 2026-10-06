@@ -27,7 +27,7 @@ import { monthKeyLabel } from '../utils/maxfinWorkbook';
 import {
   PROPOSAL_KIND_LABEL, buildCardOfxConfirm, buildCardOfxSections, buildCardOfxSummary, cardOfxConfirmBlocker, cardOfxFailureMessage,
   cardOfxMonthSourceLabel, cardOfxResultLines, clearGroups, defaultPaymentChoice, isGroupSelected, isKnownProposalKind,
-  isPaymentActionable, lineKindLabel, mergeAbsorbedNotice, mergeSummary, nearChange, nearChangeText, neighbourMonthLabel, newLinesNotice, paymentNeedsSource, paymentSourceAccounts,
+  ADVANCE_PAYMENT_HEADLINE, advancePaymentEffect, counterpartNote, isPaymentActionable, lineKindLabel, mergeAbsorbedNotice, mergeSummary, nearChange, nearChangeText, neighbourMonthLabel, newLinesNotice, paymentNeedsSource, paymentSourceAccounts,
   proposalHeadline, proposalReasonChip, reconcileGroupSelection, reconcilePaymentChoice, selectAllGroups, setGroupSelected, validateCardOfxFile,
 } from '../utils/cardOfx';
 import { buildClosingView, closingBasisLabel, closingHeadline, closingResidualStatus, closingRows } from '../utils/cardOfxClosing';
@@ -389,6 +389,8 @@ const groupCheckboxLabel = (group: CardOfxGroupView): string => {
       return `Importar nova: ${first?.memo ?? about}${group.lines.length > 1 ? ` (+${group.lines.length - 1})` : ''}`;
     case 'reversal':
       return `Importar compra e estorno: ${first?.merchant || first?.memo || about}`;
+    case 'advance':
+      return `Registrar pagamento antecipado como crédito no cartão: ${first?.memo ?? about}`;
     default:
       return `Proposta de tipo desconhecido, não pode ser importada: ${about}`;
   }
@@ -401,7 +403,8 @@ interface GroupRowProps {
 
 const GroupRow = ({ group, checked, disabled, currency, onToggle }: GroupRowProps) => {
   const { proposal, section } = group;
-  const twoColumns = section === 'matched' || section === 'futures';
+  const twoColumns = section === 'matched' || section === 'futures' || section === 'advance';
+  const counterpart = counterpartNote(proposal, (value, type) => signedAmount(value, type, currency), fmtDate);
   // Why the server left it unticked (ambiguous, no shared words, mixed categories, a sheet row left over that it may copy).
   const reasonChip = proposalReasonChip(proposal, (value, type) => signedAmount(value, type, currency), fmtDate);
   return (
@@ -431,8 +434,17 @@ const GroupRow = ({ group, checked, disabled, currency, onToggle }: GroupRowProp
           )}
         </div>
         <LineList lines={group.lines} currency={currency} />
+        {counterpart && <p data-counterpart className={`mt-1 text-xs ${MUTED_CLS}`}>{counterpart}</p>}
       </td>
-      {twoColumns && (
+      {section === 'advance' && (
+        <td className={`${TD_CLS} min-w-[240px]`}>
+          <div className="space-y-0.5 min-w-0">
+            <p className="font-medium text-gray-900 dark:text-white">{ADVANCE_PAYMENT_HEADLINE}</p>
+            <p className={`text-xs ${MUTED_CLS}`}>{advancePaymentEffect(group.lines, (value) => formatCurrency(value, currency), fmtDate)}</p>
+          </div>
+        </td>
+      )}
+      {twoColumns && section !== 'advance' && (
         <>
           <td className={`${TD_CLS} min-w-[180px]`}>
             {proposalHeadline(proposal) !== null && proposal.target
@@ -455,6 +467,7 @@ const SECTION_HEADERS: Record<CardOfxGroupSection, string[]> = {
   futures: ['No OFX', 'Parcela futura', 'Como fica'],
   new: ['Compra do OFX (será criada)'],
   reversal: ['No OFX', 'Soma'],
+  advance: ['Pagamento no OFX', 'Como fica'],
   other: ['No OFX', 'Tipo'],
 };
 
@@ -752,6 +765,7 @@ const PreviewFooter = ({
   }
   if (totals.created.groups > 0) parts.push(`${countLabel(totals.created.lines, 'nova', 'novas')} (${money(totals.created.cents, currency)})`);
   if (totals.reversal.groups > 0) parts.push(countLabel(totals.reversal.groups, 'par compra/estorno', 'pares compra/estorno'));
+  if (totals.advance.groups > 0) parts.push(countLabel(totals.advance.groups, 'pagamento antecipado a registrar', 'pagamentos antecipados a registrar'));
   // Exactly what the request carries: the source account appears only when the payment needs one.
   const sourceId = built.payload.payment?.sourceAccountId ?? '';
   const sourceText = sourceId ? `, da conta ${accountName(sourceId)}` : '';
@@ -1515,6 +1529,9 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
                 <GroupSection id="card-ofx-reversal" title="Compra e estorno" groups={sections.reversal} {...groupSectionProps}
                   hint="Compra estornada na mesma fatura (soma zero). A marcação inicial é a sugestão do servidor; marque para registrar as duas."
                   bulk={{ selectAll: 'Marcar todos os pares', clear: 'Desmarcar todos os pares' }} />
+                <GroupSection id="card-ofx-advance" title="Pagamentos antecipados a registrar" groups={sections.advance} {...groupSectionProps}
+                  hint="Pagamento recebido antes do vencimento que não é o da fatura anterior: vira um crédito no cartão, na data do banco, e abate a dívida."
+                  bulk={{ selectAll: 'Marcar todos os pagamentos', clear: 'Desmarcar todos os pagamentos' }} />
                 <GroupSection id="card-ofx-other" title="Propostas desconhecidas" groups={sections.other} {...groupSectionProps}
                   hint="Tipo de proposta que esta versão não conhece: não é enviada." />
                 <SheetOnlySection rows={sections.sheetOnly} currency={baseCurrency} />

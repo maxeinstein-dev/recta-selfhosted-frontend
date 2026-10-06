@@ -136,7 +136,7 @@ const CategoryMergeDialog = ({ open, onClose, source, categories }: CategoryMerg
             <div className={NOTICE_BOX_CLS} role="status">
               <p>{mergePreviewSentence(previewReady.counts, target.label)}</p>
               {note && <p>{note}</p>}
-              <p className="text-xs">Esta ação não pode ser desfeita.</p>
+              <p className="text-xs">Esta ação não pode ser desfeita. Importações futuras de planilha ou fatura que ainda usem o rótulo "{source?.name}" vão recriar a categoria: escolha o destino delas na tela de importação.</p>
             </div>
           )}
           {error && <p role="alert" className={ERROR_CLS}>{error}</p>}

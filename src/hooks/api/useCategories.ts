@@ -107,10 +107,9 @@ export function useUpdateCategory() {
       const response = await apiClient.patch<Category>(`/categories/${id}`, data);
       return (response as { data?: Category }).data!;
     },
-    onSuccess: (_, variables) => {
-      queryClient.invalidateQueries({ queryKey: ['categories'] });
-      queryClient.invalidateQueries({ queryKey: ['categories', variables.id] });
-      queryClient.invalidateQueries({ queryKey: ['categories', variables.id, 'stats'] });
+    // Dashboard, budgets and reports resolve the name and colour on the server: refetch everything, like a merge does.
+    onSettled: () => {
+      void queryClient.invalidateQueries();
     },
   });
 }

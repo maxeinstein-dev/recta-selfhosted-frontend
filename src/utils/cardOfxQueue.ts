@@ -121,6 +121,8 @@ export interface CardQueueTotals {
   created: number;
   futureInstallments: number;
   reversalsImported: number;
+  /** Advance payments recorded as credits on the card. */
+  advancePayments: number;
   payments: number;
   createdCategories: number;
   skippedProposals: number;
@@ -129,7 +131,7 @@ export interface CardQueueTotals {
 
 export function sumCardOfxResults(results: ReadonlyArray<CardOfxConfirmResponse>): CardQueueTotals {
   const totals: CardQueueTotals = {
-    enriched: 0, absorbedRows: 0, consumedFutures: 0, created: 0, futureInstallments: 0, reversalsImported: 0, payments: 0, createdCategories: 0,
+    enriched: 0, absorbedRows: 0, consumedFutures: 0, created: 0, futureInstallments: 0, reversalsImported: 0, advancePayments: 0, payments: 0, createdCategories: 0,
     skippedProposals: 0, warnings: 0,
   };
   for (const r of results) {
@@ -139,6 +141,7 @@ export function sumCardOfxResults(results: ReadonlyArray<CardOfxConfirmResponse>
     totals.created += r.created ?? 0;
     totals.futureInstallments += r.futureInstallments ?? 0;
     totals.reversalsImported += r.reversalsImported ?? 0;
+    totals.advancePayments += r.advancePayments ?? 0;
     totals.payments += r.payment ? 1 : 0;
     totals.createdCategories += r.createdCategories?.length ?? 0;
     totals.skippedProposals += r.skipped ?? 0;
@@ -156,6 +159,7 @@ export function cardQueueTotalsLine(totals: CardQueueTotals): string {
   if (totals.created > 0) parts.push(countLabel(totals.created, 'transação criada', 'transações criadas'));
   if (totals.futureInstallments > 0) parts.push(countLabel(totals.futureInstallments, 'parcela futura gerada', 'parcelas futuras geradas'));
   if (totals.reversalsImported > 0) parts.push(countLabel(totals.reversalsImported, 'compra/estorno importado', 'compras/estornos importados'));
+  if (totals.advancePayments > 0) parts.push(countLabel(totals.advancePayments, 'pagamento antecipado registrado', 'pagamentos antecipados registrados'));
   if (totals.payments > 0) parts.push(countLabel(totals.payments, 'pagamento registrado ou ajustado', 'pagamentos registrados ou ajustados'));
   if (totals.createdCategories > 0) parts.push(countLabel(totals.createdCategories, 'categoria criada', 'categorias criadas'));
   if (totals.skippedProposals > 0) parts.push(countLabel(totals.skippedProposals, 'proposta ignorada', 'propostas ignoradas'));

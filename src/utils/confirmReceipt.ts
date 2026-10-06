@@ -35,6 +35,20 @@ export function isConfirmable(tx: Pick<ConfirmableTx, 'id' | 'type' | 'paid'> | 
   return tx.type === undefined || tx.type === 'INCOME' || tx.type === 'EXPENSE';
 }
 
+/**
+ * Payment actions of the row menu. "Confirmar pagamento/recebimento" (dialog with the real amount and date) replaces the
+ * plain "Marcar como pago" whenever it applies, so a pending row never offers two actions that do the same thing.
+ * The plain toggle stays for what the dialog does not cover (transfers, allocations) and "Marcar como pendente" for paid rows.
+ */
+export function paymentMenuActions(
+  tx: Pick<ConfirmableTx, 'id' | 'type' | 'paid'>,
+  canConfirm: boolean,
+): { confirm: boolean; markAsPaid: boolean; markAsPending: boolean } {
+  const isPaid = tx.paid !== false;
+  const confirm = canConfirm && isConfirmable(tx);
+  return { confirm, markAsPaid: !isPaid && !confirm, markAsPending: isPaid };
+}
+
 /** Pending, and its expected day has come (today or earlier): it should have happened by now. */
 export function isDueToConfirm(tx: ConfirmableTx, today: Date): boolean {
   if (!isConfirmable(tx)) return false;

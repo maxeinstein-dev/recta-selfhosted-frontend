@@ -3,7 +3,7 @@ import { MoreHorizontal, Edit, Trash2, CheckCircle, Clock, Eye, Users } from 'lu
 import * as Popover from '@radix-ui/react-popover';
 import { useI18n } from '../context/I18nContext';
 import { Transaction } from '../types';
-import { confirmCopy, isConfirmable } from '../utils/confirmReceipt';
+import { confirmCopy, paymentMenuActions } from '../utils/confirmReceipt';
 
 interface TransactionActionsMenuProps {
   transaction: Transaction;
@@ -30,7 +30,7 @@ export const TransactionActionsMenu = ({
 }: TransactionActionsMenuProps) => {
   const { t } = useI18n();
   const [open, setOpen] = useState(false);
-  const isPaid = transaction.paid !== false; // undefined ou true = pago
+  const actions = paymentMenuActions({ id: transaction.id, type: transaction.type, paid: transaction.paid }, !!onConfirm);
 
   const handleMarkAsPaid = () => {
     if (transaction.id) {
@@ -108,7 +108,7 @@ export const TransactionActionsMenu = ({
             )}
             {!readOnly && (
               <>
-                {onConfirm && isConfirmable({ id: transaction.id, type: transaction.type, paid: transaction.paid }) && (
+                {actions.confirm && (
                   <button
                     onClick={handleConfirm}
                     className="w-full flex items-center px-4 py-2.5 text-sm font-light text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900 rounded-sm focus:outline-none transition-colors"
@@ -117,7 +117,7 @@ export const TransactionActionsMenu = ({
                     <span>{transaction.type === 'EXPENSE' ? (t.confirmPaymentAction || confirmCopy('EXPENSE').action) : (t.confirmReceiptAction || confirmCopy('INCOME').action)}</span>
                   </button>
                 )}
-                {!isPaid ? (
+                {actions.markAsPaid ? (
                   <button
                     onClick={handleMarkAsPaid}
                     className="w-full flex items-center px-4 py-2.5 text-sm font-light text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900 rounded-sm focus:outline-none transition-colors"
@@ -125,7 +125,7 @@ export const TransactionActionsMenu = ({
                     <CheckCircle className="h-4 w-4 mr-3" aria-hidden="true" />
                     <span>{t.markAsPaid || 'Marcar como pago'}</span>
                   </button>
-                ) : (
+                ) : actions.markAsPending ? (
                   <button
                     onClick={handleMarkAsPending}
                     className="w-full flex items-center px-4 py-2.5 text-sm font-light text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900 rounded-sm focus:outline-none transition-colors"
@@ -133,7 +133,7 @@ export const TransactionActionsMenu = ({
                     <Clock className="h-4 w-4 mr-3" aria-hidden="true" />
                     <span>{t.markAsPending || 'Marcar como pendente'}</span>
                   </button>
-                )}
+                ) : null}
                 <button
                   onClick={handleEdit}
                   className="w-full flex items-center px-4 py-2.5 text-sm font-light text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900 rounded-sm focus:outline-none transition-colors"

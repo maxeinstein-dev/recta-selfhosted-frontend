@@ -52,8 +52,8 @@ export interface StatementForecastItem {
 }
 
 export interface StatementView {
-  state: StatementState;
-  stateLabel: string;
+  /** Null when an older backend did not send it and it cannot be derived (hide the badge). */
+  state: StatementState | null;
   /** What the bank charges for this statement. */
   statementTotal: number;
   /** Still owed from earlier statements. */
@@ -64,8 +64,6 @@ export interface StatementView {
   /** 'dd/MM' or null. */
   closingLabel: string | null;
   dueLabel: string | null;
-  /** Sentence for the header, e.g. "fecha em 02/11" / "fechada em 02/10 · vence 09/10". */
-  closingSentence: string | null;
   forecast: {
     applicable: boolean;
     items: StatementForecastItem[];
@@ -91,32 +89,26 @@ export function dayMonthLabel(iso: string | null | undefined): string {
   return `${day.slice(8, 10)}/${day.slice(5, 7)}`;
 }
 
-export const STATE_LABELS: Record<StatementState, string> = { open: 'Aberta', closed: 'Fechada', paid: 'Paga' };
-
-/** The state the backend sent, else derived from the legacy fields (paid when flagged, otherwise closed). */
-function stateOf(dto: InvoiceStatementDto): StatementState {
+/** The state the backend sent; else 'paid' when the legacy flag says so; else unknown (null: closed vs open needs the dates). */
+function stateOf(dto: InvoiceStatementDto): StatementState | null {
   if (dto.state === 'open' || dto.state === 'closed' || dto.state === 'paid') return dto.state;
-  return dto.isPaid ? 'paid' : 'closed';
+  return dto.isPaid ? 'paid' : null;
 }
+
+/** A residue of one cent or less (sums of decimals) is not an amount. */
+const noResidue = (c: number): number => (Math.abs(c) <= 1 ? 0 : c);
 
 export function buildInvoiceStatement(dto: InvoiceStatementDto | null | undefined): StatementView | null {
   if (!dto) return null;
   const state = stateOf(dto);
   const statementC = cents(dto.statementTotal ?? dto.currentExpenses);
-  const outstandingC = cents(dto.outstandingFromPrevious ?? dto.previousBalance);
-  const paymentsC = cents(dto.currentPayments);
-  const debtC = dto.debtTotal !== undefined ? cents(dto.debtTotal) : Math.max(0, outstandingC + statementC - paymentsC);
+  const outstandingC = noResidue(cents(dto.outstandingFromPrevious ?? dto.previousBalance));
+  const paymentsC = noResidue(cents(dto.currentPayments));
+  const debtRaw = dto.debtTotal !== undefined ? cents(dto.debtTotal) : Math.max(0, outstandingC + statementC - paymentsC);
+  const debtC = state === 'paid' ? 0 : noResidue(debtRaw);
 
   const closingLabel = dayMonthLabel(dto.closingDate) || null;
   const dueLabel = dayMonthLabel(dto.dueDate) || null;
-  let closingSentence: string | null = null;
-  if (closingLabel) {
-    closingSentence = state === 'open' ? `fecha em ${closingLabel}` : `fechou em ${closingLabel}`;
-    if (dueLabel) closingSentence += ` · vence em ${dueLabel}`;
-  } else if (dueLabel) {
-    closingSentence = `vence em ${dueLabel}`;
-  }
-
   let forecast: StatementView['forecast'] = null;
   const f = dto.forecast;
   if (f && f.applicable && Array.isArray(f.items) && f.items.length > 0) {
@@ -139,14 +131,12 @@ export function buildInvoiceStatement(dto: InvoiceStatementDto | null | undefine
 
   return {
     state,
-    stateLabel: STATE_LABELS[state],
     statementTotal: money(statementC),
     outstanding: money(outstandingC),
     payments: money(paymentsC),
     debtTotal: money(debtC),
     closingLabel,
     dueLabel,
-    closingSentence,
     forecast,
   };
 }

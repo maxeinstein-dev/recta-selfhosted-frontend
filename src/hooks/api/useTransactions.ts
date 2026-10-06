@@ -4,6 +4,7 @@ import { apiClient } from '../../utils/api';
 import { CategoryType, CategoryName } from '../../lib/enums';
 import { formatDateForAPI } from '../../utils/format';
 import { useAuth } from '../../context/AuthContext';
+import type { InvoiceForecastDto } from '../../utils/invoiceStatement';
 
 export interface TransactionSplit {
   id: string;
@@ -616,8 +617,6 @@ export function useBatchDeleteTransactions() {
     },
   });
 }
-
-import type { InvoiceForecastDto } from '../../utils/invoiceStatement';
 
 export interface CreditCardInvoiceResponse {
   invoiceTransactions: Transaction[];

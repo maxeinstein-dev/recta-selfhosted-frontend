@@ -12,7 +12,6 @@ import {
   CheckCircle2,
   AlertCircle,
   Plus,
-  HelpCircle,
   Upload,
   ClipboardCheck,
 } from "lucide-react";
@@ -688,12 +687,15 @@ const CreditCards = () => {
               </div>
               <div className="text-xs font-light text-gray-500 dark:text-gray-400">
                 {formatCurrency(
-                  creditCardsInvoices[card.id || ""] || 0,
+                  // The selected card uses the same payload as the statement panel; the others a client estimate.
+                  card.id === selectedAccountId && statementView
+                    ? statementView.debtTotal
+                    : creditCardsInvoices[card.id || ""] || 0,
                   baseCurrency
                 )}
               </div>
               <div className="text-[10px] font-light text-gray-400 dark:text-gray-500 mt-0.5">
-                {t.invoice} {format(selectedMonth, "MMM", { locale: currentLocale })}
+                {t.cardStmtDebtTile || "Total debt"} {format(selectedMonth, "MMM", { locale: currentLocale })}
               </div>
             </div>
           </button>
@@ -926,35 +928,7 @@ const CreditCards = () => {
                     </div>
                   ) : (
                     <>
-                      {/* Saldo Anterior */}
-                      {invoiceStats.previousBalance !== 0 && (
-                        <div className="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800">
-                          <div className="flex items-center gap-3">
-                            <Clock className="h-4 w-4 text-gray-400 dark:text-gray-500" />
-                            <div>
-                              <div className="text-sm font-light text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
-                                {t.previousBalance}
-                                <span
-                                  className="inline-flex text-gray-400 dark:text-gray-500 cursor-help"
-                                  title={t.previousBalanceTooltip}
-                                  aria-label={t.previousBalanceTooltip}
-                                >
-                                  <HelpCircle className="h-3.5 w-3.5" />
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="text-sm font-light text-gray-900 dark:text-white">
-                            {formatCurrency(
-                              invoiceStats.previousBalance,
-                              baseCurrency
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {invoiceTransactions.length === 0 &&
-                      invoiceStats.previousBalance === 0 ? (
+                      {invoiceTransactions.length === 0 ? (
                         <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                           {t.noInvoiceTransactions}
                         </div>

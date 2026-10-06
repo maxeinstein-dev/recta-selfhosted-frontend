@@ -113,6 +113,8 @@ export function useCreateRecurringTransaction() {
       return response.data!;
     },
     onSuccess: () => {
+      // The card statement forecast depends on the recurrences.
+      queryClient.invalidateQueries({ queryKey: ['transactions', 'credit-card-invoice'] });
       queryClient.invalidateQueries({ queryKey: ['recurring-transactions'] });
       // Invalidate auth/me to refresh household list
       queryClient.invalidateQueries({ queryKey: ['auth', 'me'] });
@@ -132,6 +134,8 @@ export function useUpdateRecurringTransaction() {
       return response.data!;
     },
     onSuccess: (_, variables) => {
+      // The card statement forecast depends on the recurrences.
+      queryClient.invalidateQueries({ queryKey: ['transactions', 'credit-card-invoice'] });
       queryClient.invalidateQueries({ queryKey: ['recurring-transactions'] });
       queryClient.invalidateQueries({ queryKey: ['recurring-transactions', variables.id] });
       queryClient.invalidateQueries({ queryKey: ['recurring-transactions', 'due'] });
@@ -151,6 +155,8 @@ export function useDeleteRecurringTransaction() {
       return response.data!;
     },
     onSuccess: () => {
+      // The card statement forecast depends on the recurrences.
+      queryClient.invalidateQueries({ queryKey: ['transactions', 'credit-card-invoice'] });
       queryClient.invalidateQueries({ queryKey: ['recurring-transactions'] });
       queryClient.invalidateQueries({ queryKey: ['recurring-transactions', 'due'] });
     },

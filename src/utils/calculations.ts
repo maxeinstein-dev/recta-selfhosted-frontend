@@ -1,6 +1,7 @@
 import { startOfMonth, endOfMonth, isWithinInterval, subMonths, isBefore, isAfter, isSameDay, addDays, addWeeks, addMonths, addYears } from 'date-fns';
 import { Transaction, CategoryData, MonthlyComparison, RecurringTransaction, Account } from '../types';
 import { TransactionType, AccountType } from '../lib/enums';
+import { effectiveMonthOf, monthKeyOf } from './referenceMonth';
 
 export const getTotalIncome = (transactions: Transaction[] | undefined): number => {
   if (!transactions || !Array.isArray(transactions)) {
@@ -24,14 +25,35 @@ export const getBalance = (transactions: Transaction[] | undefined): number => {
   return getTotalIncome(transactions) - getTotalExpense(transactions);
 };
 
+/**
+ * The transactions that count in `date`'s month for month planning: those whose reference month (competencia) is that
+ * month, or, with no reference month, whose date is in it. A row dated 25 Sep that refers to October counts in October.
+ */
 export const getTransactionsByMonth = (transactions: Transaction[] | undefined, date: Date = new Date()): Transaction[] => {
   if (!transactions || !Array.isArray(transactions)) {
     return [];
   }
-  
+
+  const target = monthKeyOf(date);
+
+  return transactions.filter(t => {
+    if (!t || !t.date) return false;
+    return effectiveMonthOf({ date: t.date, competenceMonth: t.competenceMonth, type: t.type }) === target;
+  });
+};
+
+/**
+ * The transactions whose DATE is in `date`'s month (the calendar of the money, balances, daily views): the reference
+ * month is ignored. Month planning uses getTransactionsByMonth.
+ */
+export const getTransactionsByDateMonth = (transactions: Transaction[] | undefined, date: Date = new Date()): Transaction[] => {
+  if (!transactions || !Array.isArray(transactions)) {
+    return [];
+  }
+
   const start = startOfMonth(date);
   const end = endOfMonth(date);
-  
+
   return transactions.filter(t => {
     if (!t || !t.date) return false;
     // Convert string date to Date if needed

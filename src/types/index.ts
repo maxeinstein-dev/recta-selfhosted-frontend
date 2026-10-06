@@ -28,6 +28,8 @@ export interface Transaction {
   totalInstallments?: number;
   attachmentUrl?: string;
   notes?: string;
+  /** Reference month 'YYYY-MM' (competencia): the month the money belongs to when it is not the month of `date`; null/absent = the month of the date. */
+  competenceMonth?: string | null;
 }
 
 export interface Category {
@@ -79,6 +81,8 @@ export interface RecurringTransaction {
   followLastAmount?: boolean;
   /** YYYY-MM-DD of the newest occurrence up to today + 31 days; null when none; undefined when the server does not say. */
   lastOccurrenceDate?: string | null;
+  /** Months between an occurrence's date and the month it refers to (1 = the following month); null/absent = same month. */
+  competenceOffsetMonths?: number | null;
 }
 
 import { AccountType } from '../constants/accountTypes';

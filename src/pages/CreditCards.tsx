@@ -219,6 +219,7 @@ const CreditCards = () => {
         installmentId: t.installmentId,
         installmentNumber: t.installmentNumber,
         totalInstallments: t.totalInstallments,
+        competenceMonth: (t as { competenceMonth?: string | null }).competenceMonth ?? null,
       };
     };
   }, []);

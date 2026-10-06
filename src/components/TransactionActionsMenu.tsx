@@ -3,6 +3,7 @@ import { MoreHorizontal, Edit, Trash2, CheckCircle, Clock, Eye, Users } from 'lu
 import * as Popover from '@radix-ui/react-popover';
 import { useI18n } from '../context/I18nContext';
 import { Transaction } from '../types';
+import { confirmCopy, isConfirmable } from '../utils/confirmReceipt';
 
 interface TransactionActionsMenuProps {
   transaction: Transaction;
@@ -12,6 +13,8 @@ interface TransactionActionsMenuProps {
   onView?: (transaction: Transaction) => void;
   /** Opens the "Dividir" dialog (phase 4). Omit to hide the action (viewers, transfers, invoice payments). */
   onSplitShares?: (transaction: Transaction) => void;
+  /** Opens "Confirmar recebimento / pagamento" (pending income or expense). Omit to hide the action. */
+  onConfirm?: (transaction: Transaction) => void;
   readOnly?: boolean; // If true, disable edit and delete actions
 }
 
@@ -22,6 +25,7 @@ export const TransactionActionsMenu = ({
   onMarkAsPaid,
   onView,
   onSplitShares,
+  onConfirm,
   readOnly = false,
 }: TransactionActionsMenuProps) => {
   const { t } = useI18n();
@@ -38,6 +42,13 @@ export const TransactionActionsMenu = ({
   const handleMarkAsPending = () => {
     if (transaction.id) {
       onMarkAsPaid(transaction.id, false);
+      setOpen(false);
+    }
+  };
+
+  const handleConfirm = () => {
+    if (onConfirm) {
+      onConfirm(transaction);
       setOpen(false);
     }
   };
@@ -97,6 +108,15 @@ export const TransactionActionsMenu = ({
             )}
             {!readOnly && (
               <>
+                {onConfirm && isConfirmable({ id: transaction.id, type: transaction.type, paid: transaction.paid }) && (
+                  <button
+                    onClick={handleConfirm}
+                    className="w-full flex items-center px-4 py-2.5 text-sm font-light text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-900 rounded-sm focus:outline-none transition-colors"
+                  >
+                    <CheckCircle className="h-4 w-4 mr-3" aria-hidden="true" />
+                    <span>{transaction.type === 'EXPENSE' ? (t.confirmPaymentAction || confirmCopy('EXPENSE').action) : (t.confirmReceiptAction || confirmCopy('INCOME').action)}</span>
+                  </button>
+                )}
                 {!isPaid ? (
                   <button
                     onClick={handleMarkAsPaid}

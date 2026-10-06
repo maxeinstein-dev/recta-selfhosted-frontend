@@ -9,6 +9,7 @@ import { useI18n } from '../context/I18nContext';
 import { useCurrency } from '../context/CurrencyContext';
 import { formatCurrency } from '../utils/format';
 import { amountChanged, followLastHint, recurrenceUpdatedMessage } from '../utils/recurringFollow';
+import { competenceToSend, defaultReferenceMonth, isMonthKey, offsetToSend } from '../utils/referenceMonth';
 import { Transaction } from '../types';
 import { createSchemas, TransactionFormData } from '../schemas';
 import { CategoryType, CategoryName, getCategoriesByType, getCategoryNameFromDisplay, AccountType, TransactionType } from '../lib/enums';
@@ -25,6 +26,7 @@ import {
   TransactionBasicFields,
   SplitTransactionForm,
   RecurringTransactionFields,
+  ReferenceMonthField,
   InstallmentsField,
   TransactionModalFooter,
   AccountField,
@@ -97,6 +99,11 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
   const [recurringStartDate, setRecurringStartDate] = useState<Date>(new Date());
   const [recurringEndDate, setRecurringEndDate] = useState<Date | undefined>(undefined);
   const [recurringNextDueDate, setRecurringNextDueDate] = useState<Date>(new Date());
+  // Reference month of the recurrence: months between an occurrence's date and the month it refers to (null = same month)
+  const [recurringCompetenceOffset, setRecurringCompetenceOffset] = useState<number | null>(null);
+  // Reference month (competencia) of this transaction: off = the month of its date
+  const [refEnabled, setRefEnabled] = useState(false);
+  const [refMonth, setRefMonth] = useState('');
 
   // Estados para divisão de despesas (splits)
   const [isSplit, setIsSplit] = useState(false);
@@ -370,6 +377,8 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
       });
       currencyMask.setValue(amount);
       setValue('amount', amount);
+      setRefEnabled(isMonthKey(transaction.competenceMonth));
+      setRefMonth(isMonthKey(transaction.competenceMonth) ? transaction.competenceMonth : defaultReferenceMonth(tDate));
       
       // Se for cartão de crédito e a transação for INCOME ou TRANSFER, limpar categoria
       if (isCreditCardContext && (transaction.type === TransactionType.INCOME || transaction.type === TransactionType.TRANSFER)) {
@@ -387,6 +396,9 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
       setRecurringStartDate(defaultDate);
       setRecurringEndDate(undefined);
       setRecurringNextDueDate(calculateNextDueDate(defaultDate, 'monthly'));
+      setRecurringCompetenceOffset(null);
+      setRefEnabled(false);
+      setRefMonth(defaultReferenceMonth(defaultDate));
       // Limpar splits quando for nova transação
       setIsSplit(false);
       setSplits([]);
@@ -701,6 +713,14 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
         }
       }
 
+      const refCompetence = (data.type === TransactionType.INCOME || data.type === TransactionType.EXPENSE) && !isRecurring
+        ? competenceToSend(refEnabled, refMonth, data.date)
+        : null;
+      if (refCompetence === undefined) {
+        showError(t.referenceMonthLabel ? `${t.referenceMonthLabel}: ${refMonth || '-'}` : 'Mês de referência inválido.');
+        return;
+      }
+
       const transactionData = {
         description: data.description || '', // Garantir que seja string, não undefined
         amount: data.amount,
@@ -712,6 +732,8 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
         // when the purchase date falls inside the invoice period.
         paid: isCreditCardContext ? true : data.paid,
         accountId: data.accountId || undefined,
+        // Reference month: the chosen month, null when the toggle is off (clears one that was set)
+        competenceMonth: refCompetence,
         ...(isSplit && data.type === TransactionType.EXPENSE && isSharedHousehold && splits.length > 0 && {
           isSplit: true,
           splits: splits,
@@ -742,6 +764,7 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
           endDate: recurringEndDate,
           nextDueDate: recurringNextDueDate,
           isActive: true,
+          competenceOffsetMonths: offsetToSend(recurringCompetenceOffset),
         });
         success(t.transactionCreated);
         if (!shouldCreateNew) {
@@ -778,7 +801,8 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
         }
       } else if (data.installments > 1 && (data.type === TransactionType.INCOME || data.type === TransactionType.EXPENSE)) {
         // Criar parcelas (não permitido para transferências)
-        await createInstallments(transactionData, data.installments);
+        // Installments are dated one per month: a single reference month would not fit them all.
+        await createInstallments({ ...transactionData, competenceMonth: null }, data.installments);
         success(t.installmentsCreated);
         if (!shouldCreateNew) {
           onClose();
@@ -910,6 +934,20 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
               amountHint={amountHint}
             />
 
+            {(transactionType === TransactionType.INCOME || transactionType === TransactionType.EXPENSE) && !isRecurring && (
+              <ReferenceMonthField
+                enabled={refEnabled}
+                month={refMonth}
+                date={transactionDate || new Date()}
+                onEnabledChange={(enabled) => {
+                  setRefEnabled(enabled);
+                  if (enabled && !refMonth) setRefMonth(defaultReferenceMonth(transactionDate || new Date()));
+                }}
+                onMonthChange={setRefMonth}
+                disabled={readOnly}
+              />
+            )}
+
             {transactionType === TransactionType.EXPENSE && isSharedHousehold && householdMembers && householdMembers.length > 1 && !readOnly && (
               <SplitTransactionForm
                 isSplit={isSplit}
@@ -992,6 +1030,8 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
                   }}
                   onEndDateChange={(date) => setRecurringEndDate(date)}
                   onNextDueDateChange={(date) => setRecurringNextDueDate(date)}
+                  competenceOffsetMonths={recurringCompetenceOffset}
+                  onCompetenceOffsetChange={setRecurringCompetenceOffset}
                   disabled={readOnly}
                 />
               </>

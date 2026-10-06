@@ -3,7 +3,7 @@ import { useTransactions } from '../../context/TransactionsContext';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useI18n } from '../../context/I18nContext';
 import { formatCurrency } from '../../utils/format';
-import { getTransactionsByMonth, getTotalIncome, getTotalExpense, getLiquidatedTransactions } from '../../utils/calculations';
+import { getTransactionsByDateMonth, getTotalIncome, getTotalExpense, getLiquidatedTransactions } from '../../utils/calculations';
 import { format, eachDayOfInterval, startOfMonth, endOfMonth, isSameDay } from 'date-fns';
 import { TransactionType, AccountType } from '../../lib/enums';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
@@ -25,7 +25,8 @@ export const DailyCashFlowWidget = ({ selectedMonth, totalAvailableBalance, blur
     const monthEnd = endOfMonth(selectedMonth);
     const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
     
-    const monthTransactions = getTransactionsByMonth(transactions, selectedMonth);
+    // Cash calendar: the money moves on the DATE, so the reference month is ignored here.
+    const monthTransactions = getTransactionsByDateMonth(transactions, selectedMonth);
     const liquidated = getLiquidatedTransactions(monthTransactions).filter(t => {
       if (t.type === TransactionType.TRANSFER || t.type === TransactionType.ALLOCATION) return false;
       if (!t.accountId) return true;

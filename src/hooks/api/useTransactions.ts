@@ -4,6 +4,7 @@ import { apiClient } from '../../utils/api';
 import { CategoryType, CategoryName } from '../../lib/enums';
 import { formatDateForAPI } from '../../utils/format';
 import { useAuth } from '../../context/AuthContext';
+import type { InvoiceForecastDto } from '../../utils/invoiceStatement';
 
 export interface TransactionSplit {
   id: string;
@@ -625,6 +626,14 @@ export interface CreditCardInvoiceResponse {
   previousBalance: number;
   isPaid: boolean;
   paymentTransactions: Transaction[];
+  /** Statement fields (optional: an older backend does not send them). */
+  statementTotal?: number;
+  outstandingFromPrevious?: number;
+  debtTotal?: number;
+  closingDate?: string | null;
+  dueDate?: string | null;
+  state?: 'open' | 'closed' | 'paid';
+  forecast?: InvoiceForecastDto | null;
 }
 
 export interface CreditCardInvoiceParams {

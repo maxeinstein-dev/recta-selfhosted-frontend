@@ -12,11 +12,12 @@ import {
   CheckCircle2,
   AlertCircle,
   Plus,
-  HelpCircle,
   Upload,
   ClipboardCheck,
 } from "lucide-react";
 import { AccountActionsMenu } from "../components/AccountActionsMenu";
+import { CreditCardStatementPanel } from "../components/credit-cards";
+import { buildInvoiceStatement } from "../utils/invoiceStatement";
 import {
   isSameMonth,
   format,
@@ -258,6 +259,9 @@ const CreditCards = () => {
       paymentTransactions,
     };
   }, [invoiceData, convertTransaction]);
+
+  // Statement view: invoice amount, open amount from earlier invoices, payments, debt, dates and forecast at closing
+  const statementView = useMemo(() => buildInvoiceStatement(invoiceData), [invoiceData]);
 
   // Calcular fatura atual de cada cartão (para exibir nos cards de seleção)
   const creditCardsInvoices = useMemo(() => {
@@ -683,12 +687,15 @@ const CreditCards = () => {
               </div>
               <div className="text-xs font-light text-gray-500 dark:text-gray-400">
                 {formatCurrency(
-                  creditCardsInvoices[card.id || ""] || 0,
+                  // The selected card uses the same payload as the statement panel; the others a client estimate.
+                  card.id === selectedAccountId && statementView
+                    ? statementView.debtTotal
+                    : creditCardsInvoices[card.id || ""] || 0,
                   baseCurrency
                 )}
               </div>
               <div className="text-[10px] font-light text-gray-400 dark:text-gray-500 mt-0.5">
-                {t.invoice} {format(selectedMonth, "MMM", { locale: currentLocale })}
+                {t.cardStmtDebtTile || "Total debt"} {format(selectedMonth, "MMM", { locale: currentLocale })}
               </div>
             </div>
           </button>
@@ -873,14 +880,25 @@ const CreditCards = () => {
                     {format(selectedMonth, "MMMM", { locale: currentLocale })})
                   </div>
                   <div className="text-2xl font-light tracking-tight text-gray-900 dark:text-white">
-                    {formatCurrency(invoiceStats.total, baseCurrency)}
+                    {formatCurrency(statementView ? statementView.statementTotal : invoiceStats.total, baseCurrency)}
                   </div>
                   <div className="text-[10px] font-light text-gray-400 dark:text-gray-500 uppercase tracking-wider">
-                    {t.dueDay} {selectedAccount.dueDay}/
-                    {format(addMonths(selectedMonth, 1), "MM")}
+                    {statementView?.dueLabel
+                      ? `${t.dueDay} ${statementView.dueLabel}`
+                      : `${t.dueDay} ${selectedAccount.dueDay}/${format(addMonths(selectedMonth, 1), "MM")}`}
                   </div>
                 </div>
               </div>
+
+              {statementView && !invoiceLoading && (
+                <div className="px-6 pt-6">
+                  <CreditCardStatementPanel
+                    view={statementView}
+                    monthName={format(selectedMonth, "MMMM", { locale: currentLocale })}
+                    baseCurrency={baseCurrency}
+                  />
+                </div>
+              )}
 
               <div className="p-6">
                 <div className="flex items-center justify-between mb-2">
@@ -910,35 +928,7 @@ const CreditCards = () => {
                     </div>
                   ) : (
                     <>
-                      {/* Saldo Anterior */}
-                      {invoiceStats.previousBalance !== 0 && (
-                        <div className="flex items-center justify-between py-3 border-b border-gray-100 dark:border-gray-800">
-                          <div className="flex items-center gap-3">
-                            <Clock className="h-4 w-4 text-gray-400 dark:text-gray-500" />
-                            <div>
-                              <div className="text-sm font-light text-gray-500 dark:text-gray-400 flex items-center gap-1.5">
-                                {t.previousBalance}
-                                <span
-                                  className="inline-flex text-gray-400 dark:text-gray-500 cursor-help"
-                                  title={t.previousBalanceTooltip}
-                                  aria-label={t.previousBalanceTooltip}
-                                >
-                                  <HelpCircle className="h-3.5 w-3.5" />
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-                          <div className="text-sm font-light text-gray-900 dark:text-white">
-                            {formatCurrency(
-                              invoiceStats.previousBalance,
-                              baseCurrency
-                            )}
-                          </div>
-                        </div>
-                      )}
-
-                      {invoiceTransactions.length === 0 &&
-                      invoiceStats.previousBalance === 0 ? (
+                      {invoiceTransactions.length === 0 ? (
                         <div className="text-center py-8 text-gray-500 dark:text-gray-400">
                           {t.noInvoiceTransactions}
                         </div>

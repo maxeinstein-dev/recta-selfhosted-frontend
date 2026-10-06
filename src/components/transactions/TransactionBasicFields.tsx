@@ -75,6 +75,7 @@ export const TransactionBasicFields = ({
                   type={categoryType}
                   disabled={disabled}
                   householdId={householdId}
+                  allowCreate
                 />
               );
             }}

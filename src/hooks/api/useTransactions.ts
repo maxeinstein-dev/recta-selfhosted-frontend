@@ -42,6 +42,8 @@ export interface Transaction {
   installmentNumber?: number;
   totalInstallments?: number;
   attachmentUrl?: string;
+  /** Reference month 'YYYY-MM' (competencia); null = the month of `date`. */
+  competenceMonth?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -74,10 +76,15 @@ export interface ListTransactionsParams {
   startDate?: Date | string;
   endDate?: Date | string;
   month?: string; // YYYY-MM format
+  /** Inclusive range of planning months (YYYY-MM): rows whose reference month (else the month of the date) is in it. */
+  monthFrom?: string;
+  monthTo?: string;
   type?: CategoryType;
   categoryName?: CategoryName;
   accountId?: string;
   search?: string;
+  /** false lists the pending rows (forecasts waiting to be confirmed), true the settled ones. */
+  paid?: boolean;
 }
 
 export interface TransactionSummaryParams {
@@ -211,6 +218,9 @@ export function useLoadMoreTransactions() {
           queryParams.type === queryParamsWithoutCursor.type &&
           queryParams.categoryName === queryParamsWithoutCursor.categoryName &&
           queryParams.accountId === queryParamsWithoutCursor.accountId &&
+          queryParams.paid === queryParamsWithoutCursor.paid &&
+          queryParams.monthFrom === queryParamsWithoutCursor.monthFrom &&
+          queryParams.monthTo === queryParamsWithoutCursor.monthTo &&
           // Compare dates by converting to ISO strings
           (!queryParams.startDate || !queryParamsWithoutCursor.startDate || 
            new Date(queryParams.startDate).toISOString().split('T')[0] === 
@@ -323,7 +333,7 @@ export function useAllTransactions(params: ListTransactionsParams) {
     setAllTransactions([]);
     setHasLoadedAll(false);
     setIsLoadingMore(false);
-  }, [baseParams.householdId, baseParams.startDate, baseParams.endDate, baseParams.month]);
+  }, [baseParams.householdId, baseParams.startDate, baseParams.endDate, baseParams.month, baseParams.monthFrom, baseParams.monthTo]);
 
   return allTransactions;
 }
@@ -495,6 +505,7 @@ export function useCreateTransaction() {
       installmentNumber?: number;
       totalInstallments?: number;
       attachmentUrl?: string;
+      competenceMonth?: string | null; // Reference month (INCOME/EXPENSE); null/absent = the month of the date
     }) => {
       const response = await apiClient.post<Transaction>('/transactions', data);
       return response.data!;

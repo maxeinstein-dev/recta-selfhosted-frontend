@@ -3,6 +3,8 @@ import { formatCurrency } from '../../utils/format';
 import { TransactionActionsMenu } from '../TransactionActionsMenu';
 import { TransactionType, getCategoryDisplayName, getCategoryNameFromDisplay } from '../../lib/enums';
 import { CreditCard } from 'lucide-react';
+import { referenceChip } from '../../utils/referenceMonth';
+import { confirmCopy, isConfirmable } from '../../utils/confirmReceipt';
 import type React from 'react';
 
 interface TransactionItemProps {
@@ -16,6 +18,8 @@ interface TransactionItemProps {
   onView: (transaction: Transaction) => void;
   /** Opens the "Dividir" dialog; the action only shows for expenses. */
   onSplitShares?: (transaction: Transaction) => void;
+  /** Opens "Confirmar recebimento / pagamento"; shown for pending income/expense rows. */
+  onConfirm?: (transaction: Transaction) => void;
   formatTransactionDescription: (transaction: Transaction) => string;
   getCategoryIcon: (categoryName: string | undefined, customCategories?: Array<{ id: string; name: string; icon?: string | null }>) => React.ComponentType<any>;
   readOnly?: boolean;
@@ -32,6 +36,7 @@ export const TransactionItem = ({
   onMarkAsPaid,
   onView,
   onSplitShares,
+  onConfirm,
   formatTransactionDescription,
   getCategoryIcon,
   readOnly = false,
@@ -72,10 +77,30 @@ export const TransactionItem = ({
                     {t.pending}
                   </span>
                 )}
+                {referenceChip(transaction) && (
+                  <span
+                    data-testid="reference-chip"
+                    title={t.referenceMonthChipTitle || 'Conta para outro mês: o saldo muda na data, os relatórios do mês usam este mês.'}
+                    className="inline-flex items-center px-2.5 py-0.5 text-xs font-light text-blue-600 dark:text-blue-400 border border-blue-300 dark:border-blue-700 rounded-full"
+                  >
+                    {referenceChip(transaction)}
+                  </span>
+                )}
                 {isOverdue && (
                   <span className="inline-flex items-center px-2.5 py-0.5 text-xs font-light text-red-600 dark:text-red-400 border border-red-300 dark:border-red-700 rounded-full">
                     {t.overdue || 'Atrasado'}
                   </span>
+                )}
+                {onConfirm && !readOnly && isOverdue && isConfirmable({ id: transaction.id, type: transaction.type, paid: transaction.paid }) && (
+                  <button
+                    type="button"
+                    data-testid="row-confirm"
+                    onClick={() => onConfirm(transaction)}
+                    aria-label={confirmCopy(transaction.type).action}
+                    className="inline-flex items-center px-2.5 py-0.5 text-xs font-light text-primary-600 dark:text-primary-400 border border-primary-300 dark:border-primary-700 rounded-full hover:opacity-70 transition-opacity"
+                  >
+                    {t.confirmShort || 'Confirmar'}
+                  </button>
                 )}
               </div>
               <div className="flex flex-wrap items-center gap-3 text-sm">
@@ -126,6 +151,7 @@ export const TransactionItem = ({
               onDelete={onDelete}
               onMarkAsPaid={onMarkAsPaid}
               onView={onView}
+              onConfirm={!readOnly && onConfirm && isConfirmable({ id: transaction.id, type: transaction.type, paid: transaction.paid }) ? onConfirm : undefined}
               onSplitShares={onSplitShares && transaction.type === TransactionType.EXPENSE && !isInvoicePayment ? onSplitShares : undefined}
               readOnly={readOnly}
             />

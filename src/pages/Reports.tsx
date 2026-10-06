@@ -7,6 +7,7 @@ import {
   getTotalExpense, 
   getBalance,
   getTransactionsByMonth,
+  getTransactionsByDateMonth,
   getMonthlyComparison,
   getTransactionsByCategory
 } from '../utils/calculations';
@@ -17,6 +18,7 @@ import { ExpensesByCategoryWidget, IncomeByCategoryWidget } from '../components/
 import { MonthlyComparison, Transaction } from '../types';
 import { AccountType, TransactionType, CategoryName, getCategoryDisplayName, getCategoriesByType, CategoryType } from '../lib/enums';
 import { useAllTransactions } from '../hooks/api/useTransactions';
+import { effectiveMonthOf, monthKeyOf } from '../utils/referenceMonth';
 import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
 import { useCategories } from '../hooks/api/useCategories';
 import { PageHeader } from '../components/PageHeader';
@@ -64,25 +66,29 @@ const Reports = () => {
     return { startDate: start, endDate: end };
   }, []);
 
+  // The reports are month planning: the server selects by the effective month (reference month when set, else the month
+  // of the date), so a voucher dated 25 Sep that refers to October shows in October's report.
+  const monthRange = (range: { startDate: Date; endDate: Date }) => ({
+    monthFrom: monthKeyOf(range.startDate),
+    monthTo: monthKeyOf(range.endDate),
+  });
+
   // Buscar transações do período necessário (sem limite - busca todas)
   const transactionsData = useAllTransactions({
     householdId: householdId || undefined,
-    startDate: dateRange.startDate,
-    endDate: dateRange.endDate,
+    ...monthRange(dateRange),
   });
 
   // Buscar transações dos últimos 12 meses para monthlyComparison (sem limite)
   const comparisonTransactionsData = useAllTransactions({
     householdId: householdId || undefined,
-    startDate: comparisonDateRange.startDate,
-    endDate: comparisonDateRange.endDate,
+    ...monthRange(comparisonDateRange),
   });
 
   // Buscar transações dos últimos 5 anos para availableYears (sem limite)
   const yearsTransactionsData = useAllTransactions({
     householdId: householdId || undefined,
-    startDate: yearsDateRange.startDate,
-    endDate: yearsDateRange.endDate,
+    ...monthRange(yearsDateRange),
   });
 
   // Converter transações do backend para formato do frontend
@@ -144,6 +150,7 @@ const Reports = () => {
           installmentId: t.installmentId,
           installmentNumber: t.installmentNumber,
           totalInstallments: t.totalInstallments,
+          competenceMonth: (t as { competenceMonth?: string | null }).competenceMonth ?? null,
           notes: (t as any).notes,
           isSplit: (t as any).isSplit || false,
           splits: (t as any).splits ? (t as any).splits.map((split: any) => ({
@@ -165,7 +172,7 @@ const Reports = () => {
     const years = new Set<number>();
     yearsTransactions.forEach(t => {
       if (t.date) {
-        years.add(t.date.getFullYear());
+        years.add(Number(effectiveMonthOf(t).slice(0, 4)));
       }
     });
     return Array.from(years).sort((a, b) => b - a);
@@ -177,13 +184,7 @@ const Reports = () => {
   );
 
   const yearTransactions = useMemo(() => {
-    const start = startOfYear(new Date(selectedYear, 0, 1));
-    const end = endOfYear(new Date(selectedYear, 11, 31));
-    return transactions.filter(t => {
-      if (!t.date) return false;
-      const transactionDate = typeof t.date === 'string' ? new Date(t.date) : t.date;
-      return transactionDate >= start && transactionDate <= end;
-    });
+    return transactions.filter(t => !!t.date && effectiveMonthOf(t).startsWith(`${selectedYear}-`));
   }, [transactions, selectedYear]);
 
   const monthTransactions = useMemo(
@@ -208,9 +209,9 @@ const Reports = () => {
     const monthly: MonthlyComparison[] = [];
     for (let i = 0; i < 12; i++) {
       const monthStart = startOfMonth(new Date(selectedYear, i, 1));
-      const monthEnd = endOfMonth(new Date(selectedYear, i, 1));
+      const monthKey = monthKeyOf(monthStart);
       let monthTrans = transactions.filter(t => 
-        t.date >= monthStart && t.date <= monthEnd
+        !!t.date && effectiveMonthOf(t) === monthKey
       );
       
       // Filtrar transações de cartão de crédito (excluir despesas em cartão)
@@ -254,13 +255,7 @@ const Reports = () => {
       return getTransactionsByMonth(transactions, previousMonth);
     } else {
       const previousYear = selectedYear - 1;
-      const start = startOfYear(new Date(previousYear, 0, 1));
-      const end = endOfYear(new Date(previousYear, 11, 31));
-      return transactions.filter(t => {
-        if (!t.date) return false;
-        const transactionDate = typeof t.date === 'string' ? new Date(t.date) : t.date;
-        return transactionDate >= start && transactionDate <= end;
-      });
+      return transactions.filter(t => !!t.date && effectiveMonthOf(t).startsWith(`${previousYear}-`));
     }
   }, [reportType, selectedMonth, selectedYear, transactions]);
 
@@ -325,7 +320,8 @@ const Reports = () => {
   const spendingByDayOfWeek = useMemo(() => {
     if (reportType === 'anual') return null;
     
-    const monthTransactions = getTransactionsByMonth(transactions, selectedMonth);
+    // Calendar of the money (day of the week): by date, the reference month is ignored.
+    const monthTransactions = getTransactionsByDateMonth(transactions, selectedMonth);
     const expenses = monthTransactions.filter(t => {
       if (t.type !== TransactionType.EXPENSE) return false;
       if (t.type === TransactionType.TRANSFER || t.type === TransactionType.ALLOCATION) return false;
@@ -358,7 +354,8 @@ const Reports = () => {
     const monthEnd = endOfMonth(selectedMonth);
     const days = eachDayOfInterval({ start: monthStart, end: monthEnd });
     
-    const monthTransactions = getTransactionsByMonth(transactions, selectedMonth);
+    // Calendar of the money (day of the month): by date, the reference month is ignored.
+    const monthTransactions = getTransactionsByDateMonth(transactions, selectedMonth);
     const expenses = monthTransactions.filter(t => {
       if (!t.date) return false;
       if (t.type !== TransactionType.EXPENSE) return false;

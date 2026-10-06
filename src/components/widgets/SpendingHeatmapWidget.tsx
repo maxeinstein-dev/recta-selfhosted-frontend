@@ -211,6 +211,12 @@ export const SpendingHeatmapWidget = ({
           <h3 className="text-sm font-medium text-gray-900 dark:text-white">
             {t.spendingByDayOfMonth}
           </h3>
+          <span
+            className="text-xs font-light text-gray-500 dark:text-gray-400"
+            title={t.cashDateNoteTitle || 'O mapa mostra quando o dinheiro saiu (data), mesmo que a despesa conte para outro mês.'}
+          >
+            ({t.cashDateNote || 'por data de caixa'})
+          </span>
         </div>
         
         {/* Navegação de meses */}

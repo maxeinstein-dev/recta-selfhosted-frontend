@@ -24,6 +24,30 @@ export interface Translations {
   settings: string;
   /** Sidebar label of the people page (phase 4); other locales fall back to Portuguese. */
   peoplePage?: string;
+  /** Reference month (competencia) and "Confirmar recebimento / pagamento"; other locales fall back to Portuguese. */
+  cashDateNote?: string;
+  cashDateNoteTitle?: string;
+  confirmReceiptTitle?: string;
+  confirmPaymentTitle?: string;
+  confirmReceiptAction?: string;
+  confirmPaymentAction?: string;
+  confirmShort?: string;
+  receivedAmountLabel?: string;
+  paidAmountLabel?: string;
+  receivedDateLabel?: string;
+  paymentDateLabel?: string;
+  confirmNoteLabel?: string;
+  confirming?: string;
+  toConfirmTitle?: string;
+  toConfirmHint?: string;
+  referenceMonthToggle?: string;
+  referenceMonthLabel?: string;
+  referenceMonthHelp?: string;
+  referenceMonthChipTitle?: string;
+  referenceToLabel?: string;
+  referenceSameMonth?: string;
+  referenceNextMonth?: string;
+  referenceInMonths?: string;
   logout: string;
   community: string;
   

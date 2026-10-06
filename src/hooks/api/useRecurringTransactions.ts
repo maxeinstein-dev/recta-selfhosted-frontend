@@ -20,6 +20,8 @@ export interface RecurringTransaction {
   followLastAmount?: boolean;
   /** YYYY-MM-DD of the newest occurrence up to today + 31 days; null when none; absent on an older server. */
   lastOccurrenceDate?: string | null;
+  /** Months between an occurrence's date and the month it refers to; null = same month. Absent on an older server. */
+  competenceOffsetMonths?: number | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -108,6 +110,7 @@ export function useCreateRecurringTransaction() {
       endDate?: string;
       isActive?: boolean;
       followLastAmount?: boolean;
+      competenceOffsetMonths?: number | null;
     }) => {
       const response = await apiClient.post<RecurringTransaction>('/recurring-transactions', data);
       return response.data!;

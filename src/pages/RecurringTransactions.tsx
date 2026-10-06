@@ -26,6 +26,9 @@ import { PageButton } from '../components/PageButton';
 import { RecurringTransactionsSkeleton } from '../components/PageSkeletons';
 import { CategoryType, getCategoriesByType, getCategoryNameFromDisplay, AccountType, TransactionType, CategoryName, RecurrenceFrequency } from '../lib/enums';
 import { DatePicker } from '../components/DatePicker';
+import { ReferenceOffsetField, DueToConfirmPanel } from '../components/transactions';
+import { useConfirmReceipt } from '../hooks/useConfirmReceipt';
+import { offsetToSend, recurrenceChip } from '../utils/referenceMonth';
 import { FOLLOW_LAST_BADGE, FOLLOW_LAST_HELP, FOLLOW_LAST_LABEL } from '../utils/recurringFollow';
 
 const RecurringTransactions = () => {
@@ -55,6 +58,8 @@ const RecurringTransactions = () => {
   const [togglingRecurringId, setTogglingRecurringId] = useState<string | null>(null);
   const [isHelpModalOpen, setIsHelpModalOpen] = useState<boolean>(false);
   const currencyMask = useCurrencyMask();
+  const confirmReceipt = useConfirmReceipt();
+  const [competenceOffset, setCompetenceOffset] = useState<number | null>(null);
 
   // Verificar se o usuário já viu o modal de ajuda
   useEffect(() => {
@@ -139,6 +144,7 @@ const RecurringTransactions = () => {
         isActive: editingRecurring.isActive,
         followLastAmount: editingRecurring.followLastAmount === true,
       });
+      setCompetenceOffset(editingRecurring.competenceOffsetMonths ?? null);
       currencyMask.setValue(editingRecurring.amount || 0);
       setValue('amount', editingRecurring.amount || 0);
     } else {
@@ -155,6 +161,7 @@ const RecurringTransactions = () => {
         isActive: true,
         followLastAmount: false,
       });
+      setCompetenceOffset(null);
       currencyMask.setValue('');
       setValue('amount', 0);
     }
@@ -209,6 +216,7 @@ const RecurringTransactions = () => {
         accountId: data.accountId || undefined,
         isActive: data.isActive,
         followLastAmount: data.followLastAmount === true,
+        competenceOffsetMonths: offsetToSend(competenceOffset),
       };
 
       if (editingRecurring?.id) {
@@ -320,6 +328,8 @@ const RecurringTransactions = () => {
         </PageButton>
       </PageHeader>
 
+      {canWrite && <DueToConfirmPanel householdId={householdId ?? undefined} onConfirm={confirmReceipt.request} onlyRecurring />}
+
       {/* Lista de transações recorrentes */}
       <div className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 overflow-hidden sm:rounded-md">
         {recurringTransactions.length === 0 ? (
@@ -344,6 +354,11 @@ const RecurringTransactions = () => {
                       {!recurring.isActive && (
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-light border border-gray-300 dark:border-gray-700 text-gray-600 dark:text-gray-400">
                           {t.pause}
+                        </span>
+                      )}
+                      {recurrenceChip(recurring.competenceOffsetMonths) && (
+                        <span data-testid="recurrence-chip" className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-light border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400">
+                          {recurrenceChip(recurring.competenceOffsetMonths)}
                         </span>
                       )}
                       {recurring.followLastAmount && (
@@ -692,6 +707,8 @@ const RecurringTransactions = () => {
                 <p className="mt-1 ml-6 text-xs font-light text-gray-500 dark:text-gray-400">{FOLLOW_LAST_HELP}</p>
               </div>
 
+              <ReferenceOffsetField value={competenceOffset} onChange={setCompetenceOffset} />
+
               <div className="flex justify-end space-x-3 pt-6 border-t border-gray-100 dark:border-gray-800">
                 <button
                   type="button"
@@ -718,6 +735,7 @@ const RecurringTransactions = () => {
         document.body
       )}
 
+      {confirmReceipt.dialog}
       <DetectRecurringDialog open={isDetectOpen} onClose={() => setIsDetectOpen(false)} householdId={householdId ?? undefined} canWrite={canWrite} />
 
       <ConfirmModal

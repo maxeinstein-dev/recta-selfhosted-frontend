@@ -1,6 +1,7 @@
 import { useI18n } from '../../context/I18nContext';
 import { DatePicker } from '../DatePicker';
 import SelectCombobox from '../SelectCombobox';
+import { ReferenceOffsetField } from './ReferenceMonthField';
 import { addDays, addWeeks, addMonths, addYears } from 'date-fns';
 
 interface RecurringTransactionFieldsProps {
@@ -13,6 +14,9 @@ interface RecurringTransactionFieldsProps {
   onStartDateChange: (date: Date) => void;
   onEndDateChange: (date: Date | undefined) => void;
   onNextDueDateChange: (date: Date) => void;
+  /** Months between an occurrence's date and the month it refers to (null/absent = same month). */
+  competenceOffsetMonths?: number | null;
+  onCompetenceOffsetChange?: (offset: number | null) => void;
   disabled?: boolean;
 }
 
@@ -43,6 +47,8 @@ export const RecurringTransactionFields = ({
   onStartDateChange,
   onEndDateChange,
   onNextDueDateChange,
+  competenceOffsetMonths = null,
+  onCompetenceOffsetChange,
   disabled = false,
 }: RecurringTransactionFieldsProps) => {
   const { t } = useI18n();
@@ -130,6 +136,10 @@ export const RecurringTransactionFields = ({
           {t.optional}
         </p>
       </div>
+
+      {onCompetenceOffsetChange && (
+        <ReferenceOffsetField value={competenceOffsetMonths} onChange={onCompetenceOffsetChange} disabled={disabled} />
+      )}
     </div>
   );
 };

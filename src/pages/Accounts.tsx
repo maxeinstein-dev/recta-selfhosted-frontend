@@ -66,6 +66,8 @@ import { EmptyState } from "../components/EmptyState";
 import type React from "react";
 import { useToastContext } from "../context/ToastContext";
 import { updateFailureMessage } from "../utils/transactionConflict";
+import { useConfirmReceipt } from "../hooks/useConfirmReceipt";
+import { canWritePeople } from "../utils/people";
 
 const Accounts = () => {
   const { error: showError } = useToastContext();
@@ -73,7 +75,8 @@ const Accounts = () => {
   const { baseCurrency } = useCurrency();
   const { t, locale } = useI18n();
   const { registerHandler, unregisterHandler } = useCommandMenu();
-  const { householdId } = useDefaultHousehold();
+  const { householdId, household } = useDefaultHousehold();
+  const confirmReceipt = useConfirmReceipt();
   const { data: currentUser } = useAuthUser();
   const { data: householdMembers } = useHouseholdMembers(householdId || '');
 
@@ -248,6 +251,7 @@ const Accounts = () => {
             installmentId: t.installmentId,
             installmentNumber: t.installmentNumber,
             totalInstallments: t.totalInstallments,
+            competenceMonth: (t as { competenceMonth?: string | null }).competenceMonth ?? null,
             notes: t.notes,
           };
         }
@@ -290,6 +294,7 @@ const Accounts = () => {
           installmentId: t.installmentId,
           installmentNumber: t.installmentNumber,
           totalInstallments: t.totalInstallments,
+          competenceMonth: (t as { competenceMonth?: string | null }).competenceMonth ?? null,
           notes: t.notes,
         };
       })
@@ -820,6 +825,7 @@ const Accounts = () => {
                       }
                     }}
                     onMarkAsPaid={handleMarkAsPaid}
+                    onConfirm={canWritePeople(household) ? confirmReceipt.request : undefined}
                     onView={(transaction) => {
                       setViewingTransaction(transaction);
                       setEditingTransaction(null);
@@ -1029,6 +1035,7 @@ const Accounts = () => {
         </div>,
         document.body
       )}
+      {confirmReceipt.dialog}
     </div>
   );
 };

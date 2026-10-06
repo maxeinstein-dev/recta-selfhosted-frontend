@@ -123,6 +123,7 @@ const convertTransactionFromBackend = (t: BackendTransaction, translations?: Rec
       installmentNumber: t.installmentNumber,
       totalInstallments: t.totalInstallments,
       notes: (t as any).notes,
+      competenceMonth: t.competenceMonth ?? null,
       isSplit: (t as any).isSplit || false,
       splits: (t as any).splits ? (t as any).splits.map((split: any) => ({
         userId: split.userId,
@@ -174,6 +175,7 @@ const convertTransactionFromBackend = (t: BackendTransaction, translations?: Rec
     installmentNumber: t.installmentNumber,
     totalInstallments: t.totalInstallments,
     notes: (t as any).notes,
+    competenceMonth: t.competenceMonth ?? null,
     isSplit: (t as any).isSplit || false,
     splits: (t as any).splits ? (t as any).splits.map((split: any) => ({
       userId: split.userId,
@@ -300,6 +302,7 @@ const convertRecurringTransactionFromBackend = (r: BackendRecurringTransaction, 
     accountId: r.accountId ?? '',
     isActive: r.isActive ?? true,
     followLastAmount: r.followLastAmount === true,
+    competenceOffsetMonths: r.competenceOffsetMonths ?? null,
     lastOccurrenceDate: r.lastOccurrenceDate === undefined ? undefined : (r.lastOccurrenceDate ?? null),
   };
 };
@@ -503,6 +506,7 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
       ...(transaction.installmentId && { installmentId: transaction.installmentId }),
       ...(transaction.installmentNumber && { installmentNumber: transaction.installmentNumber }),
       ...(transaction.totalInstallments && { totalInstallments: transaction.totalInstallments }),
+      ...(transaction.competenceMonth && { competenceMonth: transaction.competenceMonth }),
     });
 
     analyticsHelpers.logTransactionCreated(
@@ -535,6 +539,9 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
     if (transaction.installmentNumber !== undefined) updateData.installmentNumber = transaction.installmentNumber || null;
     if (transaction.totalInstallments !== undefined) updateData.totalInstallments = transaction.totalInstallments || null;
     if (transaction.attachmentUrl !== undefined) updateData.attachmentUrl = transaction.attachmentUrl || null;
+    if (transaction.notes !== undefined) updateData.notes = transaction.notes || null;
+    // Reference month: a 'YYYY-MM' sets it, null clears it (back to the month of the date), absent leaves it alone.
+    if (transaction.competenceMonth !== undefined) updateData.competenceMonth = transaction.competenceMonth || null;
 
     let updated;
     try {
@@ -671,6 +678,7 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
       endDate: recurring.endDate ? formatDateForAPI(recurring.endDate) : undefined,
       isActive: recurring.isActive,
       ...(recurring.followLastAmount !== undefined && { followLastAmount: recurring.followLastAmount }),
+      ...(recurring.competenceOffsetMonths != null && { competenceOffsetMonths: recurring.competenceOffsetMonths }),
     });
 
     analyticsHelpers.logRecurringTransactionCreated(recurring.type, recurring.frequency);
@@ -690,6 +698,8 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
     }
     if (recurring.isActive !== undefined) updateData.isActive = recurring.isActive;
     if (recurring.followLastAmount !== undefined) updateData.followLastAmount = recurring.followLastAmount;
+    // Reference offset: a number sets it, null clears it (same month), absent leaves it alone.
+    if (recurring.competenceOffsetMonths !== undefined) updateData.competenceOffsetMonths = recurring.competenceOffsetMonths;
     if (recurring.startDate) updateData.startDate = formatDateForAPI(recurring.startDate);
     if (recurring.endDate !== undefined) {
       updateData.endDate = recurring.endDate ? formatDateForAPI(recurring.endDate) : null;

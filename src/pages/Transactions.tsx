@@ -27,7 +27,8 @@ import ConfirmModal from '../components/ConfirmModal';
 import { Transaction } from '../types';
 import { PageButton } from '../components/PageButton';
 import { CategoryName, getCategoryIconName, getCategoryDisplayName, TransactionType } from '../lib/enums';
-import { TransactionFilters, TransactionList } from '../components/transactions';
+import { DueToConfirmPanel, TransactionFilters, TransactionList } from '../components/transactions';
+import { useConfirmReceipt } from '../hooks/useConfirmReceipt';
 import { useToastContext } from '../context/ToastContext';
 import { updateFailureMessage } from '../utils/transactionConflict';
 
@@ -57,6 +58,7 @@ const Transactions = () => {
   const { data: authUser } = useAuthUser();
   const { data: households } = useHouseholds();
   const [searchParams, setSearchParams] = useSearchParams();
+  const confirmReceipt = useConfirmReceipt();
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [isImportOpen, setImportOpen] = useState<boolean>(false);
   const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
@@ -200,6 +202,7 @@ const Transactions = () => {
             installmentId: t.installmentId,
             installmentNumber: t.installmentNumber,
             totalInstallments: t.totalInstallments,
+            competenceMonth: (t as { competenceMonth?: string | null }).competenceMonth ?? null,
             notes: t.notes,
             isSplit: (t as any).isSplit || false,
             splits: (t as any).splits ? (t as any).splits.map((split: any) => ({
@@ -248,6 +251,7 @@ const Transactions = () => {
           installmentId: t.installmentId,
           installmentNumber: t.installmentNumber,
           totalInstallments: t.totalInstallments,
+          competenceMonth: (t as { competenceMonth?: string | null }).competenceMonth ?? null,
           notes: t.notes,
           isSplit: (t as any).isSplit || false,
           splits: (t as any).splits ? (t as any).splits.map((split: any) => ({
@@ -755,6 +759,9 @@ const Transactions = () => {
         </div>
       </div>
 
+      {/* A confirmar: previstos (ex.: vale-alimentação) que já deveriam ter caído */}
+      {!loading && canSplitShares && <DueToConfirmPanel householdId={householdId ?? undefined} onConfirm={confirmReceipt.request} />}
+
       {/* Abas: Transações | Próximos agendamentos */}
       <div className="flex border-b border-gray-200 dark:border-gray-700 mb-6">
         <button
@@ -861,6 +868,7 @@ const Transactions = () => {
             setIsModalOpen(true);
           }}
           onSplitShares={canSplitShares ? setSharingTransaction : undefined}
+          onConfirm={canSplitShares ? confirmReceipt.request : undefined}
           formatTransactionDescription={formatTransactionDescription}
           getCategoryIcon={getCategoryIcon}
           isTransactionSharedAndUserParticipated={isTransactionSharedAndUserParticipated}
@@ -902,6 +910,7 @@ const Transactions = () => {
           householdId={householdId ?? undefined}
         />
       )}
+      {confirmReceipt.dialog}
       {sharingTransaction?.id && (
         <DivideTransactionDialog
           open

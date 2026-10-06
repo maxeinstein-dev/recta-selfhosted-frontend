@@ -3,10 +3,10 @@ import { CheckCircle } from 'lucide-react';
 import { formatCurrency } from '../utils/format';
 import { reaisToCents } from '../utils/people';
 import {
-  buildPatch, confirmCopy, confirmErrorMessage, dayText, differenceHint, initialDraft, maskCents, validateConfirm,
+  buildPatch, confirmCopy, confirmErrorMessage, dayText, differenceHint, initialDraft, keptReferenceMonth, maskCents, validateConfirm,
 } from '../utils/confirmReceipt';
 import type { ConfirmDraft, ConfirmPatch, ConfirmableTx } from '../utils/confirmReceipt';
-import { referenceChip } from '../utils/referenceMonth';
+import { monthLabel, referenceChip } from '../utils/referenceMonth';
 import { BTN_PRIMARY, BTN_SECONDARY, DialogShell, ERROR_CLS, INPUT_CLS, LABEL_CLS, MUTED_CLS, NOTICE_BOX_CLS } from './people/ui';
 
 export interface ConfirmReceiptDialogProps {
@@ -64,6 +64,8 @@ const ConfirmReceiptDialog = ({ transaction, baseCurrency, followsLastAmount = f
   const check = useMemo(() => validateConfirm(draft, format), [draft, baseCurrency]); // eslint-disable-line react-hooks/exhaustive-deps
   const hint = transaction ? differenceHint(expectedCents, check.amountCents, transaction.type, followsLastAmount, format) : null;
   const chip = transaction ? referenceChip({ date: transaction.date, competenceMonth: transaction.competenceMonth, type: transaction.type }) : null;
+
+  const kept = transaction ? keptReferenceMonth(transaction, draft.dateKey) : null;
 
   const edit = (apply: (d: ConfirmDraft) => ConfirmDraft) => {
     setDraft(apply);
@@ -134,6 +136,12 @@ const ConfirmReceiptDialog = ({ transaction, baseCurrency, followsLastAmount = f
             <input id="confirm-note" type="text" maxLength={500} value={draft.note} disabled={saving} className={INPUT_CLS}
               onChange={(e) => edit((d) => ({ ...d, note: e.target.value }))} />
           </div>
+
+          {kept && (
+            <div className={NOTICE_BOX_CLS} aria-live="polite">
+              <p data-testid="confirm-kept-month">Continua contando para {monthLabel(kept)}, o mês em que era esperado.</p>
+            </div>
+          )}
 
           {hint && <div className={NOTICE_BOX_CLS} aria-live="polite"><p data-testid="confirm-hint">{hint}</p></div>}
 

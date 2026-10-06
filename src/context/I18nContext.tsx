@@ -25,6 +25,8 @@ export interface Translations {
   /** Sidebar label of the people page (phase 4); other locales fall back to Portuguese. */
   peoplePage?: string;
   /** Reference month (competencia) and "Confirmar recebimento / pagamento"; other locales fall back to Portuguese. */
+  cashDateNote?: string;
+  cashDateNoteTitle?: string;
   confirmReceiptTitle?: string;
   confirmPaymentTitle?: string;
   confirmReceiptAction?: string;

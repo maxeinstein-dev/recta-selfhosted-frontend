@@ -8,6 +8,8 @@
   "reports": "Relatórios",
   "settings": "Configurações",
   "peoplePage": "Pessoas",
+  "cashDateNote": "por data de caixa",
+  "cashDateNoteTitle": "O mapa mostra quando o dinheiro saiu (data), mesmo que a despesa conte para outro mês.",
   "confirmReceiptTitle": "Confirmar recebimento",
   "confirmPaymentTitle": "Confirmar pagamento",
   "confirmReceiptAction": "Confirmar recebimento",

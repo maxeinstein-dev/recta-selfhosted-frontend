@@ -8,6 +8,8 @@
   "reports": "Reports",
   "settings": "Settings",
   "peoplePage": "People",
+  "cashDateNote": "by cash date",
+  "cashDateNoteTitle": "The map shows when the money left (date), even if the expense counts for another month.",
   "confirmReceiptTitle": "Confirm receipt",
   "confirmPaymentTitle": "Confirm payment",
   "confirmReceiptAction": "Confirm receipt",

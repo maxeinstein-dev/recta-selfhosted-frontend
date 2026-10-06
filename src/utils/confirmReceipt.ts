@@ -19,6 +19,8 @@ export interface ConfirmableTx {
   paid?: boolean;
   notes?: string | null;
   recurringTransactionId?: string | null;
+  /** Reference month 'YYYY-MM' the row already has (null = the month of its date). */
+  competenceMonth?: string | null;
 }
 
 /** Most digits an amount may have (cents included): 9 integer digits and 2 decimals. */
@@ -142,6 +144,11 @@ export interface ConfirmPatch {
   amount?: number;
   /** The edited note; '' clears it (the context sends null). */
   notes?: string;
+  /**
+   * Set when the real date falls in another month than the expected one and the row had no reference month: the row keeps
+   * counting for the month it was expected in, instead of silently moving to the month of the new date.
+   */
+  competenceMonth?: string;
 }
 
 /**
@@ -160,6 +167,8 @@ export function buildPatch(tx: ConfirmableTx, draft: ConfirmDraft, format: (cent
   }
   const note = draft.note.trim();
   if (note !== (tx.notes ?? '').trim()) patch.notes = note;
+  const kept = keptReferenceMonth(tx, draft.dateKey);
+  if (kept) patch.competenceMonth = kept;
   return patch;
 }
 
@@ -210,4 +219,16 @@ export function expectedAmountFor(
   _referenceMonth = '',
 ): number {
   return recurrence.amount;
+}
+
+/**
+ * The reference month a confirmation must pin: when the row has none and the real date is in another month than the
+ * expected date, the month the row was expected in (so a 500 expected on 01/10 and received on 30/09 still counts in
+ * October). Null when nothing needs pinning.
+ */
+export function keptReferenceMonth(tx: Pick<ConfirmableTx, 'date' | 'competenceMonth'>, newDateKey: string): string | null {
+  if (tx.competenceMonth) return null;
+  const expectedMonth = dayKey(tx.date).slice(0, 7);
+  const newMonth = newDateKey.slice(0, 7);
+  return expectedMonth && newMonth && expectedMonth !== newMonth ? expectedMonth : null;
 }

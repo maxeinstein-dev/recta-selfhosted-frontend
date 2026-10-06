@@ -174,7 +174,7 @@ export interface CardOfxReasonChip {
  * names the card row it may be a copy of, with its amount. A reason this client does not know is shown as sent.
  */
 export function proposalReasonChip(
-  proposal: Pick<CardOfxProposal, 'reason' | 'counterpart'>,
+  proposal: Pick<CardOfxProposal, 'reason' | 'counterpart'> & { kind?: string },
   formatAmount: (value: number, type: string) => string,
   formatDate: (isoDate: string) => string,
 ): CardOfxReasonChip | null {
@@ -254,9 +254,20 @@ export function proposalReasonChip(
         title: `Pode ser o mesmo pagamento de um crédito que sobrou na planilha (${what}). Confira antes de marcar: marcar registra um segundo crédito.`,
       };
     }
+    case 'payment-ambiguous':
+      return {
+        reason, tone: 'orange', text: 'não deu para saber qual é o pagamento principal da fatura: confira antes de importar',
+        title: 'Há mais de um pagamento recebido e o servidor não conseguiu dizer qual deles paga a fatura anterior: se este for esse pagamento, registrá-lo como crédito duplica o que já foi pago. Confira antes de marcar.',
+      };
     case 'changed-in-statement': {
       const c = proposal.counterpart ?? null;
       const what = c ? ` como ${c.description} · ${formatDate(c.date)} · ${formatAmount(c.amount, c.type)}` : '';
+      if (proposal.kind === 'advance-payment') {
+        return {
+          reason, tone: 'orange', text: 'o pagamento antecipado mudou neste arquivo: confira antes de importar',
+          title: `Este pagamento já está registrado${what}: o extrato foi atualizado (valor, data ou descrição). Marcar registra um segundo crédito.`,
+        };
+      }
       return {
         reason, tone: 'orange', text: 'a compra mudou neste arquivo: confira antes de importar',
         title: `Esta compra já está registrada${what}: o extrato foi atualizado (valor, data ou descrição). Marcar cria uma segunda.`,
@@ -763,6 +774,7 @@ export function buildCardOfxConfirm(
     accountId: preview.accountId,
     monthKey: preview.monthKey,
     lines: preview.lines.map(toConfirmLine),
+    ...(typeof preview.ledgerBalance === 'number' && Number.isFinite(preview.ledgerBalance) ? { ledgerBalance: preview.ledgerBalance } : {}),
     selectedGroups: selected.map((group) => group.proposal.group),
     categoryMap: categoryMapForCreates(
       preview.categoryMap ?? [],

@@ -49,7 +49,7 @@ export type CardOfxProposalKind = 'enrich-exact' | 'enrich-plan' | 'enrich-sum' 
 /** Why the server leaves a proposal unticked. The server may add reasons: the UI never relies on this list. */
 export type CardOfxProposalReason =
   | 'ambiguous' | 'no-shared-words' | 'mixed-categories' | 'sheet-residue' | 'neighbour-ambiguous' | 'neighbour-weak'
-  | 'neighbour-month-not-imported' | 'near-amount' | 'near-ambiguous' | 'pool-too-large' | 'sheet-credit-near' | 'changed-in-statement';
+  | 'neighbour-month-not-imported' | 'near-amount' | 'near-ambiguous' | 'pool-too-large' | 'sheet-credit-near' | 'changed-in-statement' | 'payment-ambiguous';
 
 /** The stored transaction a proposal changes: the sheet row (enrich) or the future installment (consume). */
 export interface CardOfxTarget {
@@ -167,6 +167,8 @@ export interface CardOfxPreviewResponse {
   period: { start: string; end: string };
   /** Purchases minus refunds and discounts (payments excluded). */
   ofxTotal: number;
+  /** The statement closing balance owed (positive = debt); null or absent when the file has none. Echoed back in the confirm. */
+  ledgerBalance?: number | null;
   lines: CardOfxLine[];
   proposals: CardOfxProposal[];
   sheetOnly: CardOfxSheetOnly[];
@@ -196,6 +198,8 @@ export interface CardOfxConfirmRequest {
   monthKey: string;
   /** Every line of the preview (at most 1000): the server recomputes the reconciliation from them. */
   lines: CardOfxConfirmLine[];
+  /** The preview's `ledgerBalance`, echoed; omitted when the preview had none (the server then falls back to its older payment rule). */
+  ledgerBalance?: number;
   selectedGroups: string[];
   /** Merchants of the selected create proposals. */
   categoryMap: MaxFinCategoryMapInput[];

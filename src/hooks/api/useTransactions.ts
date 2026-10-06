@@ -617,6 +617,8 @@ export function useBatchDeleteTransactions() {
   });
 }
 
+import type { InvoiceForecastDto } from '../../utils/invoiceStatement';
+
 export interface CreditCardInvoiceResponse {
   invoiceTransactions: Transaction[];
   currentExpenses: number;
@@ -625,6 +627,14 @@ export interface CreditCardInvoiceResponse {
   previousBalance: number;
   isPaid: boolean;
   paymentTransactions: Transaction[];
+  /** Statement fields (optional: an older backend does not send them). */
+  statementTotal?: number;
+  outstandingFromPrevious?: number;
+  debtTotal?: number;
+  closingDate?: string | null;
+  dueDate?: string | null;
+  state?: 'open' | 'closed' | 'paid';
+  forecast?: InvoiceForecastDto | null;
 }
 
 export interface CreditCardInvoiceParams {

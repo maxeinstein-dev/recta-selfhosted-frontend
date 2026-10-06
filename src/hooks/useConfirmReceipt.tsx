@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useTransactions } from '../context/TransactionsContext';
 import { useToastContext } from '../context/ToastContext';
@@ -27,6 +28,7 @@ export function useConfirmReceipt(): { request: (tx: PendingTx) => void; dialog:
   const { baseCurrency } = useCurrency();
   const { t } = useI18n();
   const [pending, setPending] = useState<PendingTx | null>(null);
+  const queryClient = useQueryClient();
 
   const request = useCallback((tx: PendingTx) => setPending(tx), []);
 
@@ -41,6 +43,8 @@ export function useConfirmReceipt(): { request: (tx: PendingTx) => void; dialog:
   const onConfirmed = useCallback(
     ({ patch, result }: { patch: ConfirmPatch; result: unknown }) => {
       if (!pending) return;
+      // A confirmed value joins the history a conservative recurrence forecasts from: its list line must be read again
+      if (pending.recurringTransactionId) queryClient.invalidateQueries({ queryKey: ['recurring-transactions'] });
       const amountCents = patch.amount !== undefined ? reaisToCents(patch.amount) : Math.abs(reaisToCents(pending.amount));
       const day = `${patch.date.getFullYear()}-${String(patch.date.getMonth() + 1).padStart(2, '0')}-${String(patch.date.getDate()).padStart(2, '0')}`;
       success(confirmCopy(pending.type).success(formatCurrency(amountCents / 100, baseCurrency), dayText(day)));
@@ -48,7 +52,7 @@ export function useConfirmReceipt(): { request: (tx: PendingTx) => void; dialog:
       const message = recurrenceUpdatedMessage(notice, (value) => formatCurrency(value, baseCurrency));
       if (message) success(message);
     },
-    [pending, success, baseCurrency],
+    [pending, success, baseCurrency, queryClient],
   );
 
   const follows = pending

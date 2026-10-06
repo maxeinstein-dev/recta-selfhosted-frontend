@@ -129,7 +129,7 @@ const ConfirmReceiptDialog = ({ transaction, baseCurrency, followsLastAmount = f
           {explanation && (
             <p className={`text-xs ${MUTED_CLS}`} data-testid="confirm-how">
               Como foi calculado: {explanation.how}.
-              {explanation.todayCents !== expectedCents ? ` Com a configuração de hoje o cálculo daria ${format(explanation.todayCents)}.` : ''}
+              {explanation.todayCents !== null && explanation.todayCents !== expectedCents ? ` Com a configuração de hoje o cálculo daria ${format(explanation.todayCents)}.` : ''}
             </p>
           )}
 

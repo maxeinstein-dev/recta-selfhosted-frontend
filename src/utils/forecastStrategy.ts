@@ -431,8 +431,11 @@ export interface ConfirmExplanation {
   strategy: ForecastStrategy;
   /** "19 dias úteis × R$ 36,00 (11/2026)": how the expected amount is reached today. */
   how: string;
-  /** The amount the strategy gives today, in cents (it may differ from the stored expected one if the settings changed since). */
-  todayCents: number;
+  /**
+   * The amount the strategy gives today, in cents (it may differ from the stored expected one if the settings changed since).
+   * Null for the conservative strategy: it depends on the history of confirmed values, which the client does not have.
+   */
+  todayCents: number | null;
   /** Per-day only. */
   perDay: { rateCents: number; countedDays: number; businessDays: number; referenceMonth: string } | null;
 }
@@ -453,5 +456,5 @@ export function confirmExplanation(
   const how = detail.strategy === 'CONSERVATIVE'
     ? `conservador: ${kind === 'INCOME' ? 'menor' : 'maior'} dos últimos ${windowOf(recurrence, kind)} ${kind === 'INCOME' ? 'recebidos' : 'pagos'}`
     : `${howCalculated(detail, kind, format)}${month}`;
-  return { strategy: detail.strategy, how, todayCents: reaisToCents(detail.amount), perDay };
+  return { strategy: detail.strategy, how, todayCents: detail.strategy === 'CONSERVATIVE' ? null : reaisToCents(detail.amount), perDay };
 }

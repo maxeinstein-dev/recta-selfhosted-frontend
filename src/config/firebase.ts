@@ -1,6 +1,7 @@
 import { initializeApp, FirebaseApp } from 'firebase/app';
 import { getAuth, Auth } from 'firebase/auth';
 import { getAnalytics, Analytics, isSupported } from 'firebase/analytics';
+import { isLocalHostname } from '../utils/localHost';
 
 interface FirebaseConfig {
   apiKey: string;
@@ -56,9 +57,7 @@ let analyticsInitStarted = false;
 // Helper para verificar se está em localhost
 const isLocalhost = () => {
   if (typeof window === 'undefined') return true;
-  return window.location.hostname === 'localhost' ||
-         window.location.hostname === '127.0.0.1' ||
-         window.location.hostname === '[::1]';
+  return isLocalHostname(window.location.hostname);
 };
 
 export function getFirebaseApp(): FirebaseApp {

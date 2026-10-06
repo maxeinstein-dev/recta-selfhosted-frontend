@@ -3,13 +3,12 @@ import ReactDOM from 'react-dom/client'
 import * as Sentry from '@sentry/react'
 import App from './App.tsx'
 import './index.css'
+import { isLocalHostname } from './utils/localHost'
 
 // Helper para verificar se está em localhost
 const isLocalhost = (): boolean => {
   if (typeof window === 'undefined') return false;
-  return window.location.hostname === 'localhost' || 
-         window.location.hostname === '127.0.0.1' ||
-         window.location.hostname === '[::1]';
+  return isLocalHostname(window.location.hostname);
 };
 
 // Initialize Sentry apenas se não estiver em localhost

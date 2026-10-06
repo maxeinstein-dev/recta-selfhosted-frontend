@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { MoreHorizontal, Edit, Trash2 } from 'lucide-react';
+import { MoreHorizontal, Edit, Trash2, Scale } from 'lucide-react';
 import * as Popover from '@radix-ui/react-popover';
 import { useI18n } from '../context/I18nContext';
 import { Account } from '../types';
@@ -8,6 +8,8 @@ interface AccountActionsMenuProps {
   account: Account;
   onEdit: (account: Account) => void;
   onDelete: (account: Account) => void;
+  /** When given, the menu offers "Ajustar saldo" (the owner only, like Edit). */
+  onAdjustBalance?: (account: Account) => void;
   isAccountOwner?: boolean; // If false, disable edit/delete actions
 }
 
@@ -15,6 +17,7 @@ export const AccountActionsMenu = ({
   account,
   onEdit,
   onDelete,
+  onAdjustBalance,
   isAccountOwner = true,
 }: AccountActionsMenuProps) => {
   const { t } = useI18n();
@@ -23,6 +26,12 @@ export const AccountActionsMenu = ({
   const handleEdit = () => {
     if (!isAccountOwner) return;
     onEdit(account);
+    setOpen(false);
+  };
+
+  const handleAdjust = () => {
+    if (!isAccountOwner || !onAdjustBalance) return;
+    onAdjustBalance(account);
     setOpen(false);
   };
 
@@ -63,6 +72,21 @@ export const AccountActionsMenu = ({
               <Edit className="h-4 w-4 mr-3" aria-hidden="true" />
               <span>{t.edit}</span>
             </button>
+            {onAdjustBalance && (
+              <button
+                onClick={handleAdjust}
+                disabled={!isAccountOwner}
+                className={`w-full flex items-center px-4 py-2 text-sm rounded-sm focus:outline-none ${
+                  isAccountOwner
+                    ? 'text-gray-700 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-700 focus:bg-gray-100 dark:focus:bg-gray-700'
+                    : 'text-gray-400 dark:text-gray-600 cursor-not-allowed opacity-50'
+                }`}
+                title={!isAccountOwner ? 'Apenas o dono da conta pode ajustar o saldo' : undefined}
+              >
+                <Scale className="h-4 w-4 mr-3" aria-hidden="true" />
+                <span>Ajustar saldo</span>
+              </button>
+            )}
             <button
               onClick={handleDelete}
               disabled={!isAccountOwner}

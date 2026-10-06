@@ -216,6 +216,27 @@ export function nextReferenceMonth(nextDate: Date | string, offset: number | nul
   return own && offset ? addMonthsKey(own, offset) : own;
 }
 
+/**
+ * The amount a PROJECTED occurrence of a recurrence carries in a month view (monthly comparison, reports, fixed x
+ * variable): its forecast strategy decides, for the reference month the occurrence counts for (month of its date + the
+ * recurrence offset). Last value, fixed and per business day are exact. The conservative strategy needs the confirmed
+ * history, which the client does not have: it uses the server's `forecast` when that is for the same reference month
+ * (the next occurrence) and otherwise the registered amount as an APPROXIMATION.
+ */
+export function projectedOccurrenceAmount(
+  recurrence: ForecastFields & { forecast?: ForecastDetail | null },
+  kind: Kind,
+  occurrenceDate: Date | string,
+  offsetMonths: number | null | undefined,
+): number {
+  const referenceMonth = nextReferenceMonth(occurrenceDate, offsetMonths);
+  if (normalizeStrategy(recurrence.forecastStrategy) === 'CONSERVATIVE') {
+    const server = recurrence.forecast;
+    return server && server.strategy === 'CONSERVATIVE' && server.referenceMonth === referenceMonth ? server.amount : recurrence.amount;
+  }
+  return expectedAmountOf(recurrence, kind, [], referenceMonth);
+}
+
 // ---- Form draft ------------------------------------------------------------------------------------------------
 
 export interface ForecastDraft {

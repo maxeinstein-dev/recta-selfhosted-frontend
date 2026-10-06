@@ -2,6 +2,7 @@ import { startOfMonth, endOfMonth, isWithinInterval, subMonths, isBefore, isAfte
 import { Transaction, CategoryData, MonthlyComparison, RecurringTransaction, Account } from '../types';
 import { TransactionType, AccountType } from '../lib/enums';
 import { effectiveMonthOf, monthKeyOf } from './referenceMonth';
+import { projectedOccurrenceAmount } from './forecastStrategy';
 
 export const getTotalIncome = (transactions: Transaction[] | undefined): number => {
   if (!transactions || !Array.isArray(transactions)) {
@@ -195,7 +196,8 @@ export const getRecurringTransactionsForMonth = (
         projected.push({
           id: `projected-${recurring.id}-${currentDate.getTime()}`,
           description: recurring.description,
-          amount: recurring.amount,
+          // The forecast strategy decides the amount of the occurrence (per business day: the days of its reference month)
+          amount: projectedOccurrenceAmount(recurring, recurring.type === TransactionType.INCOME ? 'INCOME' : 'EXPENSE', currentDate, recurring.competenceOffsetMonths),
           type: recurring.type,
           category: recurring.category,
           date: new Date(currentDate),
@@ -591,7 +593,8 @@ export const getProjectedRecurringTransactions = (
         projected.push({
           id: `projected-${recurring.id}-${currentDate.getTime()}`,
           description: recurring.description,
-          amount: recurring.amount,
+          // The forecast strategy decides the amount of the occurrence (per business day: the days of its reference month)
+          amount: projectedOccurrenceAmount(recurring, recurring.type === TransactionType.INCOME ? 'INCOME' : 'EXPENSE', currentDate, recurring.competenceOffsetMonths),
           type: recurring.type,
           category: recurring.category,
           date: new Date(currentDate),

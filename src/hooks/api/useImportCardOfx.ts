@@ -200,6 +200,8 @@ export interface CardOfxConfirmRequest {
   lines: CardOfxConfirmLine[];
   /** The preview's `ledgerBalance`, echoed; omitted when the preview had none (the server then falls back to its older payment rule). */
   ledgerBalance?: number;
+  /** The preview's `payment.ref` (the line taken as the previous invoice's payment), echoed; omitted when the preview had no payment. */
+  paymentLineRef?: string;
   selectedGroups: string[];
   /** Merchants of the selected create proposals. */
   categoryMap: MaxFinCategoryMapInput[];

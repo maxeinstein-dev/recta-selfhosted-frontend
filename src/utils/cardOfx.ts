@@ -775,6 +775,7 @@ export function buildCardOfxConfirm(
     monthKey: preview.monthKey,
     lines: preview.lines.map(toConfirmLine),
     ...(typeof preview.ledgerBalance === 'number' && Number.isFinite(preview.ledgerBalance) ? { ledgerBalance: preview.ledgerBalance } : {}),
+    ...(typeof preview.payment?.ref === 'string' && preview.payment.ref !== '' ? { paymentLineRef: preview.payment.ref } : {}),
     selectedGroups: selected.map((group) => group.proposal.group),
     categoryMap: categoryMapForCreates(
       preview.categoryMap ?? [],
@@ -897,6 +898,13 @@ export function lineKindLabel(kind: string): string | null {
 
 // ---- Result of a confirmed import -------------------------------------------------------------------------
 
+export const PAYMENTS_NOT_APPLIED_TEXT = 'O pagamento da fatura anterior e os pagamentos antecipados não foram aplicados: reabra a prévia.';
+
+/** The server skipped the payment and the advance payments because the preview no longer tells them apart ("Reabra a prévia"). */
+export function paymentsNotApplied(result: Pick<CardOfxConfirmResponse, 'warnings'>): boolean {
+  return (result.warnings ?? []).some((warning) => /reabra a prévia/i.test(warning));
+}
+
 /** One item per thing that changed, for the result step; empty when nothing did. */
 export function cardOfxResultLines(
   result: CardOfxConfirmResponse,
@@ -939,6 +947,7 @@ export function cardOfxResultLines(
   if (result.skipped > 0) {
     lines.push(countLabel(result.skipped, 'proposta ignorada (mudou desde a pré-visualização)', 'propostas ignoradas (mudaram desde a pré-visualização)'));
   }
+  if (paymentsNotApplied(result)) lines.push(PAYMENTS_NOT_APPLIED_TEXT);
   return lines;
 }
 
@@ -958,6 +967,7 @@ export function buildCardOfxSummary(result: CardOfxConfirmResponse, formatAmount
   const categories = result.createdCategories?.length ?? 0;
   if (categories > 0) parts.push(countLabel(categories, 'categoria criada', 'categorias criadas'));
   if (result.skipped > 0) parts.push(countLabel(result.skipped, 'proposta ignorada', 'propostas ignoradas'));
+  if (paymentsNotApplied(result)) parts.push('pagamentos não aplicados: reabra a prévia');
   let text = parts.length > 0 ? `Fatura importada: ${parts.join(', ')}.` : 'Fatura importada: nada foi alterado.';
   const warnings = result.warnings?.length ?? 0;
   if (warnings > 0) text += ` ${countLabel(warnings, 'aviso', 'avisos')}.`;

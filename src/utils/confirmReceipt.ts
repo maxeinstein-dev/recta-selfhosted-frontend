@@ -9,6 +9,8 @@ import { followLastHint, dayKey } from './recurringFollow';
 import type { OccurrenceRef, RecurrenceRef } from './recurringFollow';
 import { centsToReais, moneyText, reaisToCents } from './people';
 import { updateFailureMessage } from './transactionConflict';
+import { confirmedValueNote, expectedAmountOf } from './forecastStrategy';
+import type { ForecastFields, ForecastStrategy } from './forecastStrategy';
 
 export interface ConfirmableTx {
   id?: string;
@@ -182,11 +184,14 @@ export function differenceHint(
   type: string | undefined,
   followsLast: boolean,
   format: (cents: number) => string = moneyText,
+  strategy: ForecastStrategy = 'LAST',
 ): string | null {
   if (receivedCents === null || receivedCents <= 0 || receivedCents === expectedCents) return null;
   const copy = confirmCopy(type);
   const base = `Esperado ${format(expectedCents)}, ${copy.received} ${format(receivedCents)}`;
-  return followsLast ? `${base}; as próximas ocorrências passam a usar ${format(receivedCents)}.` : `${base}.`;
+  if (followsLast) return `${base}; as próximas ocorrências passam a usar ${format(receivedCents)}.`;
+  const note = confirmedValueNote(strategy);
+  return note ? `${base}; ${note}.` : `${base}.`;
 }
 
 /** Whether confirming with a new amount makes the recurrence follow it (it follows the last amount and this is the latest occurrence). */
@@ -209,16 +214,17 @@ export function dayText(key: string): string {
 }
 
 /**
- * Client twin of the server's `expectedAmountFor(recurrence, history, referenceMonth)`: the single extension point for
- * "what amount does the next occurrence carry" (a later change adds forecast strategies: fixed, conservative, per
- * business day). Today it is the recurrence amount, which "acompanhar o último valor" keeps at the last confirmed one.
+ * Client twin of the server's `expectedAmountFor(recurrence, history, referenceMonth)`: the single place that says "what
+ * amount does an occurrence carry" (see `forecastStrategy.ts` for the rules: last value, fixed, conservative, per business
+ * day). A recurrence without a strategy is the last value: its amount, which "acompanhar o último valor" keeps at the
+ * last confirmed one. `history` holds the confirmed occurrences, newest first.
  */
 export function expectedAmountFor(
-  recurrence: { amount: number },
-  _history: ReadonlyArray<{ amount: number; date: string }> = [],
-  _referenceMonth = '',
+  recurrence: ForecastFields & { type?: string },
+  history: ReadonlyArray<{ amount: number; date?: string }> = [],
+  referenceMonth = '',
 ): number {
-  return recurrence.amount;
+  return expectedAmountOf(recurrence, recurrence.type === 'INCOME' ? 'INCOME' : 'EXPENSE', history, referenceMonth);
 }
 
 /**

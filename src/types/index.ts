@@ -1,4 +1,5 @@
 import { TransactionType } from '../lib/enums';
+import type { ForecastDetail, ForecastStrategy } from '../utils/forecastStrategy';
 
 export interface TransactionSplit {
   userId: string;
@@ -83,6 +84,20 @@ export interface RecurringTransaction {
   lastOccurrenceDate?: string | null;
   /** Months between an occurrence's date and the month it refers to (1 = the following month); null/absent = same month. */
   competenceOffsetMonths?: number | null;
+  /** How the amount of the next occurrence is forecast; absent (an older server) or 'LAST' = the last value. */
+  forecastStrategy?: ForecastStrategy;
+  /** CONSERVATIVE: how many confirmed values to look at; null = the default of the kind (6 income, 3 expense). */
+  forecastWindow?: number | null;
+  /** PER_BUSINESS_DAY: amount per business day. */
+  dailyRate?: number | null;
+  /** PER_BUSINESS_DAY: business days discounted from the month. */
+  safetyBusinessDays?: number;
+  /** PER_BUSINESS_DAY: "dias sem vale", 'MM-DD' (every year) or 'YYYY-MM-DD'. */
+  nonWorkingDays?: string[];
+  /** PER_BUSINESS_DAY: optional holidays that do not count ('CARNIVAL', 'CORPUS_CHRISTI'). */
+  optionalHolidays?: string[];
+  /** Server-computed: what the next occurrence is expected to carry and how it was reached. */
+  forecast?: ForecastDetail | null;
 }
 
 import { AccountType } from '../constants/accountTypes';

@@ -10,6 +10,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ### Added
 
+- "Adjust balance" action in the account menu (not offered for credit cards): sets the account to the balance shown by the bank with one adjustment entry, dated by the user. An opening balance can be dated at the end of the previous year so it stays out of the current year's reports. Needs the backend `adjust-balance` route with the `date` field; against an older backend the dialog warns that the entry was dated today instead of the chosen day.
+- jsdom and Testing Library as dev dependencies, with the first component test (the adjust-balance dialog).
 - Pull request template in `.github/pull_request_template.md`: test plan, commit attribution, release impact, CHANGELOG gate and how to revert.
 - `CONTRIBUTING.md` with setup, the gates to pass before pushing, commit attribution and contribution rules.
 - `CHANGELOG.md` (this file).

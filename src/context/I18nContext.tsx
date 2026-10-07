@@ -665,6 +665,9 @@ export interface Translations {
   google: string;
   loginError: string;
   googleLoginError: string;
+  localAuthInvalidCredentials: string;
+  localAuthEmailTaken: string;
+  localAuthInvalidInput: string;
   loginBackToHome: string;
   loginSignupWithGoogle: string;
   

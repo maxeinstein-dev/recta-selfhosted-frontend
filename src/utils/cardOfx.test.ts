@@ -59,9 +59,9 @@ describe('invoice month', () => {
 
 describe('code to message tables', () => {
   const tables: Array<[string, Record<string, string | null>, string[]]> = [
-    ['warnings', WARNING_KEYS, ['multiple-statements', 'period-end-missing', 'card-without-due-day', 'card-without-closing-day', 'balance-mismatch']],
+    ['warnings', WARNING_KEYS, ['possible-duplicates', 'multiple-statements', 'period-end-missing', 'card-without-due-day', 'card-without-closing-day', 'balance-mismatch']],
     ['skip reasons', SKIP_REASON_KEYS, ['invalid-amount', 'zero-amount', 'amount-too-large', 'invalid-date', 'missing-id', 'id-too-long']],
-    ['statuses', STATUS_KEYS, ['new', 'payment']],
+    ['statuses', STATUS_KEYS, ['new', 'reconciled', 'payment']],
     ['kinds', KIND_KEYS, ['purchase', 'refund', 'discount', 'payment']],
     ['payment states', PAYMENT_STATE_KEYS, ['matches', 'differs', 'missing', 'undetermined']],
   ]

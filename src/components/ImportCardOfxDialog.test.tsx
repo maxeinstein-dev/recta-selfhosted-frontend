@@ -3,18 +3,32 @@ import { cleanup, fireEvent, render, screen, within } from '@testing-library/rea
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getCardOfxMissing, resetCardOfxMissing } from '../utils/cardOfx'
+import { TransactionType } from '../lib/enums'
 import enUS from '../i18n/en-US.json'
 import type { CardOfxLine, CardOfxPayment, CardOfxPreview } from '../hooks/api/useCardOfxPreview'
 import ImportCardOfxDialog from './ImportCardOfxDialog'
 
+const pending = vi.hoisted(() => ({ confirming: false }))
 const previewMutateAsync = vi.fn()
+const confirmMutateAsync = vi.fn()
 const toastError = vi.fn()
+const toastSuccess = vi.fn()
 
 // The dialog runs against its real helpers and the real en-US strings; only the data layer, contexts and formatters are replaced.
 vi.mock('../hooks/api/useCardOfxPreview', () => ({
   useCardOfxPreview: () => ({ mutateAsync: previewMutateAsync, isPending: false }),
 }))
-vi.mock('../context/ToastContext', () => ({ useToastContext: () => ({ error: toastError }) }))
+vi.mock('../hooks/api/useCardOfxConfirm', () => ({
+  useCardOfxConfirm: () => ({ mutateAsync: confirmMutateAsync, isPending: pending.confirming }),
+}))
+vi.mock('../hooks/useDefaultHousehold', () => ({ useDefaultHousehold: () => ({ householdId: 'hh-1' }) }))
+// The real combobox is a Radix popover over the categories query; a plain input is enough to drive the choice.
+vi.mock('./CategoryCombobox', () => ({
+  default: ({ value, onValueChange, type }: { value: string; onValueChange: (value: string) => void; type?: string }) => (
+    <input data-testid="category" data-type={type} value={value} onChange={(e) => onValueChange(e.target.value)} />
+  ),
+}))
+vi.mock('../context/ToastContext', () => ({ useToastContext: () => ({ error: toastError, success: toastSuccess }) }))
 vi.mock('../context/CurrencyContext', () => ({ useCurrency: () => ({ baseCurrency: 'BRL' }) }))
 // The real formatters pull in the currency table, which pulls in Firebase; the dialog only needs a stable rendering.
 vi.mock('../utils/format', () => ({
@@ -34,6 +48,7 @@ const line = (over: Partial<CardOfxLine> & Pick<CardOfxLine, 'ref' | 'memo' | 'a
   merchant: over.memo,
   installment: null,
   status: 'new',
+  possibleDuplicate: null,
   ...over,
 })
 
@@ -47,13 +62,15 @@ const PREVIEW: CardOfxPreview = {
   ledgerBalance: 90,
   lines: [
     line({ ref: 'r1', memo: 'Corner market', amount: 60 }),
-    line({ ref: 'r2', memo: 'Shoe store - Parcela 2/3', amount: 40 }),
+    line({ ref: 'r2', memo: 'Shoe store - Parcela 2/3', amount: 40, status: 'reconciled' }),
     line({ ref: 'r3', memo: 'Estorno de Corner market', amount: 10, type: 'INCOME', kind: 'refund' }),
     line({ ref: 'r4', memo: 'Pagamento recebido', amount: 85, type: 'INCOME', kind: 'payment', status: 'payment' }),
+    line({ ref: 'r5', memo: 'Bakery', amount: 12, possibleDuplicate: { transactionId: 'tx-hand', description: 'bread', date: '2026-11-09' } }),
   ],
+  categorySuggestions: [{ merchant: 'Corner market', type: 'EXPENSE', categoryName: 'GROCERIES' }],
   skipped: [],
   payment: { invoiceMonthKey: '2026-11', statementTotal: 85, recorded: [], recordedTotal: 0, state: 'missing' },
-  totals: { lines: 4, new: 3, payments: 1, skipped: 0 },
+  totals: { lines: 5, new: 3, reconciled: 1, payments: 1, skipped: 0, possibleDuplicates: 1 },
   warnings: [],
 }
 
@@ -74,14 +91,16 @@ async function preview(user: ReturnType<typeof userEvent.setup>, file = ofxFile(
   await user.click(previewButton())
 }
 
-const rowOf = (memo: string) => screen.getByText(memo).closest('tr') as HTMLElement
+const rowOf = (memo: string) => within(screen.getByRole('table')).getByText(memo).closest('tr') as HTMLElement
 
 beforeEach(() => {
   previewMutateAsync.mockResolvedValue(PREVIEW)
+  confirmMutateAsync.mockResolvedValue({ created: 2, linked: 0, skipped: [], ids: ['a', 'b'] })
 })
 
 afterEach(() => {
   resetCardOfxMissing()
+  pending.confirming = false
   cleanup()
   vi.clearAllMocks()
 })
@@ -150,6 +169,7 @@ describe('ImportCardOfxDialog', () => {
       ),
     ).toBeTruthy()
     expect(screen.getByText('New: 3')).toBeTruthy()
+    expect(screen.getByText('Already imported: 1')).toBeTruthy()
     expect(screen.getByText('Payments: 1')).toBeTruthy()
   })
 
@@ -169,7 +189,7 @@ describe('ImportCardOfxDialog', () => {
     const market = within(rowOf('Corner market'))
     expect(market.getByText('BRL 60.00')).toBeTruthy()
     expect(market.getByText(enUS.cardOfxStatusNew)).toBeTruthy()
-    expect(within(rowOf('Shoe store - Parcela 2/3')).getByText(enUS.cardOfxStatusNew)).toBeTruthy()
+    expect(within(rowOf('Shoe store - Parcela 2/3')).getByText(enUS.cardOfxStatusReconciled)).toBeTruthy()
     const refund = within(rowOf('Estorno de Corner market'))
     expect(refund.getByText(new RegExp(`${enUS.income} · ${enUS.cardOfxKindRefund}`))).toBeTruthy()
     const payment = within(rowOf('Pagamento recebido'))
@@ -259,18 +279,17 @@ describe('ImportCardOfxDialog', () => {
     const { user } = setup()
     await preview(user)
 
-    expect(screen.getByText('Shop 199')).toBeTruthy()
-    expect(screen.queryByText('Shop 200')).toBeNull()
+    expect(within(screen.getByRole('table')).getByText('Shop 199')).toBeTruthy()
+    expect(within(screen.getByRole('table')).queryByText('Shop 200')).toBeNull()
     expect(screen.getByText('Showing the first 200 of 205 lines.')).toBeTruthy()
   })
 
-  it('is a preview only: it says so and offers nothing that saves', async () => {
+  it('says that nothing is saved before the user confirms', async () => {
     const { user } = setup()
     await preview(user)
 
     expect(screen.getByText(enUS.cardOfxPreviewOnly)).toBeTruthy()
-    const buttons = screen.getAllByRole('button').map((button) => button.textContent)
-    expect(buttons.filter((text) => /import|confirm/i.test(text ?? ''))).toEqual([])
+    expect(confirmMutateAsync).not.toHaveBeenCalled()
   })
 
   it('goes back to the file step keeping nothing of the previous preview', async () => {
@@ -323,4 +342,168 @@ describe('ImportCardOfxDialog', () => {
     await user.click(previewButton())
     expect(toastError).toHaveBeenLastCalledWith(enUS.cardOfxPreviewFailed)
   })
+
+describe('ImportCardOfxDialog: confirming', () => {
+  const actionOf = (memo: string) => screen.getByLabelText(`${enUS.cardOfxAction}: ${memo}`) as HTMLSelectElement
+  const confirmButton = () => screen.getByRole('button', { name: new RegExp(`^${enUS.cardOfxConfirm}`) }) as HTMLButtonElement
+
+  it('sets new lines to import and a look-alike of a hand-typed transaction to skip, with link offered only for that one', async () => {
+    const { user } = setup()
+    await preview(user)
+
+    expect(actionOf('Corner market').value).toBe('import')
+    expect(actionOf('Estorno de Corner market').value).toBe('import')
+    expect(actionOf('Bakery').value).toBe('skip')
+    expect(within(rowOf('Bakery')).getByText('Looks like “bread” of 2026-11-09')).toBeTruthy()
+    expect([...actionOf('Bakery').options].map((o) => o.value)).toEqual(['import', 'skip', 'link'])
+    expect([...actionOf('Corner market').options].map((o) => o.value)).toEqual(['import', 'skip'])
+    // Reconciled lines and payments have nothing to decide.
+    expect(screen.queryByLabelText(`${enUS.cardOfxAction}: Shoe store - Parcela 2/3`)).toBeNull()
+    expect(screen.queryByLabelText(`${enUS.cardOfxAction}: Pagamento recebido`)).toBeNull()
+    expect(confirmButton().textContent).toBe(`${enUS.cardOfxConfirm} (2)`)
+  })
+
+  it('sends every preview line back with what to create, the suggested category, and shows the result', async () => {
+    const { user } = setup()
+    await preview(user)
+    await user.click(confirmButton())
+
+    expect(confirmMutateAsync).toHaveBeenCalledTimes(1)
+    const request = confirmMutateAsync.mock.calls[0]![0]
+    expect(request).toMatchObject({
+      accountId: 'card-1',
+      selectedRefs: ['r1', 'r3'],
+      createDespiteDuplicate: [],
+      links: [],
+      categoryMap: [{ merchant: 'Corner market', type: 'EXPENSE', categoryName: 'GROCERIES' }],
+    })
+    expect(request.lines.map((l: { ref: string }) => l.ref)).toEqual(['r1', 'r2', 'r3', 'r4', 'r5'])
+    expect(request.lines[0]).not.toHaveProperty('status')
+    expect(request.lines[4]).not.toHaveProperty('possibleDuplicate')
+    expect(screen.getByText('Created: 2')).toBeTruthy()
+    expect(screen.getByText('Linked to existing: 0')).toBeTruthy()
+    expect(toastSuccess).toHaveBeenCalledWith(enUS.cardOfxResultTitle)
+  })
+
+  it('creates a look-alike anyway when told to, and links it when told to, never both', async () => {
+    const { user } = setup()
+    await preview(user)
+
+    await user.selectOptions(actionOf('Bakery'), 'import')
+    expect(confirmButton().textContent).toBe(`${enUS.cardOfxConfirm} (3)`)
+    await user.click(confirmButton())
+    expect(confirmMutateAsync.mock.calls[0]![0]).toMatchObject({ selectedRefs: ['r1', 'r3', 'r5'], createDespiteDuplicate: ['r5'], links: [] })
+
+    cleanup()
+    confirmMutateAsync.mockClear()
+    const second = setup()
+    await preview(second.user)
+    await second.user.selectOptions(actionOf('Bakery'), 'link')
+    await second.user.click(confirmButton())
+    expect(confirmMutateAsync.mock.calls[0]![0]).toMatchObject({
+      selectedRefs: ['r1', 'r3'],
+      createDespiteDuplicate: [],
+      links: [{ ref: 'r5', transactionId: 'tx-hand' }],
+    })
+  })
+
+  it('sends the category the user picks for a merchant, and none for a merchant without one', async () => {
+    const { user } = setup()
+    await preview(user)
+    const boxes = screen.getAllByTestId('category') as HTMLInputElement[]
+
+    // Corner market (suggested) and the refund merchant, in line order; the refund is an income category.
+    expect(boxes.map((b) => [b.value, b.dataset.type])).toEqual([['GROCERIES', TransactionType.EXPENSE], ['', TransactionType.INCOME]])
+    fireEvent.change(boxes[1]!, { target: { value: 'OTHER_INCOME' } })
+    fireEvent.change(boxes[0]!, { target: { value: 'FOOD' } })
+    await user.click(confirmButton())
+
+    expect(confirmMutateAsync.mock.calls[0]![0].categoryMap).toEqual([
+      { merchant: 'Corner market', type: 'EXPENSE', categoryName: 'FOOD' },
+      { merchant: 'Estorno de Corner market', type: 'INCOME', categoryName: 'OTHER_INCOME' },
+    ])
+  })
+
+  it('words the possible-duplicates warning', async () => {
+    previewMutateAsync.mockResolvedValue({ ...PREVIEW, warnings: ['possible-duplicates'] })
+    const { user } = setup()
+    await preview(user)
+
+    expect(within(screen.getByRole('alert')).getByText(enUS.cardOfxWarningPossibleDuplicates)).toBeTruthy()
+  })
+
+  it('cannot confirm with nothing set to import or link', async () => {
+    const { user } = setup()
+    await preview(user)
+    await user.selectOptions(actionOf('Corner market'), 'skip')
+    await user.selectOptions(actionOf('Estorno de Corner market'), 'skip')
+
+    expect(confirmButton().disabled).toBe(true)
+    expect(confirmButton().textContent).toBe(`${enUS.cardOfxConfirm} (0)`)
+    expect(confirmMutateAsync).not.toHaveBeenCalled()
+  })
+
+  it('lists what the server left out and why', async () => {
+    confirmMutateAsync.mockResolvedValue({
+      created: 1,
+      linked: 0,
+      skipped: [
+        { ref: 'r1', cause: 'already-imported' },
+        { ref: 'r5', cause: 'possible-duplicate' },
+      ],
+      ids: ['a'],
+    })
+    const { user } = setup()
+    await preview(user)
+    await user.click(confirmButton())
+
+    expect(screen.getByText('Skipped: 2')).toBeTruthy()
+    expect(screen.getByText(`Corner market: ${enUS.cardOfxCauseAlreadyImported}`)).toBeTruthy()
+    expect(screen.getByText(`Bakery: ${enUS.cardOfxCausePossibleDuplicate}`)).toBeTruthy()
+  })
+
+  it('says where the import stopped, as an alert and a toast, without the success toast', async () => {
+    confirmMutateAsync.mockResolvedValue({ created: 1, linked: 0, skipped: [], ids: ['a'], stoppedAt: { ref: 'r3', message: 'boom' } })
+    const { user } = setup()
+    await preview(user)
+    await user.click(confirmButton())
+
+    const message = enUS.cardOfxResultStopped.replace('{ref}', 'r3').replace('{message}', 'boom')
+    expect(screen.getByRole('alert').textContent).toBe(message)
+    expect(toastError).toHaveBeenCalledWith(message)
+    expect(toastSuccess).not.toHaveBeenCalled()
+  })
+
+  it('keeps the selection when the confirm fails, and says a timeout is not "nothing imported"', async () => {
+    const { user } = setup()
+    await preview(user)
+    await user.selectOptions(actionOf('Bakery'), 'import')
+
+    confirmMutateAsync.mockRejectedValueOnce(new Error('timeout of 30000ms exceeded'))
+    await user.click(confirmButton())
+    expect(toastError).toHaveBeenLastCalledWith(enUS.cardOfxConfirmTimeout)
+
+    confirmMutateAsync.mockRejectedValueOnce(Object.assign(new Error('Line 2 of the invoice does not match its content: amount.'), { status: 400 }))
+    await user.click(confirmButton())
+    expect(toastError).toHaveBeenLastCalledWith('Line 2 of the invoice does not match its content: amount.')
+
+    confirmMutateAsync.mockRejectedValueOnce({ status: 500 })
+    await user.click(confirmButton())
+    expect(toastError).toHaveBeenLastCalledWith(enUS.cardOfxConfirmFailed)
+
+    expect(actionOf('Bakery').value).toBe('import')
+    expect(screen.queryByText(enUS.cardOfxResultTitle)).toBeNull()
+  })
+
+  it('does not close on Escape while the server is writing', async () => {
+    pending.confirming = true
+    const { user, onClose } = setup()
+    await preview(user)
+    await user.keyboard('{Escape}')
+
+    expect(onClose).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: enUS.cardOfxConfirming }).hasAttribute('disabled')).toBe(true)
+  })
+
+})
 })

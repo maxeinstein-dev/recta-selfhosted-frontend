@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, within } from '@testing-library/react'
+import { cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { getCardOfxMissing, resetCardOfxMissing } from '../utils/cardOfx'
@@ -18,9 +18,26 @@ const toastSuccess = vi.fn()
 vi.mock('../hooks/api/useCardOfxPreview', () => ({
   useCardOfxPreview: () => ({ mutateAsync: previewMutateAsync, isPending: false }),
 }))
-vi.mock('../hooks/api/useCardOfxConfirm', () => ({
-  useCardOfxConfirm: () => ({ mutateAsync: confirmMutateAsync, isPending: pending.confirming }),
-}))
+// isPending follows the call in flight, as the real mutation does (and can be forced on with pending.confirming).
+vi.mock('../hooks/api/useCardOfxConfirm', async () => {
+  const { useState } = await import('react')
+  return {
+    useCardOfxConfirm: () => {
+      const [inFlight, setInFlight] = useState(false)
+      return {
+        mutateAsync: async (request: unknown) => {
+          setInFlight(true)
+          try {
+            return await confirmMutateAsync(request)
+          } finally {
+            setInFlight(false)
+          }
+        },
+        isPending: inFlight || pending.confirming,
+      }
+    },
+  }
+})
 vi.mock('../hooks/useDefaultHousehold', () => ({ useDefaultHousehold: () => ({ householdId: 'hh-1' }) }))
 // The real combobox is a Radix popover over the categories query; a plain input is enough to drive the choice.
 vi.mock('./CategoryCombobox', () => ({
@@ -519,6 +536,31 @@ describe('ImportCardOfxDialog: confirming', () => {
 
     expect(actionOf('Bakery').value).toBe('import')
     expect(screen.queryByText(enUS.cardOfxResultTitle)).toBeNull()
+  })
+
+  it('does not close, nor send twice, while a "Send again" is in flight, and closes once it is over', async () => {
+    confirmMutateAsync.mockResolvedValueOnce({ created: 1, linked: 0, skipped: [], ids: ['a'], stoppedAt: { ref: 'r3', message: 'x' } })
+    let finish!: (value: unknown) => void
+    confirmMutateAsync.mockImplementationOnce(() => new Promise((resolve) => (finish = resolve)))
+    const { user, onClose } = setup()
+    await preview(user)
+    await user.click(confirmButton())
+
+    await user.click(screen.getByRole('button', { name: enUS.cardOfxRetry }))
+    const resultClose = () => screen.getAllByRole('button', { name: enUS.close }).at(-1) as HTMLButtonElement
+    const closeButton = resultClose()
+    expect((screen.getAllByRole('button', { name: enUS.close })[0] as HTMLButtonElement).disabled).toBe(true)
+    expect(closeButton.disabled).toBe(true)
+    await user.click(closeButton)
+    await user.keyboard('{Escape}')
+    await user.click(screen.getByRole('button', { name: enUS.cardOfxConfirming }))
+    expect(onClose).not.toHaveBeenCalled()
+    expect(confirmMutateAsync).toHaveBeenCalledTimes(2)
+
+    finish({ created: 1, linked: 0, skipped: [], ids: ['b'] })
+    await waitFor(() => expect(resultClose().disabled).toBe(false))
+    await user.click(resultClose())
+    expect(onClose).toHaveBeenCalledTimes(1)
   })
 
   it('does not close on Escape while the server is writing', async () => {

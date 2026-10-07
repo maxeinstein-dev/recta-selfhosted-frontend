@@ -330,8 +330,9 @@ const ImportCardOfxDialog = ({ open, onClose, account }: ImportCardOfxDialogProp
               <div className="flex justify-end pt-2">
                 <button
                   type="button"
-                  onClick={onClose}
-                  className="px-4 py-2.5 text-sm font-light tracking-tight text-white bg-primary-600 dark:bg-primary-500 border border-primary-600 dark:border-primary-500 rounded-md hover:opacity-80 transition-opacity"
+                  onClick={requestClose}
+                  disabled={isConfirming}
+                  className="px-4 py-2.5 text-sm font-light tracking-tight text-white bg-primary-600 dark:bg-primary-500 border border-primary-600 dark:border-primary-500 rounded-md hover:opacity-80 transition-opacity disabled:opacity-50"
                 >
                   {t.close}
                 </button>

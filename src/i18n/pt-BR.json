@@ -1093,5 +1093,7 @@
   "importStatementSkipColumnCount": "número de colunas incorreto",
   "importStatementSkipRepeatedId": "ID de transação repetido",
   "importStatementMoreRows": "Mostrando as primeiras {shown} de {total} linhas. Todas as linhas novas serão importadas.",
-  "importStatementPartial": "{count} transações importadas e depois a importação parou: {error}. Execute de novo para continuar; as linhas já importadas são ignoradas."
+  "importStatementPartial": "{count} transações importadas e depois a importação parou: {error}. Execute de novo para continuar; as linhas já importadas são ignoradas.",
+  "importStatementBusy": "Outra importação nesta conta ainda está em andamento. Aguarde terminar e tente de novo.",
+  "importStatementTimeout": "O servidor está demorando mais que o esperado. A importação ainda pode estar em andamento: aguarde um minuto, confira as transações da conta ou envie o mesmo arquivo de novo (as linhas já importadas são ignoradas)."
 }

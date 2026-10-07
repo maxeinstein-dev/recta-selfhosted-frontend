@@ -44,6 +44,28 @@ export function isImporterMissing(error: unknown): boolean {
   return (status === 404 || status === 405) && code === undefined;
 }
 
+/** The server refuses a second confirm on the same account while one is running (409 CONFLICT). */
+export function isImportBusy(error: unknown): boolean {
+  return (error as { status?: unknown } | null)?.status === 409;
+}
+
+/**
+ * The request gave up waiting (no HTTP status at all). It says nothing about the server: the import may still be
+ * running there, so the message must not claim that nothing was imported.
+ */
+export function isTimeoutError(error: unknown): boolean {
+  const { status, message } = (error as { status?: unknown; message?: unknown } | null) ?? {};
+  return status === undefined && typeof message === 'string' && /timeout/i.test(message);
+}
+
+/**
+ * Time to wait for a confirm: the server saves about 25 ms per row, so the default 30 s of the shared client is far too
+ * short for a big file. 100 ms per row on top of 30 s leaves a wide margin, capped at 5 minutes.
+ */
+export function confirmTimeoutMs(rowCount: number): number {
+  return Math.min(5 * 60_000, 30_000 + rowCount * 100);
+}
+
 /** Rows drawn in the preview table; the rest are still imported, the table only says how many are hidden. */
 export const MAX_RENDERED_ROWS = 200;
 

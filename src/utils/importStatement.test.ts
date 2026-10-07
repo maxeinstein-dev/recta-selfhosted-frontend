@@ -2,6 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { ImportPreview, ImportPreviewRow } from '../hooks/api/useImportTransactions'
 import {
   SKIP_REASON_KEYS,
+  confirmTimeoutMs,
+  isImportBusy,
+  isTimeoutError,
   getImporterMissing,
   isImporterMissing,
   isStatementFile,
@@ -82,6 +85,25 @@ describe('isImporterMissing', () => {
     expect(isImporterMissing(Object.assign(new Error('bad file'), { status: 400 }))).toBe(false)
     expect(isImporterMissing(new Error('Network error'))).toBe(false)
     expect(isImporterMissing(null)).toBe(false)
+  })
+})
+
+describe('confirm failures', () => {
+  it('recognises a second import on the same account (409)', () => {
+    expect(isImportBusy(Object.assign(new Error('busy'), { status: 409 }))).toBe(true)
+    expect(isImportBusy(Object.assign(new Error('bad'), { status: 400 }))).toBe(false)
+  })
+
+  it('recognises a request that gave up waiting, and nothing that has an HTTP status', () => {
+    expect(isTimeoutError(new Error('Network error: Request timeout - server took too long to respond'))).toBe(true)
+    expect(isTimeoutError(Object.assign(new Error('timeout in the message'), { status: 500 }))).toBe(false)
+    expect(isTimeoutError(new Error('Network error: Unable to connect to server'))).toBe(false)
+  })
+
+  it('scales the wait with the rows and caps it', () => {
+    expect(confirmTimeoutMs(0)).toBe(30_000)
+    expect(confirmTimeoutMs(1500)).toBe(180_000)
+    expect(confirmTimeoutMs(100_000)).toBe(300_000)
   })
 })
 

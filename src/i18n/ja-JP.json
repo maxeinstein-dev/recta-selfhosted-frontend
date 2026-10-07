@@ -951,5 +951,7 @@
   "importStatementSkipColumnCount": "列の数が正しくありません",
   "importStatementSkipRepeatedId": "取引 ID が重複しています",
   "importStatementMoreRows": "{total} 行中、最初の {shown} 行を表示しています。新規の行はすべて取り込まれます。",
-  "importStatementPartial": "{count} 件の取引を取り込んだ後、インポートが停止しました: {error}。もう一度実行すると続きから取り込まれ、取り込み済みの行はスキップされます。"
+  "importStatementPartial": "{count} 件の取引を取り込んだ後、インポートが停止しました: {error}。もう一度実行すると続きから取り込まれ、取り込み済みの行はスキップされます。",
+  "importStatementBusy": "この口座への別のインポートがまだ実行中です。完了するまで待ってから、もう一度お試しください。",
+  "importStatementTimeout": "サーバーの応答に想定より時間がかかっています。インポートはまだ実行中の可能性があります。1 分ほど待ってから口座の取引を確認するか、同じファイルをもう一度送信してください（取り込み済みの行はスキップされます）。"
 }

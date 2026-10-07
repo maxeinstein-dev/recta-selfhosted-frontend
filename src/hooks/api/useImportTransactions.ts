@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { apiClient, axiosInstance } from '../../utils/api';
+import { axiosInstance } from '../../utils/api';
+import { confirmTimeoutMs } from '../../utils/importStatement';
 import type { ApiResponse } from '../../utils/api';
 
 export type ImportTransactionType = 'INCOME' | 'EXPENSE';
@@ -101,11 +102,13 @@ export function useConfirmImport() {
 
   return useMutation({
     mutationFn: async ({ accountId, rows }: ConfirmImportParams) => {
-      const response = await apiClient.post<ImportResult>('/transactions/import/confirm', {
-        accountId,
-        rows,
-      });
-      return response.data!;
+      // Longer than the client default: the server saves the rows one by one (see confirmTimeoutMs).
+      const response = await axiosInstance.post<ApiResponse<ImportResult>>(
+        '/transactions/import/confirm',
+        { accountId, rows },
+        { timeout: confirmTimeoutMs(rows.length) },
+      );
+      return response.data.data!;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['transactions'] });

@@ -1157,6 +1157,8 @@ export interface Translations {
   importStatementSkipRepeatedId: string;
   importStatementMoreRows: string;
   importStatementPartial: string;
+  importStatementBusy: string;
+  importStatementTimeout: string;
 }
 
 // Note: Some language files may have missing translations. We cast through `unknown`

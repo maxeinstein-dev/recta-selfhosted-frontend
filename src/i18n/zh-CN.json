@@ -951,5 +951,7 @@
   "importStatementSkipColumnCount": "列数不正确",
   "importStatementSkipRepeatedId": "交易 ID 重复",
   "importStatementMoreRows": "显示前 {shown} 行，共 {total} 行。所有新交易都会导入。",
-  "importStatementPartial": "已导入 {count} 条交易，随后导入中止：{error}。再次运行即可继续；已导入的行会被跳过。"
+  "importStatementPartial": "已导入 {count} 条交易，随后导入中止：{error}。再次运行即可继续；已导入的行会被跳过。",
+  "importStatementBusy": "此账户的另一个导入仍在进行。请等待其完成后再试。",
+  "importStatementTimeout": "服务器响应时间比预期长。导入可能仍在进行：请等待一分钟后查看账户的交易，或再次发送同一文件（已导入的行会被跳过）。"
 }

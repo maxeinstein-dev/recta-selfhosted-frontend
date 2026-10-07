@@ -302,6 +302,27 @@ describe('ImportTransactionsDialog', () => {
     expect(onClose).not.toHaveBeenCalled()
   })
 
+  it('says another import is running when the server answers 409, and keeps the dialog open', async () => {
+    confirmMutateAsync.mockRejectedValue(Object.assign(new Error('An import is already running for this account.'), { status: 409 }))
+    const { user, onClose } = setup()
+    await fillAndPreview(user)
+    await user.click(screen.getByRole('button', { name: enUS.importStatementConfirm }))
+
+    expect(toastError).toHaveBeenCalledWith(enUS.importStatementBusy)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
+  it('does not claim that nothing was imported when the request times out', async () => {
+    confirmMutateAsync.mockRejectedValue(new Error('Network error: Request timeout - server took too long to respond'))
+    const { user, onClose } = setup()
+    await fillAndPreview(user)
+    await user.click(screen.getByRole('button', { name: enUS.importStatementConfirm }))
+
+    expect(toastError).toHaveBeenCalledWith(enUS.importStatementTimeout)
+    expect(enUS.importStatementTimeout).toMatch(/may still be running/)
+    expect(onClose).not.toHaveBeenCalled()
+  })
+
   it('closes on Escape', async () => {
     const { user, onClose } = setup()
     await user.keyboard('{Escape}')

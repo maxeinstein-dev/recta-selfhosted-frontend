@@ -10,7 +10,9 @@ import { formatCurrency, formatDate, parseDateFromAPI } from '../utils/format';
 import {
   MAX_RENDERED_ROWS,
   SKIP_REASON_KEYS,
+  isImportBusy,
   isImporterMissing,
+  isTimeoutError,
   isStatementFile,
   markImporterMissing,
   previewCounts,
@@ -162,7 +164,14 @@ const ImportTransactionsDialog = ({
       );
       onClose();
     } catch (err: unknown) {
-      showError(getErrorMessage(err, t.importStatementConfirmFailed));
+      if (isImportBusy(err)) {
+        showError(t.importStatementBusy);
+      } else if (isTimeoutError(err)) {
+        // No answer is not "nothing imported": the server may still be saving rows.
+        showError(t.importStatementTimeout);
+      } else {
+        showError(getErrorMessage(err, t.importStatementConfirmFailed));
+      }
     }
   };
 

@@ -1076,5 +1076,7 @@
   "importStatementSkipColumnCount": "wrong number of columns",
   "importStatementSkipRepeatedId": "repeated transaction ID",
   "importStatementMoreRows": "Showing the first {shown} of {total} rows. All new rows are imported.",
-  "importStatementPartial": "Imported {count} transactions, then the import stopped: {error}. Run it again to continue; rows already imported are skipped."
+  "importStatementPartial": "Imported {count} transactions, then the import stopped: {error}. Run it again to continue; rows already imported are skipped.",
+  "importStatementBusy": "Another import into this account is still running. Wait for it to finish, then try again.",
+  "importStatementTimeout": "The server is taking longer than expected. The import may still be running: wait a minute, check the account's transactions, or send the same file again (rows already imported are skipped)."
 }

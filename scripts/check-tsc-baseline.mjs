@@ -13,6 +13,10 @@
 //   node scripts/check-tsc-baseline.mjs --update   rewrite the baseline; only
 //                                                  allowed when nothing grew
 //                                                  (the first run creates the file)
+//   node scripts/check-tsc-baseline.mjs --against <file>
+//                                                  compare tsc-baseline.txt with another copy
+//                                                  (the PR base in CI) and fail if it GREW; hand-editing
+//                                                  the baseline cannot hide a new error
 //
 // A key is `file: TSxxxx: message`. Line and column are dropped so that moving
 // code around does not look like a new error, and the absolute project path
@@ -23,10 +27,31 @@ import { spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import { growth, parseBaseline } from './tsc-baseline-lib.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const baselinePath = join(root, 'tsc-baseline.txt')
 const update = process.argv.includes('--update')
+
+const againstIdx = process.argv.indexOf('--against')
+if (againstIdx !== -1) {
+  const otherPath = process.argv[againstIdx + 1]
+  if (!otherPath || !existsSync(otherPath)) {
+    console.error('--against needs the path of the baseline to compare with')
+    process.exit(2)
+  }
+  const grown = growth(
+    parseBaseline(readFileSync(otherPath, 'utf8')),
+    parseBaseline(existsSync(baselinePath) ? readFileSync(baselinePath, 'utf8') : ''),
+  )
+  if (grown.length > 0) {
+    console.error('tsc-baseline.txt grew compared with the base; it may only shrink:')
+    for (const [key, n] of grown) console.error(`  +${n} ${key}`)
+    process.exit(1)
+  }
+  console.log('tsc-baseline.txt did not grow.')
+  process.exit(0)
+}
 
 const tscBin = join(root, 'node_modules', 'typescript', 'bin', 'tsc')
 const run = spawnSync(process.execPath, [tscBin, '--noEmit', '--pretty', 'false'], {
@@ -61,29 +86,14 @@ if (run.status !== 0 && current.size === 0) {
   process.exit(2)
 }
 
-const readBaseline = () => {
-  const map = new Map()
-  if (!existsSync(baselinePath)) return map
-  for (const line of readFileSync(baselinePath, 'utf8').split(/\r?\n/)) {
-    if (!line || line.startsWith('#')) continue
-    map.set(line, (map.get(line) ?? 0) + 1)
-  }
-  return map
-}
+const readBaseline = () =>
+  existsSync(baselinePath) ? parseBaseline(readFileSync(baselinePath, 'utf8')) : new Map()
 
 const total = (entries) => [...entries].reduce((sum, [, n]) => sum + n, 0)
 
 const baseline = readBaseline()
-const added = []
-const fixed = []
-for (const [key, count] of current) {
-  const extra = count - (baseline.get(key) ?? 0)
-  if (extra > 0) added.push([key, extra])
-}
-for (const [key, count] of baseline) {
-  const gone = count - (current.get(key) ?? 0)
-  if (gone > 0) fixed.push([key, gone])
-}
+const added = growth(baseline, current)
+const fixed = growth(current, baseline)
 
 if (update) {
   // The first run has no baseline to shrink from, so it may create one.

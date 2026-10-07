@@ -46,6 +46,35 @@ interface FakeSettlement {
   note: string | null;
 }
 
+/** The server rule for the split strategies: parts in cents, remainder to the first person. */
+export interface ShareInput {
+  direction: 'THEY_OWE_ME' | 'I_OWE_THEM';
+  strategy: string;
+  myShares?: number;
+  entries: Array<{ personId: string; note?: string; amount?: number; percent?: number; shares?: number }>;
+}
+
+export function serverParts(totalCents: number, input: ShareInput): number[] {
+  const entries = input.entries;
+  const n = entries.length;
+  if (n === 0) return [];
+  if (input.strategy === 'exact') return entries.map((e) => cents(e.amount ?? 0));
+  if (input.strategy === 'equal') {
+    const base = Math.floor(totalCents / (n + 1));
+    return entries.map((_, i) => base + (i === 0 ? totalCents - base * (n + 1) : 0));
+  }
+  if (input.strategy === 'shares') {
+    const mine = input.myShares ?? 1;
+    const denom = mine + entries.reduce((a, e) => a + (e.shares ?? 0), 0);
+    const parts = entries.map((e) => Math.floor((totalCents * (e.shares ?? 0)) / denom));
+    parts[0]! += totalCents - Math.floor((totalCents * mine) / denom) - parts.reduce((a, p) => a + p, 0);
+    return parts;
+  }
+  const parts = entries.map((e) => Math.floor((totalCents * Math.round((e.percent ?? 0) * 100)) / 10000));
+  if (entries.reduce((a, e) => a + Math.round((e.percent ?? 0) * 100), 0) === 10000) parts[0]! += totalCents - parts.reduce((a, p) => a + p, 0);
+  return parts;
+}
+
 export interface FakeResponse {
   status: number;
   body?: unknown;
@@ -114,6 +143,20 @@ export function createPeopleServer(seed: { people?: Person[]; transactions?: Fak
     });
   }
 
+  function sharesResponse(tx: FakeTransaction) {
+    const list = state.shares.filter((x) => x.transactionId === tx.id);
+    const theirs = list.filter((x) => x.direction === 'THEY_OWE_ME').reduce((a, x) => a + x.amount, 0);
+    return {
+      transactionId: tx.id,
+      transactionAmount: tx.amount,
+      shares: list.map((x) => ({
+        id: x.id, transactionId: tx.id, personId: x.personId, personName: personById(x.personId)?.name ?? '?', direction: x.direction,
+        amount: reais(x.amount), note: x.note, source: 'manual' as const,
+      })),
+      myPart: reais(cents(tx.amount) - theirs),
+    };
+  }
+
   async function route(method: string, url: string, payload: Record<string, unknown> | undefined): Promise<FakeResponse> {
     let m: RegExpExecArray | null;
     if (method === 'GET' && url === '/people') {
@@ -162,6 +205,71 @@ export function createPeopleServer(seed: { people?: Person[]; transactions?: Fak
         status: 200,
         body: { success: true, data: all.slice(offset, offset + limit), pagination: { nextCursor: hasMore ? `c${offset + limit}` : null, hasMore, total: all.length } },
       };
+    }
+    if ((m = /^\/people\/([^/]+)\/settlements$/.exec(url)) && method === 'POST') {
+      const person = personById(m[1]!);
+      if (!person) throw new HttpError(404, 'Person not found', 'NOT_FOUND');
+      const body = payload as unknown as {
+        amount: number; direction: 'RECEIVED' | 'PAID'; date: string; note?: string; transactionId?: string;
+        createTransaction?: { accountId: string; description?: string };
+      };
+      let transactionId: string | null = null;
+      if (body.transactionId) {
+        const tx = txById(body.transactionId);
+        if (!tx) throw new HttpError(404, 'Transaction not found', 'NOT_FOUND');
+        if (state.settlements.some((x) => x.transactionId === tx.id)) throw new HttpError(409, 'That transaction is already linked to a settlement', 'CONFLICT');
+        transactionId = tx.id;
+      }
+      if (body.createTransaction) {
+        const tx: FakeTransaction = {
+          id: nextId('tx-settle-'), description: body.createTransaction.description ?? `Settlement ${person.name}`, amount: body.amount, date: body.date,
+        };
+        state.transactions.push(tx);
+        transactionId = tx.id;
+      }
+      const settlement: FakeSettlement = {
+        id: nextId('st-'), seq: state.seq, personId: person.id, direction: body.direction, amount: cents(body.amount), date: body.date,
+        transactionId, note: body.note ?? null,
+      };
+      state.settlements.push(settlement);
+      return { status: 201, body: { success: true, data: { ...settlement, amount: body.amount } } };
+    }
+    if ((m = /^\/settlements\/([^/]+)$/.exec(url)) && method === 'DELETE') {
+      const before = state.settlements.length;
+      state.settlements = state.settlements.filter((x) => x.id !== m![1]);
+      if (state.settlements.length === before) throw new HttpError(404, 'Settlement not found', 'NOT_FOUND');
+      return { status: 204 };
+    }
+    if ((m = /^\/transactions\/([^/]+)\/shares(\/preview)?$/.exec(url))) {
+      const tx = txById(m[1]!);
+      if (!tx) throw new HttpError(404, 'Transaction not found', 'NOT_FOUND');
+      const isPreview = !!m[2];
+      if (method === 'GET' && !isPreview) return { status: 200, body: { success: true, data: sharesResponse(tx) } };
+      if ((method === 'PUT' && !isPreview) || (method === 'POST' && isPreview)) {
+        const input = payload as unknown as ShareInput;
+        const total = cents(tx.amount);
+        const parts = serverParts(total, input);
+        const seen = new Set<string>();
+        input.entries.forEach((e) => {
+          if (!personById(e.personId)) throw new HttpError(404, 'Person not found', 'NOT_FOUND');
+          if (seen.has(e.personId)) throw new HttpError(400, 'Person repeated', 'VALIDATION_ERROR');
+          seen.add(e.personId);
+        });
+        if (parts.some((part) => part <= 0)) throw new HttpError(400, 'A part came out as zero', 'VALIDATION_ERROR');
+        if (parts.reduce((a, part) => a + part, 0) > total) throw new HttpError(400, 'The parts exceed the transaction amount', 'VALIDATION_ERROR');
+        if (isPreview) {
+          const sum = parts.reduce((a, part) => a + part, 0);
+          return {
+            status: 200,
+            body: { success: true, data: { shares: input.entries.map((e, i) => ({ personId: e.personId, amount: reais(parts[i]!) })), myPart: reais(total - sum) } },
+          };
+        }
+        state.shares = state.shares.filter((x) => !(x.transactionId === tx.id && x.direction === input.direction));
+        input.entries.forEach((e, i) => {
+          state.shares.push({ id: nextId('sh-'), seq: state.seq, transactionId: tx.id, personId: e.personId, direction: input.direction, amount: parts[i]!, note: e.note ?? null });
+        });
+        return { status: 200, body: { success: true, data: sharesResponse(tx) } };
+      }
     }
     throw new HttpError(404, `HTTP 404`);
   }

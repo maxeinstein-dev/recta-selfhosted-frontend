@@ -11,10 +11,14 @@ const placeholders = (text: string) => (text.match(/\{\{\w+\}\}/g) ?? []).sort()
 
 // The people screens are the only code that uses these keys: pt-BR and en-US carry all of them; the other six
 // languages get the en-US text from the English fallback (a separate change of the series).
-const SOURCES = ['../pages/People.tsx', '../hooks/api/usePeople.ts', '../utils/people.ts']
+const SOURCES = ['../pages/People.tsx', '../hooks/api/usePeople.ts', '../utils/people.ts', '../utils/shares.ts', '../utils/settlements.ts', '../components/TransactionActionsMenu.tsx']
   .map((path) => new URL(path, import.meta.url))
   .concat(readdirSync(new URL('../components/people/', import.meta.url)).filter((f) => /\.tsx?$/.test(f)).map((f) => new URL(`../components/people/${f}`, import.meta.url)))
 const sourceText = SOURCES.map((url) => readFileSync(url, 'utf8')).join('\n')
+// The menu is an existing file with Portuguese fallbacks of its own; only what the people screens added is checked for text
+const ownSourceText = SOURCES.filter((url) => !url.pathname.endsWith('TransactionActionsMenu.tsx'))
+  .map((url) => readFileSync(url, 'utf8'))
+  .join('\n')
 
 describe('people translations', () => {
   it('defines the keys', () => {
@@ -42,7 +46,7 @@ describe('people translations', () => {
 
   it('has no Portuguese text written into the screens', () => {
     // Comments aside, accented letters in the source mean text that bypassed the translations.
-    const code = sourceText.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+    const code = ownSourceText.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
     expect(code.match(/[À-ÿ]/g) ?? []).toEqual([])
   })
 })

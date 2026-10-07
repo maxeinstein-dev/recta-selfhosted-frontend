@@ -5,41 +5,25 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import enUS from '../i18n/en-US.json'
 import type { Person } from '../hooks/api/usePeople'
+import { apiMock } from '../test/fakes/apiMock'
 import { createPeopleServer, HttpError } from '../test/fakes/peopleServer'
 import type { PeopleServer } from '../test/fakes/peopleServer'
 import { isPeopleMissing, resetPeopleMissing } from '../utils/peopleAvailability'
 import People from './People'
 
 const ctx = vi.hoisted(() => ({
-  server: null as unknown,
   household: { id: 'hh-1', role: 'OWNER' } as { id: string; role: string } | null,
-  calls: [] as Array<{ method: string; url: string; payload?: unknown }>,
 }))
 const toastSuccess = vi.fn()
 const toastError = vi.fn()
-const server = (): PeopleServer => ctx.server as PeopleServer
+const server = (): PeopleServer => apiMock.server as PeopleServer
 
 // The page runs against its real hooks, helpers and the real en-US texts; only the HTTP layer, the contexts and the
 // formatters are replaced. The fake server answers like the API (see test/fakes/peopleServer.ts).
-vi.mock('../utils/api', () => {
-  const send = async (method: string, url: string, payload?: Record<string, unknown>) => {
-    ctx.calls.push({ method, url, payload })
-    return server().handle(method, url, payload)
-  }
-  return {
-    apiClient: {
-      get: async (url: string, params?: Record<string, unknown>) => (await send('GET', url, params)).body,
-      post: async (url: string, body?: Record<string, unknown>) => (await send('POST', url, body)).body,
-      patch: async (url: string, body?: Record<string, unknown>) => (await send('PATCH', url, body)).body,
-    },
-    axiosInstance: {
-      delete: async (url: string) => {
-        const response = await send('DELETE', url)
-        return { status: response.status, data: response.body }
-      },
-    },
-  }
-})
+vi.mock('../utils/api', async () => (await import('../test/fakes/apiMock')).apiModule)
+// The settlement dialog reads accounts and candidate transactions; these hooks pull in the Firebase-backed auth context
+vi.mock('../hooks/api/useAccounts', () => ({ useAccounts: () => ({ data: { accounts: [] } }) }))
+vi.mock('../hooks/api/useTransactions', () => ({ useTransactions: () => ({ data: { data: [] }, isFetching: false }) }))
 vi.mock('../hooks/useDefaultHousehold', () => ({
   useDefaultHousehold: () => ({ householdId: ctx.household?.id, household: ctx.household }),
 }))
@@ -88,12 +72,12 @@ function renderPage() {
 const NEW_PERSON = new RegExp(enUS.peopleNew)
 const money = (value: number) => `BRL ${value.toFixed(2)}`
 const listItem = (name: string) => screen.getByRole('button', { name: new RegExp(`^${name}`) })
-const sentOf = (method: string, url: string) => ctx.calls.filter((call) => call.method === method && call.url === url)
+const sentOf = (method: string, url: string) => apiMock.calls.filter((call) => call.method === method && call.url === url)
 
 beforeEach(() => {
-  ctx.server = seed()
+  apiMock.server = seed()
   ctx.household = { id: 'hh-1', role: 'OWNER' }
-  ctx.calls = []
+  apiMock.calls = []
 })
 
 afterEach(() => {
@@ -117,7 +101,7 @@ describe('People page: list and summary', () => {
   })
 
   it('says how many shares a person has, singular and plural', async () => {
-    const fake = ctx.server as PeopleServer
+    const fake = apiMock.server as PeopleServer
     fake.addShare('t-2', ANA.id, 5)
     renderPage()
     await screen.findByText(`Ana owes you ${money(35)}`)
@@ -135,7 +119,7 @@ describe('People page: list and summary', () => {
   })
 
   it('explains an empty household', async () => {
-    ctx.server = createPeopleServer()
+    apiMock.server = createPeopleServer()
     renderPage()
     expect(await screen.findByText(enUS.peopleEmptyTitle)).toBeTruthy()
     expect(screen.getByText(enUS.peopleEmptyHint)).toBeTruthy()
@@ -198,7 +182,7 @@ describe('People page: the statement of a person', () => {
   })
 
   it('pages the ledger by cursor and appends, never replacing what is shown', async () => {
-    const fake = ctx.server as PeopleServer
+    const fake = apiMock.server as PeopleServer
     for (let i = 0; i < 29; i += 1) {
       fake.addTransaction({ id: `bulk-${i}`, description: `Bulk ${String(i).padStart(2, '0')}`, amount: 10, date: `2026-09-${String((i % 28) + 1).padStart(2, '0')}` })
       fake.addShare(`bulk-${i}`, ANA.id, 1)
@@ -238,6 +222,66 @@ describe('People page: the statement of a person', () => {
     expect((await within(statement).findByRole('alert')).textContent).toBe('Ledger exploded')
     await user.click(within(statement).getByRole('button', { name: enUS.peopleRetry }))
     expect(await within(statement).findByText(enUS.peopleKindTheirShare)).toBeTruthy()
+  })
+})
+
+describe('People page: settlements', () => {
+  it('records a settlement from the statement and the balance follows', async () => {
+    const { user } = renderPage()
+    await user.click(await screen.findByRole('button', { name: /^Ana/ }))
+    await user.click(await screen.findByRole('button', { name: enUS.peopleSettleAction }))
+    const dialog = await screen.findByRole('dialog', { name: 'Record a settlement with Ana' })
+    expect((within(dialog).getByLabelText(enUS.amount) as HTMLInputElement).value).toBe('30,00')
+    await user.click(within(dialog).getByLabelText(enUS.peopleModeNone))
+    await user.click(within(dialog).getByRole('button', { name: enUS.peopleSettleAction }))
+
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(sentOf('POST', '/people/p-ana/settlements')).toHaveLength(1)
+    expect(await screen.findByText('All settled with Ana', { selector: 'p.mt-2' })).toBeTruthy()
+    const statement = screen.getByRole('region', { name: 'Statement of Ana' })
+    expect((await within(statement).findAllByText(enUS.peopleKindReceived)).length).toBeGreaterThan(0)
+  })
+
+  it('undoes a settlement after a confirmation, keeping the linked transaction', async () => {
+    server().addSettlement(ANA.id, 12.5, '2026-10-06')
+    const { user } = renderPage()
+    await user.click(await screen.findByRole('button', { name: /^Ana/ }))
+    const statement = await screen.findByRole('region', { name: 'Statement of Ana' })
+    await user.click(await within(statement).findByRole('button', { name: 'Undo the settlement of 2026-10-06' }))
+    expect(within(statement).getByText(enUS.peopleUndoHint)).toBeTruthy()
+    expect(sentOf('DELETE', '/settlements/st-3')).toHaveLength(0)
+    await user.click(within(statement).getByRole('button', { name: enUS.peopleUndo }))
+
+    await waitFor(() => expect(toastSuccess).toHaveBeenCalledWith(enUS.peopleUndone))
+    expect(server().state.settlements).toHaveLength(0)
+    expect(await screen.findByText(`Ana owes you ${money(30)}`, { selector: 'p.mt-2' })).toBeTruthy()
+  })
+
+  it('can cancel the undo, and a failed undo shows the error', async () => {
+    server().addSettlement(ANA.id, 12.5, '2026-10-06')
+    const { user } = renderPage()
+    await user.click(await screen.findByRole('button', { name: /^Ana/ }))
+    const statement = await screen.findByRole('region', { name: 'Statement of Ana' })
+    await user.click(await within(statement).findByRole('button', { name: 'Undo the settlement of 2026-10-06' }))
+    await user.click(within(statement).getByRole('button', { name: enUS.cancel }))
+    expect(within(statement).queryByText(enUS.peopleUndoHint)).toBeNull()
+
+    server().failNext((m) => m === 'DELETE', new HttpError(500, 'Cannot undo now'))
+    await user.click(within(statement).getByRole('button', { name: 'Undo the settlement of 2026-10-06' }))
+    await user.click(within(statement).getByRole('button', { name: enUS.peopleUndo }))
+    await waitFor(() => expect(toastError).toHaveBeenCalledWith('Cannot undo now'))
+    expect(server().state.settlements).toHaveLength(1)
+  })
+
+  it('a viewer cannot record or undo settlements', async () => {
+    server().addSettlement(ANA.id, 12.5, '2026-10-06')
+    ctx.household = { id: 'hh-1', role: 'VIEWER' }
+    const { user } = renderPage()
+    await user.click(await screen.findByRole('button', { name: /^Ana/ }))
+    const statement = await screen.findByRole('region', { name: 'Statement of Ana' })
+    await within(statement).findAllByText(enUS.peopleKindReceived)
+    expect(screen.queryByRole('button', { name: enUS.peopleSettleAction })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Undo the settlement of 2026-10-06' })).toBeNull()
   })
 })
 

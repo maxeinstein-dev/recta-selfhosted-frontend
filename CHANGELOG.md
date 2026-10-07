@@ -19,5 +19,14 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Import bank statements from the Transactions page: pick the destination account and an OFX or CSV file, review the preview (new rows versus duplicates, plus the lines that could not be read and a warning for credit card invoices) and confirm. The dialog cannot be closed while the import is being written, says how far it got if the server stopped half way, and the button hides when the server has no importer. Texts are available in all eight languages.
 - Component tests with jsdom and Testing Library (new devDependencies) for the import dialog.
 
+### Changed
+
+- The credit card form asks for a single closing day instead of the "best day" offset. Typing the due day fills the closing day with due day - 7 (due 9 closes on 2, due 3 on 26) until the user types their own; the card page shows the effective closing day as the best day to buy, and installments use it too.
+- Creating an account from the app (`addAccount`) now sends `closingDay` to the API, and no longer sends `bestDayOffset`.
+
+### Fixed
+
+- Installments on a card without a stored closing day are placed in the right invoice, using the closing day derived from the due day.
+
 <!-- Reference entries to their PR like this (see CONTRIBUTING.md): `... ([#123]).` and, at the bottom of this file,
      `[#123]: https://github.com/lucianodiisouza/recta-selfhosted-frontend/pull/123`. -->

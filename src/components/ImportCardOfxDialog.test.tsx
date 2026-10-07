@@ -462,16 +462,42 @@ describe('ImportCardOfxDialog: confirming', () => {
     expect(screen.getByText(`Bakery: ${enUS.cardOfxCausePossibleDuplicate}`)).toBeTruthy()
   })
 
-  it('says where the import stopped, as an alert and a toast, without the success toast', async () => {
-    confirmMutateAsync.mockResolvedValue({ created: 1, linked: 0, skipped: [], ids: ['a'], stoppedAt: { ref: 'r3', message: 'boom' } })
+  it('says the import stopped, in plain words (no raw ref, no server text), and offers to send it again', async () => {
+    confirmMutateAsync.mockResolvedValueOnce({ created: 1, linked: 0, skipped: [], ids: ['a'], stoppedAt: { ref: 'ofx:r3:0a1b2c3d', message: 'invalid byte sequence' } })
     const { user } = setup()
     await preview(user)
     await user.click(confirmButton())
 
-    const message = enUS.cardOfxResultStopped.replace('{ref}', 'r3').replace('{message}', 'boom')
-    expect(screen.getByRole('alert').textContent).toBe(message)
-    expect(toastError).toHaveBeenCalledWith(message)
+    expect(screen.getByRole('alert').textContent).toBe(enUS.cardOfxResultStopped)
+    expect(toastError).toHaveBeenCalledWith(enUS.cardOfxResultStopped)
+    expect(document.body.textContent).not.toContain('ofx:r3:0a1b2c3d')
+    expect(document.body.textContent).not.toContain('invalid byte sequence')
     expect(toastSuccess).not.toHaveBeenCalled()
+
+    // Sending again repeats the same request; the server skips what was saved.
+    const first = confirmMutateAsync.mock.calls[0]![0]
+    await user.click(screen.getByRole('button', { name: enUS.cardOfxRetry }))
+    expect(confirmMutateAsync).toHaveBeenCalledTimes(2)
+    expect(confirmMutateAsync.mock.calls[1]![0]).toEqual(first)
+    expect(screen.queryByRole('button', { name: enUS.cardOfxRetry })).toBeNull()
+    expect(toastSuccess).toHaveBeenCalledWith(enUS.cardOfxResultTitle)
+  })
+
+  it('answers a 409 (another import of the card is running) with its own message, keeping the dialog and the selection', async () => {
+    const { user, onClose } = setup()
+    await preview(user)
+    await user.selectOptions(actionOf('Bakery'), 'import')
+    confirmMutateAsync.mockRejectedValueOnce(Object.assign(new Error('An import of this card invoice is already running'), { status: 409 }))
+
+    await user.click(confirmButton())
+
+    expect(toastError).toHaveBeenLastCalledWith(enUS.cardOfxConfirmBusy)
+    expect(actionOf('Bakery').value).toBe('import')
+    expect(screen.queryByText(enUS.cardOfxResultTitle)).toBeNull()
+    expect(onClose).not.toHaveBeenCalled()
+    // And it can be sent again once the other import is over.
+    await user.click(confirmButton())
+    expect(screen.getByText(enUS.cardOfxResultTitle)).toBeTruthy()
   })
 
   it('keeps the selection when the confirm fails, and says a timeout is not "nothing imported"', async () => {

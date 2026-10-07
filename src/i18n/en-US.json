@@ -1143,8 +1143,10 @@
   "cardOfxCauseAlreadyImported": "already imported",
   "cardOfxCausePossibleDuplicate": "looks like a transaction typed by hand",
   "cardOfxCauseLinkRefused": "the transaction no longer fits",
-  "cardOfxResultStopped": "The import stopped at {ref}: {message}. Run it again to continue; lines already imported are skipped.",
+  "cardOfxResultStopped": "The import stopped before the end: some lines were saved and some were not. Use “Send again” to continue; the lines already saved are skipped.",
   "cardOfxConfirmFailed": "Could not import the invoice.",
   "cardOfxConfirmTimeout": "The server is taking longer than expected. The import may still be running: check the card's transactions before sending the file again (lines already imported are skipped).",
-  "cardOfxNothingToImport": "Nothing is set to import or link."
+  "cardOfxNothingToImport": "Nothing is set to import or link.",
+  "cardOfxConfirmBusy": "Another import of this card is already running. Wait for it to finish, then try again.",
+  "cardOfxRetry": "Send again"
 }

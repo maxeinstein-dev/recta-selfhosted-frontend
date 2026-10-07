@@ -1183,6 +1183,8 @@ export interface Translations {
   cardOfxCausePossibleDuplicate: string;
   cardOfxCauseLinkRefused: string;
   cardOfxResultStopped: string;
+  cardOfxConfirmBusy: string;
+  cardOfxRetry: string;
   cardOfxConfirmFailed: string;
   cardOfxConfirmTimeout: string;
   cardOfxNothingToImport: string;

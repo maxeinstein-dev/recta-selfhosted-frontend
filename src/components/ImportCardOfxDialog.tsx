@@ -9,7 +9,7 @@ import type { Translations } from '../context/I18nContext';
 import { TransactionType } from '../lib/enums';
 import { formatCurrency, formatDate, parseDateFromAPI } from '../utils/format';
 import CategoryCombobox from './CategoryCombobox';
-import { isImporterMissing, isTimeoutError } from '../utils/importStatement';
+import { isImportBusy, isImporterMissing, isTimeoutError } from '../utils/importStatement';
 import {
   KIND_KEYS,
   MAX_RENDERED_LINES,
@@ -172,13 +172,15 @@ const ImportCardOfxDialog = ({ open, onClose, account }: ImportCardOfxDialogProp
       const outcome = await confirmMutation.mutateAsync(buildConfirmRequest(preview, actions, categories));
       setResult(outcome);
       if (outcome.stoppedAt) {
-        showError(t.cardOfxResultStopped.replace('{ref}', outcome.stoppedAt.ref).replace('{message}', outcome.stoppedAt.message));
+        showError(t.cardOfxResultStopped);
       } else {
         success(t.cardOfxResultTitle);
       }
     } catch (err: unknown) {
+      // 409: another import of this card is running; nothing was done here, the selection stays as it is.
+      if (isImportBusy(err)) showError(t.cardOfxConfirmBusy);
       // No answer is not "nothing imported": the server may still be saving lines.
-      showError(isTimeoutError(err) ? t.cardOfxConfirmTimeout : getErrorMessage(err, t.cardOfxConfirmFailed));
+      else showError(isTimeoutError(err) ? t.cardOfxConfirmTimeout : getErrorMessage(err, t.cardOfxConfirmFailed));
     }
   };
 
@@ -299,9 +301,19 @@ const ImportCardOfxDialog = ({ open, onClose, account }: ImportCardOfxDialogProp
                 </span>
               </div>
               {result.stoppedAt && (
-                <p role="alert" className="text-sm text-red-600 dark:text-red-400">
-                  {t.cardOfxResultStopped.replace('{ref}', result.stoppedAt.ref).replace('{message}', result.stoppedAt.message)}
-                </p>
+                <div className="space-y-2">
+                  <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+                    {t.cardOfxResultStopped}
+                  </p>
+                  <button
+                    type="button"
+                    onClick={handleConfirm}
+                    disabled={isConfirming}
+                    className="px-4 py-2.5 text-sm font-light tracking-tight text-gray-900 dark:text-white bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-md hover:opacity-70 transition-opacity disabled:opacity-50"
+                  >
+                    {isConfirming ? t.cardOfxConfirming : t.cardOfxRetry}
+                  </button>
+                </div>
               )}
               {result.skipped.length > 0 && (
                 <ul className="text-sm text-gray-600 dark:text-gray-400 list-disc pl-5 max-h-40 overflow-y-auto">

@@ -1020,8 +1020,10 @@
   "cardOfxCauseAlreadyImported": "已导入",
   "cardOfxCausePossibleDuplicate": "类似手动录入的交易",
   "cardOfxCauseLinkRefused": "该交易已不再匹配",
-  "cardOfxResultStopped": "导入在 {ref} 处停止：{message}。请重新运行以继续；已导入的行会被跳过。",
+  "cardOfxResultStopped": "导入在中途停止：部分行已保存，部分行未保存。请点击“重新发送”继续；已保存的行会被跳过。",
   "cardOfxConfirmFailed": "无法导入账单。",
   "cardOfxConfirmTimeout": "服务器响应时间比预期更长。导入可能仍在进行：请先查看信用卡的交易，再重新发送文件（已导入的行会被跳过）。",
-  "cardOfxNothingToImport": "没有设置要导入或关联的内容。"
+  "cardOfxNothingToImport": "没有设置要导入或关联的内容。",
+  "cardOfxConfirmBusy": "此信用卡已有导入正在进行。请等待其完成后再试。",
+  "cardOfxRetry": "重新发送"
 }

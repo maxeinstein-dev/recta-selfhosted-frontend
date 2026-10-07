@@ -1160,8 +1160,10 @@
   "cardOfxCauseAlreadyImported": "já importada",
   "cardOfxCausePossibleDuplicate": "parece um lançamento digitado à mão",
   "cardOfxCauseLinkRefused": "o lançamento não serve mais",
-  "cardOfxResultStopped": "A importação parou em {ref}: {message}. Rode de novo para continuar; as linhas já importadas são puladas.",
+  "cardOfxResultStopped": "A importação parou antes do fim: algumas linhas foram salvas e outras não. Use “Enviar de novo” para continuar; as linhas já salvas são puladas.",
   "cardOfxConfirmFailed": "Não foi possível importar a fatura.",
   "cardOfxConfirmTimeout": "O servidor está demorando mais que o esperado. A importação pode ainda estar em andamento: confira os lançamentos do cartão antes de enviar o arquivo de novo (as linhas já importadas são puladas).",
-  "cardOfxNothingToImport": "Nada está marcado para importar ou vincular."
+  "cardOfxNothingToImport": "Nada está marcado para importar ou vincular.",
+  "cardOfxConfirmBusy": "Já há uma importação deste cartão em andamento. Aguarde terminar e tente de novo.",
+  "cardOfxRetry": "Enviar de novo"
 }

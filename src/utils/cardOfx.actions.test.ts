@@ -28,7 +28,7 @@ const line = (over: Partial<CardOfxLine> & Pick<CardOfxLine, 'ref' | 'merchant'>
 const DUP = { transactionId: 'tx-1', description: 'typed', date: '2026-11-09' }
 const lines: CardOfxLine[] = [
   line({ ref: 'a', merchant: 'Market' }),
-  line({ ref: 'b', merchant: 'Market' }),
+  line({ ref: 'b', merchant: 'Market', memo: 'Market - Parcela 2/3', installment: { number: 2, total: 3 } }),
   line({ ref: 'c', merchant: 'Bakery', possibleDuplicate: DUP }),
   line({ ref: 'd', merchant: 'Shoes', status: 'reconciled' }),
   line({ ref: 'e', merchant: 'Refund', type: 'INCOME', kind: 'refund' }),
@@ -75,6 +75,8 @@ describe('buildConfirmRequest', () => {
       expect(echoed).not.toHaveProperty('possibleDuplicate')
     }
     expect(request.lines[0]).toMatchObject({ ref: 'a', fitid: 'a', amount: 10, kind: 'purchase', merchant: 'Market', installment: null })
+    // The installment goes back as the preview gave it: the server rechecks it against the memo.
+    expect(request.lines[1]).toMatchObject({ ref: 'b', memo: 'Market - Parcela 2/3', installment: { number: 2, total: 3 } })
   })
 
   it('selects the lines to import, marks the look-alikes among them, and turns links into transaction ids', () => {

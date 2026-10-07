@@ -1083,8 +1083,10 @@
   "cardOfxCauseAlreadyImported": "ya importada",
   "cardOfxCausePossibleDuplicate": "parece una transacción escrita a mano",
   "cardOfxCauseLinkRefused": "la transacción ya no encaja",
-  "cardOfxResultStopped": "La importación se detuvo en {ref}: {message}. Vuelve a ejecutarla para continuar; las líneas ya importadas se omiten.",
+  "cardOfxResultStopped": "La importación se detuvo antes del final: algunas líneas se guardaron y otras no. Usa «Enviar de nuevo» para continuar; las líneas ya guardadas se omiten.",
   "cardOfxConfirmFailed": "No se pudo importar la factura.",
   "cardOfxConfirmTimeout": "El servidor tarda más de lo esperado. La importación puede seguir en curso: revisa las transacciones de la tarjeta antes de enviar el archivo otra vez (las líneas ya importadas se omiten).",
-  "cardOfxNothingToImport": "No hay nada marcado para importar o vincular."
+  "cardOfxNothingToImport": "No hay nada marcado para importar o vincular.",
+  "cardOfxConfirmBusy": "Ya hay una importación de esta tarjeta en curso. Espera a que termine e inténtalo de nuevo.",
+  "cardOfxRetry": "Enviar de nuevo"
 }

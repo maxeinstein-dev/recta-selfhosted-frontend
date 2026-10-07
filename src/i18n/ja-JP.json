@@ -1020,8 +1020,10 @@
   "cardOfxCauseAlreadyImported": "取り込み済み",
   "cardOfxCausePossibleDuplicate": "手入力した取引に似ています",
   "cardOfxCauseLinkRefused": "その取引はもう条件に合いません",
-  "cardOfxResultStopped": "取り込みは {ref} で停止しました: {message}。続けるにはもう一度実行してください。取り込み済みの行はスキップされます。",
+  "cardOfxResultStopped": "取り込みは途中で停止しました。保存された行とされていない行があります。「もう一度送信」で続行してください。保存済みの行はスキップされます。",
   "cardOfxConfirmFailed": "請求書を取り込めませんでした。",
   "cardOfxConfirmTimeout": "サーバーの応答に時間がかかっています。取り込みが続いている可能性があります。ファイルを再送する前にカードの取引を確認してください (取り込み済みの行はスキップされます)。",
-  "cardOfxNothingToImport": "取り込みまたは紐づけの対象がありません。"
+  "cardOfxNothingToImport": "取り込みまたは紐づけの対象がありません。",
+  "cardOfxConfirmBusy": "このカードの取り込みがすでに実行中です。完了するまで待ってから、もう一度お試しください。",
+  "cardOfxRetry": "もう一度送信"
 }

@@ -80,10 +80,11 @@ The repository has older type errors, listed in `tsc-baseline.txt` (one per line
 
 ### Tests
 
-`npm test` runs `src/**/*.test.ts` with Vitest in a Node environment (no DOM). For now the setup covers
-pure modules (functions in `src/utils`, calculation rules). `npx vitest run src/utils/file.test.ts` runs a
-single file; `npx vitest` starts watch mode. Component tests need `jsdom` and arrive with the first PR that
-requires them, together with that dependency.
+`npm test` runs `src/**/*.test.{ts,tsx}` with Vitest. Pure modules (functions in `src/utils`, calculation
+rules) run in the default Node environment. A component test opts into a DOM with a
+`// @vitest-environment jsdom` first line and renders with `@testing-library/react` (both are
+devDependencies); mock `useI18n` and API hooks instead of mounting providers. `npx vitest run path/to/file.test.ts`
+runs one file; `npx vitest` starts watch mode.
 
 ## Contribution rules
 

@@ -16,6 +16,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Tests with [Vitest](https://vitest.dev/): `npm test` runs `src/**/*.test.ts`, starting with tests for `sanitize`.
 - `npm run check:tsc`: runs `tsc --noEmit` and fails only on an error that is not in `tsc-baseline.txt` (the 92 errors that already existed).
 - Continuous integration on GitHub Actions: `check:tsc`, `lint`, `build` and `vitest` on every pull request and on `main`, on Node 20.19 and 22. On pull requests it also fails when `tsc-baseline.txt` grew compared with the base branch.
+- People page (menu entry "People") for expenses shared with someone who has no Recta account: what each person owes you or what you owe them, the net, and a statement per person with a running balance. People can be added, renamed, given nicknames, deactivated and deleted (a person with history is deactivated instead). The page and the menu entry hide when the server has no people routes.
 
 ### Fixed
 

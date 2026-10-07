@@ -17,5 +17,10 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - `npm run check:tsc`: runs `tsc --noEmit` and fails only on an error that is not in `tsc-baseline.txt` (the 92 errors that already existed).
 - Continuous integration on GitHub Actions: `check:tsc`, `lint`, `build` and `vitest` on every pull request and on `main`, on Node 20.19 and 22. On pull requests it also fails when `tsc-baseline.txt` grew compared with the base branch.
 
+### Fixed
+
+- Percentage labels of the pie charts (expenses by category, income by category, fixed vs variable) are no longer clipped at the top and bottom of the chart, including the fixed vs variable chart, whose legend takes space from the plot area.
+- The React Query devtools button (development only) no longer covers dialogs or the command menu.
+
 <!-- Reference entries to their PR like this (see CONTRIBUTING.md): `... ([#123]).` and, at the bottom of this file,
      `[#123]: https://github.com/lucianodiisouza/recta-selfhosted-frontend/pull/123`. -->

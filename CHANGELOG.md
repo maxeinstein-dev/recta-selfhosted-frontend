@@ -16,6 +16,13 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Tests with [Vitest](https://vitest.dev/): `npm test` runs `src/**/*.test.ts`, starting with tests for `sanitize`.
 - `npm run check:tsc`: runs `tsc --noEmit` and fails only on an error that is not in `tsc-baseline.txt` (the 92 errors that already existed).
 - Continuous integration on GitHub Actions: `check:tsc`, `lint`, `build` and `vitest` on every pull request and on `main`, on Node 20.19 and 22. On pull requests it also fails when `tsc-baseline.txt` grew compared with the base branch.
+- "Detect recurring" on the Recurring page: lists the monthly expenses found in the history (stable amounts and variable bills), lets you adjust amount, day and description and creates the chosen recurrences in one request. The button is hidden when the server has no detection route.
+- "Follow the last value" on recurrences: a toggle in the recurrence form, a badge in the list and, when editing the most recent occurrence, a note that the value carries to the next months and a confirmation when the server updated the recurrence. The toggle is offered only when the server reports the field.
+- Component tests with `jsdom` and Testing Library (dev dependencies), documented in `CONTRIBUTING.md`.
+
+### Changed
+
+- Editing a transaction sends the amount only when it changed, so a recurrence that follows the last value is not rewritten by an edit that only touches a note or the paid mark.
 
 ### Fixed
 

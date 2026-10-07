@@ -19,6 +19,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - "Detect recurring" on the Recurring page: lists the monthly expenses found in the history (stable amounts and variable bills), lets you adjust amount, day and description and creates the chosen recurrences in one request. The button is hidden when the server has no detection route.
 - "Follow the last value" on recurrences: a toggle in the recurrence form, a badge in the list and, when editing the most recent occurrence, a note that the value carries to the next months and a confirmation when the server updated the recurrence. The toggle is offered only when the server reports the field.
 - Component tests with `jsdom` and Testing Library (dev dependencies), documented in `CONTRIBUTING.md`.
+- Category manager in Settings: default and custom categories by income and expense with usage counts, create, rename, recolor, merge into another category of the same type (with a preview of what moves) and delete when unused. Merge and usage counts are hidden when the server does not report usage.
+- "Create <text>" option in the category picker of the transaction and recurrence forms: creates a custom category of the form's type and selects it.
 
 ### Changed
 

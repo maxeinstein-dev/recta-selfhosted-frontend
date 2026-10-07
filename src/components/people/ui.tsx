@@ -9,10 +9,13 @@ import { useI18n } from '../../context/I18nContext';
 export const FIELD_CLS =
   'border border-gray-200 dark:border-gray-800 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:ring-2 focus:ring-primary-500 disabled:opacity-50';
 export const INPUT_CLS = `w-full px-3 py-2.5 text-sm ${FIELD_CLS}`;
+export const INPUT_SM_CLS = `w-full px-2 py-1.5 text-sm ${FIELD_CLS}`;
 export const BTN_BASE = 'inline-flex items-center justify-center font-light tracking-tight rounded-md transition-opacity disabled:opacity-50 disabled:cursor-not-allowed';
 export const BTN_SECONDARY = `${BTN_BASE} px-4 py-2.5 text-sm text-gray-900 dark:text-white bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 hover:opacity-70`;
+export const BTN_SECONDARY_SM = `${BTN_BASE} px-3 py-1.5 text-xs text-gray-900 dark:text-white bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 hover:opacity-70`;
 export const BTN_PRIMARY = `${BTN_BASE} px-4 py-2.5 text-sm text-white bg-primary-600 dark:bg-primary-500 border border-primary-600 dark:border-primary-500 hover:opacity-80`;
 export const BTN_DANGER = `${BTN_BASE} px-4 py-2.5 text-sm text-white bg-red-500 border border-red-500 hover:opacity-80`;
+export const LINK_CLS = 'text-xs text-primary-600 dark:text-primary-400 hover:underline disabled:opacity-50';
 export const LABEL_CLS = 'block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1';
 export const CHECKBOX_CLS = 'h-4 w-4 rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 disabled:cursor-not-allowed disabled:opacity-60';
 export const TABLE_WRAP_CLS = 'overflow-x-auto border border-gray-200 dark:border-gray-800 rounded-md';
@@ -24,6 +27,8 @@ export const MUTED_CLS = 'text-gray-600 dark:text-gray-400';
 export const H4_CLS = 'text-sm font-medium text-gray-900 dark:text-white';
 export const BOX_CLS = 'rounded-md border border-gray-200 dark:border-gray-800 p-4 space-y-2';
 export const ERROR_CLS = 'text-xs text-red-600 dark:text-red-400';
+export const NOTICE_BOX_CLS =
+  'rounded-md border border-orange-300 dark:border-orange-800 bg-orange-50 dark:bg-orange-900/20 px-4 py-3 text-sm text-orange-900 dark:text-orange-200 space-y-1';
 
 export const getErrorMessage = (err: unknown, fallback: string): string =>
   err instanceof Error && err.message ? err.message : fallback;
@@ -38,6 +43,8 @@ interface DialogShellProps {
   icon?: ReactNode;
   /** Tailwind max-width class of the panel. */
   widthClass?: string;
+  /** Stacking level: a dialog opened from another one needs the higher one. */
+  zClass?: string;
   children: ReactNode;
 }
 
@@ -89,7 +96,7 @@ function trapTab(e: KeyboardEvent, panel: HTMLElement | null): void {
 }
 
 /** Portal, backdrop, scroll lock, ESC and Tab for the topmost shell only, focus in and back, and the close guard. */
-export const DialogShell = ({ open, onClose, canClose, titleId, title, icon, widthClass = 'max-w-2xl', children }: DialogShellProps) => {
+export const DialogShell = ({ open, onClose, canClose, titleId, title, icon, widthClass = 'max-w-2xl', zClass = 'z-[60]', children }: DialogShellProps) => {
   const { t } = useI18n();
   const canCloseRef = useRef(canClose);
   canCloseRef.current = canClose;
@@ -152,7 +159,7 @@ export const DialogShell = ({ open, onClose, canClose, titleId, title, icon, wid
     if (canCloseRef.current) onClose();
   };
   return createPortal(
-    <div className="fixed inset-0 z-[60] overflow-y-auto">
+    <div className={`fixed inset-0 ${zClass} overflow-y-auto`}>
       <div className="fixed inset-0 bg-black/40 animate-fade-in transition-opacity duration-300 ease-out" onClick={requestClose} aria-hidden="true" />
       <div className="flex min-h-full items-center justify-center p-4">
         <div ref={panelRef} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}

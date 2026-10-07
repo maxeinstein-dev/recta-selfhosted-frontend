@@ -12,6 +12,7 @@ import { PageHeader } from '../components/PageHeader';
 import { PageButton } from '../components/PageButton';
 import PersonFormDialog from '../components/people/PersonFormDialog';
 import PersonDetail from '../components/people/PersonDetail';
+import SettlementDialog from '../components/people/SettlementDialog';
 import { BALANCE_TONE, balanceSentence } from '../components/people/peopleText';
 import { CHECKBOX_CLS, Chip, ERROR_CLS, MUTED_CLS, getErrorMessage } from '../components/people/ui';
 
@@ -31,6 +32,7 @@ const People = () => {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [formOpen, setFormOpen] = useState(false);
   const [editing, setEditing] = useState<Person | null>(null);
+  const [settling, setSettling] = useState<Person | null>(null);
 
   const balances = useMemo(() => balancesQuery.data ?? [], [balancesQuery.data]);
   const rows = useMemo(() => mergePeopleRows(balances, peopleQuery.data ?? [], showInactive), [balances, peopleQuery.data, showInactive]);
@@ -40,6 +42,7 @@ const People = () => {
   // Another household: the person selected there does not exist here.
   useEffect(() => {
     setSelectedId(null);
+    setSettling(null);
   }, [householdId]);
 
   const openCreate = () => {
@@ -132,7 +135,7 @@ const People = () => {
         <div className="min-w-0">
           {selected ? (
             <PersonDetail key={selected.person.id} householdId={householdId} person={selected.person} balance={selected.balance} canEdit={canEdit}
-              onEdit={(person) => { setEditing(person); setFormOpen(true); }} onDeleted={() => setSelectedId(null)} />
+              onEdit={(person) => { setEditing(person); setFormOpen(true); }} onSettle={setSettling} onDeleted={() => setSelectedId(null)} />
           ) : (
             !loading && rows.length > 0 && <p className={`text-sm ${MUTED_CLS}`}>{t.peoplePickOne}</p>
           )}
@@ -142,6 +145,10 @@ const People = () => {
       {formOpen && (
         <PersonFormDialog open={formOpen} onClose={() => setFormOpen(false)} householdId={householdId} person={editing}
           onSaved={(person) => { if (!editing) setSelectedId(person.id); }} />
+      )}
+      {settling && (
+        <SettlementDialog open onClose={() => setSettling(null)} householdId={householdId} person={settling}
+          balance={rows.find((row) => row.person.id === settling.id)?.balance?.balance ?? 0} />
       )}
     </div>
   );

@@ -16,10 +16,12 @@ interface PersonFormDialogProps {
   person: Person | null;
   /** Called with the saved person (the page selects a new one). */
   onSaved?: (person: Person) => void;
+  /** Stacking level when opened from another dialog. */
+  zClass?: string;
 }
 
 /** Add or edit a person: name, nicknames (comma separated) and, when editing, whether the person is active. */
-const PersonFormDialog = ({ open, onClose, householdId, person, onSaved }: PersonFormDialogProps) => {
+const PersonFormDialog = ({ open, onClose, householdId, person, onSaved, zClass }: PersonFormDialogProps) => {
   const { t } = useI18n();
   const { success, error: showError } = useToastContext();
   const { data: allPeople } = usePeople(householdId, true);
@@ -74,7 +76,7 @@ const PersonFormDialog = ({ open, onClose, householdId, person, onSaved }: Perso
   };
 
   return (
-    <DialogShell open={open} onClose={onClose} canClose={!saving} titleId="person-form-title" widthClass="max-w-lg"
+    <DialogShell open={open} onClose={onClose} canClose={!saving} titleId="person-form-title" widthClass="max-w-lg" zClass={zClass}
       title={person ? t.peopleFormEditTitle : t.peopleNew} icon={<UserPlus className="h-5 w-5 text-gray-500 dark:text-gray-400 mr-3 flex-shrink-0" aria-hidden="true" />}>
       <div className="space-y-4 min-w-0">
         <div>

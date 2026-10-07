@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Pencil, Trash2 } from 'lucide-react';
-import { useDeletePerson, usePersonLedger } from '../../hooks/api/usePeople';
+import { HandCoins, Pencil, Trash2 } from 'lucide-react';
+import { useDeletePerson, useDeleteSettlement, usePersonLedger } from '../../hooks/api/usePeople';
 import type { LedgerEntry, Person, PersonBalance } from '../../hooks/api/usePeople';
 import { useToastContext } from '../../context/ToastContext';
 import { useCurrency } from '../../context/CurrencyContext';
@@ -9,7 +9,7 @@ import { formatCurrency, formatDate, parseDateFromAPI } from '../../utils/format
 import { balanceStatus, fillText, ledgerKind, reaisToCents } from '../../utils/people';
 import { BALANCE_TONE, balanceSentence, ledgerKindText } from './peopleText';
 import {
-  BOX_CLS, BTN_DANGER, BTN_SECONDARY, Chip, ERROR_CLS, H4_CLS, MUTED_CLS, TABLE_WRAP_CLS, TBODY_CLS, TD_CLS, TH_CLS, THEAD_ROW_CLS,
+  BOX_CLS, BTN_DANGER, BTN_PRIMARY, BTN_SECONDARY, Chip, ERROR_CLS, H4_CLS, LINK_CLS, MUTED_CLS, TABLE_WRAP_CLS, TBODY_CLS, TD_CLS, TH_CLS, THEAD_ROW_CLS,
   getErrorMessage,
 } from './ui';
 
@@ -20,12 +20,13 @@ interface PersonDetailProps {
   balance: PersonBalance | null;
   canEdit: boolean;
   onEdit: (person: Person) => void;
+  onSettle: (person: Person) => void;
   /** The person is gone (204): the page stops showing them. */
   onDeleted: () => void;
 }
 
 /** The person's detail: balance, actions and the ledger (cursor pages, running balance). */
-const PersonDetail = ({ householdId, person, balance, canEdit, onEdit, onDeleted }: PersonDetailProps) => {
+const PersonDetail = ({ householdId, person, balance, canEdit, onEdit, onSettle, onDeleted }: PersonDetailProps) => {
   const { t } = useI18n();
   const { success, error: showError } = useToastContext();
   const { baseCurrency } = useCurrency();
@@ -34,6 +35,8 @@ const PersonDetail = ({ householdId, person, balance, canEdit, onEdit, onDeleted
 
   const ledger = usePersonLedger(householdId, person.id);
   const deletePerson = useDeletePerson();
+  const deleteSettlement = useDeleteSettlement();
+  const [undoId, setUndoId] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const cancelDeleteRef = useRef<HTMLButtonElement>(null);
@@ -65,6 +68,19 @@ const PersonDetail = ({ householdId, person, balance, canEdit, onEdit, onDeleted
     }
   };
 
+  const handleUndo = async (id: string) => {
+    setBusy(true);
+    try {
+      await deleteSettlement.mutateAsync(id);
+      setUndoId(null);
+      success(t.peopleUndone);
+    } catch (err: unknown) {
+      showError(getErrorMessage(err, t.peopleUndoFailed));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
     <section aria-label={fillText(t.peopleStatementAria, { name: person.name })} className="space-y-5 min-w-0">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -78,6 +94,10 @@ const PersonDetail = ({ householdId, person, balance, canEdit, onEdit, onDeleted
         </div>
         {canEdit && (
           <div className="flex flex-wrap gap-2">
+            <button type="button" onClick={() => onSettle(person)} disabled={busy} className={BTN_PRIMARY}>
+              <HandCoins className="h-4 w-4 mr-2" aria-hidden="true" />
+              {t.peopleSettleAction}
+            </button>
             <button type="button" onClick={() => onEdit(person)} disabled={busy} className={BTN_SECONDARY}>
               <Pencil className="h-4 w-4 mr-2" aria-hidden="true" />
               {t.edit}
@@ -139,6 +159,7 @@ const PersonDetail = ({ householdId, person, balance, canEdit, onEdit, onDeleted
                   <th className={TH_CLS}>{t.type}</th>
                   <th className={`${TH_CLS} text-right`}>{t.amount}</th>
                   <th className={`${TH_CLS} text-right`}>{t.balance}</th>
+                  <th className={TH_CLS} aria-hidden="true" />
                 </tr>
               </thead>
               <tbody className={TBODY_CLS}>
@@ -163,6 +184,22 @@ const PersonDetail = ({ householdId, person, balance, canEdit, onEdit, onDeleted
                       </td>
                       <td className={`${TD_CLS} whitespace-nowrap text-right`} title={balanceSentence(t, person.name, entry.balanceAfter, money)}>
                         <span className={BALANCE_TONE[after.kind]}>{signedMoney(reaisToCents(entry.balanceAfter))}</span>
+                      </td>
+                      <td className={`${TD_CLS} whitespace-nowrap text-right`}>
+                        {entry.kind === 'settlement' && canEdit && (
+                          undoId === entry.id ? (
+                            <span className="inline-flex flex-col items-end gap-1">
+                              <span className={`text-xs ${MUTED_CLS}`}>{t.peopleUndoHint}</span>
+                              <span className="inline-flex gap-2">
+                                <button type="button" onClick={() => void handleUndo(entry.id)} disabled={busy} className={LINK_CLS}>{t.peopleUndo}</button>
+                                <button type="button" onClick={() => setUndoId(null)} disabled={busy} className={LINK_CLS}>{t.cancel}</button>
+                              </span>
+                            </span>
+                          ) : (
+                            <button type="button" onClick={() => setUndoId(entry.id)} disabled={busy} className={LINK_CLS}
+                              aria-label={fillText(t.peopleUndoAria, { date: formatDate(parseDateFromAPI(entry.date)) })}>{t.peopleUndoSettlement}</button>
+                          )
+                        )}
                       </td>
                     </tr>
                   );

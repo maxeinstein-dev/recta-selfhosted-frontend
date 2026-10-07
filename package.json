@@ -9,6 +9,7 @@
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx,js --report-unused-disable-directives",
     "test": "vitest run",
+    "check:tsc": "node scripts/check-tsc-baseline.mjs",
     "prepare": "husky",
     "bump-version": "node scripts/bump-version.js"
   },

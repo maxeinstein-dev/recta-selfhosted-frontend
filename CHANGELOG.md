@@ -8,6 +8,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 ## [Unreleased]
 
+### Fixed
+
+- Percentage labels of the pie charts (expenses by category, income by category, fixed vs variable) are no longer clipped at the top and bottom of the chart, including the fixed vs variable chart, whose legend takes space from the plot area.
+- The React Query devtools button (development only) no longer covers dialogs or the command menu.
+
 ### Added
 
 - Pull request template in `.github/pull_request_template.md`: test plan, commit attribution, release impact, CHANGELOG gate and how to revert.

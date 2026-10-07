@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # The "prepare" script installs the husky hooks, which make no sense in CI
+  # (the commit hook asks for a version bump interactively).
+  HUSKY: '0'
+
+jobs:
+  gates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # Vite 7 requires Node 20.19 or newer.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # The codebase carries older type errors (tsc-baseline.txt): the gate fails only on new ones.
+      - name: Typecheck (no new errors)
+        run: npm run check:tsc
+
+      - name: Lint
+        run: npm run lint
+
+      # "vite build" does not type-check; that is why the typecheck above is its own step.
+      - name: Build
+        run: npm run build
+
+      - name: Tests
+        run: npm test
+
+      - name: Whitespace errors (git diff --check)
+        if: github.event_name == 'pull_request'
+        run: git diff --check "origin/${{ github.base_ref }}...HEAD"

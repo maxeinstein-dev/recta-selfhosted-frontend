@@ -7,8 +7,19 @@ import type { ApiResponse } from '../../utils/api';
 
 export type CardOfxKind = 'purchase' | 'refund' | 'discount' | 'payment';
 
-/** new: a line to import; payment: a "payment received" line. */
-export type CardOfxStatus = 'new' | 'payment';
+/**
+ * new: no transaction holds the line yet; reconciled: an earlier import (or a link) already holds it; payment: a
+ * "payment received" line.
+ */
+export type CardOfxStatus = 'new' | 'reconciled' | 'payment';
+
+/** A transaction typed by hand that looks like the same purchase (same direction, amount and a date within 3 days). */
+export interface CardOfxPossibleDuplicate {
+  transactionId: string;
+  description: string | null;
+  /** YYYY-MM-DD */
+  date: string;
+}
 
 export interface CardOfxLine {
   ref: string;
@@ -23,6 +34,8 @@ export interface CardOfxLine {
   merchant: string;
   installment: { number: number; total: number } | null;
   status: CardOfxStatus;
+  /** Only on new lines. */
+  possibleDuplicate: CardOfxPossibleDuplicate | null;
 }
 
 export type CardOfxSkipReason =
@@ -38,7 +51,8 @@ export type CardOfxWarning =
   | 'period-end-missing'
   | 'card-without-due-day'
   | 'card-without-closing-day'
-  | 'balance-mismatch';
+  | 'balance-mismatch'
+  | 'possible-duplicates';
 
 export type CardOfxPaymentState = 'matches' | 'differs' | 'missing' | 'undetermined';
 
@@ -62,10 +76,12 @@ export interface CardOfxPreview {
   /** The debt the file states (positive), null when it has none. */
   ledgerBalance: number | null;
   lines: CardOfxLine[];
+  /** What the household last gave each merchant of the new lines. */
+  categorySuggestions: Array<{ merchant: string; type: 'INCOME' | 'EXPENSE'; categoryName: string }>;
   /** The first 100 only; `totals.skipped` has the count. */
   skipped: Array<{ position: number; reason: CardOfxSkipReason }>;
   payment: CardOfxPayment | null;
-  totals: { lines: number; new: number; payments: number; skipped: number };
+  totals: { lines: number; new: number; reconciled: number; payments: number; skipped: number; possibleDuplicates: number };
   warnings: CardOfxWarning[];
 }
 

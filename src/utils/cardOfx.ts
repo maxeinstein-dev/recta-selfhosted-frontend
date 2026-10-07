@@ -1,5 +1,8 @@
+import type { CardOfxConfirmRequest, CardOfxSkipCause } from '../hooks/api/useCardOfxConfirm';
 import type {
   CardOfxKind,
+  CardOfxLine,
+  CardOfxPreview,
   CardOfxPaymentState,
   CardOfxSkipReason,
   CardOfxStatus,
@@ -54,6 +57,7 @@ export const WARNING_KEYS = {
   'card-without-due-day': 'cardOfxWarningCardWithoutDueDay',
   'card-without-closing-day': 'cardOfxWarningCardWithoutClosingDay',
   'balance-mismatch': 'cardOfxWarningBalanceMismatch',
+  'possible-duplicates': 'cardOfxWarningPossibleDuplicates',
 } as const satisfies Record<CardOfxWarning, string>;
 
 export const SKIP_REASON_KEYS = {
@@ -67,6 +71,7 @@ export const SKIP_REASON_KEYS = {
 
 export const STATUS_KEYS = {
   new: 'cardOfxStatusNew',
+  reconciled: 'cardOfxStatusReconciled',
   payment: 'cardOfxStatusPayment',
 } as const satisfies Record<CardOfxStatus, string>;
 
@@ -108,3 +113,92 @@ export function resetCardOfxMissing(): void {
   importerMissing = false;
   listeners.forEach((listener) => listener());
 }
+
+// ---------------------------------------------------------------------------
+// What to do with each line
+// ---------------------------------------------------------------------------
+
+/** import: create a transaction; skip: leave it out; link: record it as represented by the look-alike transaction. */
+export type CardOfxLineAction = 'import' | 'skip' | 'link';
+
+/** A line the user can decide about: new, and not a payment. */
+export function isActionable(line: Pick<CardOfxLine, 'status' | 'kind'>): boolean {
+  return line.status === 'new' && line.kind !== 'payment';
+}
+
+/** Key of a merchant category: the same merchant can be a purchase and a refund. */
+export function categoryKey(type: 'INCOME' | 'EXPENSE', merchant: string): string {
+  return `${type}|${merchant}`;
+}
+
+/** New lines are imported; the ones that look like a hand-typed transaction are skipped until the user decides. */
+export function defaultActions(preview: Pick<CardOfxPreview, 'lines'>): Record<string, CardOfxLineAction> {
+  const actions: Record<string, CardOfxLineAction> = {};
+  for (const line of preview.lines) {
+    if (isActionable(line)) actions[line.ref] = line.possibleDuplicate ? 'skip' : 'import';
+  }
+  return actions;
+}
+
+/** The category the household last gave each merchant, by categoryKey. */
+export function suggestedCategories(preview: Pick<CardOfxPreview, 'categorySuggestions'>): Record<string, string> {
+  return Object.fromEntries(preview.categorySuggestions.map((s) => [categoryKey(s.type, s.merchant), s.categoryName]));
+}
+
+export function actionCounts(actions: Readonly<Record<string, CardOfxLineAction>>): { import: number; link: number; skip: number } {
+  const counts = { import: 0, link: 0, skip: 0 };
+  for (const action of Object.values(actions)) counts[action] += 1;
+  return counts;
+}
+
+/** Merchants whose lines are going to be created, once each per direction, in line order. */
+export function merchantsToImport(
+  preview: Pick<CardOfxPreview, 'lines'>,
+  actions: Readonly<Record<string, CardOfxLineAction>>,
+): Array<{ merchant: string; type: 'INCOME' | 'EXPENSE' }> {
+  const seen = new Set<string>();
+  const out: Array<{ merchant: string; type: 'INCOME' | 'EXPENSE' }> = [];
+  for (const line of preview.lines) {
+    const key = categoryKey(line.type, line.merchant);
+    if (actions[line.ref] !== 'import' || seen.has(key)) continue;
+    seen.add(key);
+    out.push({ merchant: line.merchant, type: line.type });
+  }
+  return out;
+}
+
+/**
+ * The confirm request: every preview line echoed (the server checks them against their own content), the lines to
+ * create, the ones to create although they look like a hand-typed transaction, the links, and the category of each
+ * merchant that has one.
+ */
+export function buildConfirmRequest(
+  preview: Pick<CardOfxPreview, 'accountId' | 'lines'>,
+  actions: Readonly<Record<string, CardOfxLineAction>>,
+  categories: Readonly<Record<string, string>>,
+): CardOfxConfirmRequest {
+  const lines = preview.lines.map(({ status: _status, possibleDuplicate: _duplicate, ...line }) => line);
+  const importing = preview.lines.filter((l) => actions[l.ref] === 'import');
+  const links = preview.lines.flatMap((l) =>
+    actions[l.ref] === 'link' && l.possibleDuplicate ? [{ ref: l.ref, transactionId: l.possibleDuplicate.transactionId }] : [],
+  );
+  const categoryMap = merchantsToImport(preview, actions).flatMap(({ merchant, type }) => {
+    const categoryName = categories[categoryKey(type, merchant)];
+    return categoryName ? [{ merchant, type, categoryName }] : [];
+  });
+  return {
+    accountId: preview.accountId,
+    lines,
+    selectedRefs: importing.map((l) => l.ref),
+    createDespiteDuplicate: importing.filter((l) => l.possibleDuplicate).map((l) => l.ref),
+    links,
+    categoryMap,
+  };
+}
+
+// Translation key of the reason a selected line was left out.
+export const SKIP_CAUSE_KEYS = {
+  'already-imported': 'cardOfxCauseAlreadyImported',
+  'possible-duplicate': 'cardOfxCausePossibleDuplicate',
+  'link-refused': 'cardOfxCauseLinkRefused',
+} as const satisfies Record<CardOfxSkipCause, string>;

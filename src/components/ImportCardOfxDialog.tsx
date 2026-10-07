@@ -1,28 +1,42 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, FileUp, ReceiptText, X } from 'lucide-react';
+import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
 import { useToastContext } from '../context/ToastContext';
 import { useCurrency } from '../context/CurrencyContext';
 import { useI18n } from '../context/I18nContext';
 import type { Translations } from '../context/I18nContext';
+import { TransactionType } from '../lib/enums';
 import { formatCurrency, formatDate, parseDateFromAPI } from '../utils/format';
+import CategoryCombobox from './CategoryCombobox';
 import { isImporterMissing, isTimeoutError } from '../utils/importStatement';
 import {
   KIND_KEYS,
   MAX_RENDERED_LINES,
   PAYMENT_STATE_KEYS,
+  SKIP_CAUSE_KEYS,
   SKIP_REASON_KEYS,
   STATUS_KEYS,
   WARNING_KEYS,
   CARD_OFX_MAX_FILE_BYTES,
+  actionCounts,
+  buildConfirmRequest,
   cardOfxFileProblem,
+  categoryKey,
+  defaultActions,
+  isActionable,
+  merchantsToImport,
+  suggestedCategories,
   markCardOfxMissing,
   monthKeyLabel,
   monthLabel,
   parseMonthInput,
 } from '../utils/cardOfx';
+import type { CardOfxLineAction } from '../utils/cardOfx';
 import { useCardOfxPreview } from '../hooks/api/useCardOfxPreview';
 import type { CardOfxPreview, CardOfxStatus } from '../hooks/api/useCardOfxPreview';
+import { useCardOfxConfirm } from '../hooks/api/useCardOfxConfirm';
+import type { CardOfxConfirmResult } from '../hooks/api/useCardOfxConfirm';
 
 interface ImportCardOfxDialogProps {
   open: boolean;
@@ -36,23 +50,36 @@ const getErrorMessage = (err: unknown, fallback: string): string =>
 
 const STATUS_STYLES: Record<CardOfxStatus, string> = {
   new: 'bg-green-100 dark:bg-green-900/40 text-green-800 dark:text-green-300',
+  reconciled: 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300',
   payment: 'bg-blue-100 dark:bg-blue-900/40 text-blue-800 dark:text-blue-300',
 };
 
 /**
- * Preview of a credit card invoice (.ofx): which invoice month it is, what it holds, and which lines the app already
- * has. It reads the file and shows; nothing is saved from here.
+ * Import of a credit card invoice (.ofx) in three steps: the file, the preview (which invoice month it is, what it
+ * holds, which lines the app already has, and what to do with each new one), and the result. Nothing is saved before
+ * the user confirms.
  */
 const ImportCardOfxDialog = ({ open, onClose, account }: ImportCardOfxDialogProps) => {
-  const { error: showError } = useToastContext();
+  const { success, error: showError } = useToastContext();
   const { baseCurrency } = useCurrency();
   const { t } = useI18n();
+  const { householdId } = useDefaultHousehold();
   const previewMutation = useCardOfxPreview();
+  const confirmMutation = useCardOfxConfirm();
 
   const [file, setFile] = useState<File | null>(null);
   const [monthInput, setMonthInput] = useState('');
   const [preview, setPreview] = useState<CardOfxPreview | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [actions, setActions] = useState<Record<string, CardOfxLineAction>>({});
+  const [categories, setCategories] = useState<Record<string, string>>({});
+  const [result, setResult] = useState<CardOfxConfirmResult | null>(null);
+
+  const isConfirming = confirmMutation.isPending;
+  // Closing while the server is writing would hide the outcome (and the "stopped half way" message) from the user.
+  const requestClose = useCallback(() => {
+    if (!isConfirming) onClose();
+  }, [isConfirming, onClose]);
 
   // Reset the state whenever the dialog opens.
   useEffect(() => {
@@ -61,6 +88,9 @@ const ImportCardOfxDialog = ({ open, onClose, account }: ImportCardOfxDialogProp
       setMonthInput('');
       setPreview(null);
       setFormError(null);
+      setActions({});
+      setCategories({});
+      setResult(null);
     }
   }, [open, account.id]);
 
@@ -70,14 +100,14 @@ const ImportCardOfxDialog = ({ open, onClose, account }: ImportCardOfxDialogProp
     const originalStyle = window.getComputedStyle(document.body).overflow;
     document.body.style.overflow = 'hidden';
     const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key === 'Escape') requestClose();
     };
     window.addEventListener('keydown', handleEscape);
     return () => {
       document.body.style.overflow = originalStyle;
       window.removeEventListener('keydown', handleEscape);
     };
-  }, [open, onClose]);
+  }, [open, requestClose]);
 
   if (!open) return null;
 
@@ -117,6 +147,8 @@ const ImportCardOfxDialog = ({ open, onClose, account }: ImportCardOfxDialogProp
     try {
       const result = await previewMutation.mutateAsync({ accountId: account.id, file, monthOverride });
       setPreview(result);
+      setActions(defaultActions(result));
+      setCategories(suggestedCategories(result));
     } catch (err: unknown) {
       if (isImporterMissing(err)) {
         markCardOfxMissing();
@@ -129,13 +161,38 @@ const ImportCardOfxDialog = ({ open, onClose, account }: ImportCardOfxDialogProp
     }
   };
 
+  const handleConfirm = async () => {
+    if (!preview) return;
+    setFormError(null);
+    if (counts.import + counts.link === 0) {
+      setFormError(t.cardOfxNothingToImport);
+      return;
+    }
+    try {
+      const outcome = await confirmMutation.mutateAsync(buildConfirmRequest(preview, actions, categories));
+      setResult(outcome);
+      if (outcome.stoppedAt) {
+        showError(t.cardOfxResultStopped.replace('{ref}', outcome.stoppedAt.ref).replace('{message}', outcome.stoppedAt.message));
+      } else {
+        success(t.cardOfxResultTitle);
+      }
+    } catch (err: unknown) {
+      // No answer is not "nothing imported": the server may still be saving lines.
+      showError(isTimeoutError(err) ? t.cardOfxConfirmTimeout : getErrorMessage(err, t.cardOfxConfirmFailed));
+    }
+  };
+
+  const setAction = (ref: string, action: CardOfxLineAction) => setActions((current) => ({ ...current, [ref]: action }));
+
   const label = (key: keyof Translations) => t[key] as string;
+  const counts = actionCounts(actions);
+  const merchants = preview ? merchantsToImport(preview, actions) : [];
 
   return createPortal(
     <div className="fixed inset-0 z-[60] overflow-y-auto">
       <div
         className="fixed inset-0 bg-black/40 animate-fade-in transition-opacity duration-300 ease-out"
-        onClick={onClose}
+        onClick={requestClose}
         aria-hidden="true"
       />
 
@@ -154,7 +211,8 @@ const ImportCardOfxDialog = ({ open, onClose, account }: ImportCardOfxDialogProp
               </h3>
             </div>
             <button
-              onClick={onClose}
+              onClick={requestClose}
+              disabled={isConfirming}
               aria-label={t.close}
               className="text-gray-400 dark:text-gray-500 hover:opacity-70 transition-opacity p-1"
             >
@@ -211,7 +269,7 @@ const ImportCardOfxDialog = ({ open, onClose, account }: ImportCardOfxDialogProp
               <div className="flex gap-3 justify-end pt-2">
                 <button
                   type="button"
-                  onClick={onClose}
+                  onClick={requestClose}
                   className="px-4 py-2.5 text-sm font-light tracking-tight text-gray-900 dark:text-white bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-md hover:opacity-70 transition-opacity"
                 >
                   {t.cancel}
@@ -223,6 +281,47 @@ const ImportCardOfxDialog = ({ open, onClose, account }: ImportCardOfxDialogProp
                   className="px-4 py-2.5 text-sm font-light tracking-tight text-white bg-primary-600 dark:bg-primary-500 border border-primary-600 dark:border-primary-500 rounded-md hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {isPreviewing ? t.cardOfxAnalyzing : t.cardOfxPreview}
+                </button>
+              </div>
+            </div>
+          ) : result !== null ? (
+            <div className="space-y-4 min-w-0">
+              <p className="font-medium text-gray-700 dark:text-gray-200">{t.cardOfxResultTitle}</p>
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full font-medium ${STATUS_STYLES.new}`}>
+                  {t.cardOfxResultCreated.replace('{count}', String(result.created))}
+                </span>
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full font-medium ${STATUS_STYLES.payment}`}>
+                  {t.cardOfxResultLinked.replace('{count}', String(result.linked))}
+                </span>
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full font-medium ${STATUS_STYLES.reconciled}`}>
+                  {t.cardOfxResultSkipped.replace('{count}', String(result.skipped.length))}
+                </span>
+              </div>
+              {result.stoppedAt && (
+                <p role="alert" className="text-sm text-red-600 dark:text-red-400">
+                  {t.cardOfxResultStopped.replace('{ref}', result.stoppedAt.ref).replace('{message}', result.stoppedAt.message)}
+                </p>
+              )}
+              {result.skipped.length > 0 && (
+                <ul className="text-sm text-gray-600 dark:text-gray-400 list-disc pl-5 max-h-40 overflow-y-auto">
+                  {result.skipped.map((item) => {
+                    const line = preview?.lines.find((l) => l.ref === item.ref);
+                    return (
+                      <li key={item.ref}>
+                        {line?.memo ?? item.ref}: {label(SKIP_CAUSE_KEYS[item.cause])}
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2.5 text-sm font-light tracking-tight text-white bg-primary-600 dark:bg-primary-500 border border-primary-600 dark:border-primary-500 rounded-md hover:opacity-80 transition-opacity"
+                >
+                  {t.close}
                 </button>
               </div>
             </div>
@@ -250,6 +349,9 @@ const ImportCardOfxDialog = ({ open, onClose, account }: ImportCardOfxDialogProp
               <div className="flex flex-wrap items-center gap-2 text-sm">
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full font-medium ${STATUS_STYLES.new}`}>
                   {t.cardOfxCountNew.replace('{count}', String(preview.totals.new))}
+                </span>
+                <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full font-medium ${STATUS_STYLES.reconciled}`}>
+                  {t.cardOfxCountReconciled.replace('{count}', String(preview.totals.reconciled))}
                 </span>
                 <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full font-medium ${STATUS_STYLES.payment}`}>
                   {t.cardOfxCountPayments.replace('{count}', String(preview.totals.payments))}
@@ -306,6 +408,7 @@ const ImportCardOfxDialog = ({ open, onClose, account }: ImportCardOfxDialogProp
                       <th className="px-3 py-2 font-medium text-gray-700 dark:text-gray-200 text-right">{t.amount}</th>
                       <th className="px-3 py-2 font-medium text-gray-700 dark:text-gray-200">{t.type}</th>
                       <th className="px-3 py-2 font-medium text-gray-700 dark:text-gray-200">{t.cardOfxStatus}</th>
+                      <th className="px-3 py-2 font-medium text-gray-700 dark:text-gray-200">{t.cardOfxAction}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-200 dark:divide-gray-800">
@@ -316,8 +419,15 @@ const ImportCardOfxDialog = ({ open, onClose, account }: ImportCardOfxDialogProp
                           <td className="px-3 py-2 whitespace-nowrap text-gray-900 dark:text-white">
                             {formatDate(parseDateFromAPI(line.date))}
                           </td>
-                          <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[240px] truncate" title={line.memo}>
-                            {line.memo}
+                          <td className="px-3 py-2 text-gray-900 dark:text-white max-w-[240px]" title={line.memo}>
+                            <span className="block truncate">{line.memo}</span>
+                            {line.possibleDuplicate && (
+                              <span className="block text-xs text-yellow-800 dark:text-yellow-300">
+                                {t.cardOfxDuplicateNote
+                                  .replace('{description}', line.possibleDuplicate.description ?? '')
+                                  .replace('{date}', formatDate(parseDateFromAPI(line.possibleDuplicate.date)))}
+                              </span>
+                            )}
                           </td>
                           <td className="px-3 py-2 whitespace-nowrap text-right text-gray-900 dark:text-white">
                             {money(line.amount)}
@@ -330,6 +440,21 @@ const ImportCardOfxDialog = ({ open, onClose, account }: ImportCardOfxDialogProp
                             <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_STYLES[line.status]}`}>
                               {label(STATUS_KEYS[line.status])}
                             </span>
+                          </td>
+                          <td className="px-3 py-2 whitespace-nowrap">
+                            {isActionable(line) && (
+                              <select
+                                aria-label={`${t.cardOfxAction}: ${line.memo}`}
+                                value={actions[line.ref] ?? 'skip'}
+                                disabled={isConfirming}
+                                onChange={(e) => setAction(line.ref, e.target.value as CardOfxLineAction)}
+                                className="px-2 py-1 text-xs border border-gray-200 dark:border-gray-800 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-white"
+                              >
+                                <option value="import">{t.cardOfxActionImport}</option>
+                                <option value="skip">{t.cardOfxActionSkip}</option>
+                                {line.possibleDuplicate && <option value="link">{t.cardOfxActionLink}</option>}
+                              </select>
+                            )}
                           </td>
                         </tr>
                       );
@@ -346,11 +471,36 @@ const ImportCardOfxDialog = ({ open, onClose, account }: ImportCardOfxDialogProp
                 </p>
               )}
 
+              {merchants.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-sm font-medium text-gray-700 dark:text-gray-200">{t.cardOfxCategoriesTitle}</p>
+                  <ul className="space-y-2">
+                    {merchants.map(({ merchant, type }) => (
+                      <li key={categoryKey(type, merchant)} className="flex items-center gap-3 min-w-0">
+                        <span className="flex-1 min-w-0 truncate text-sm text-gray-900 dark:text-white" title={merchant}>
+                          {merchant}
+                        </span>
+                        <div className="w-56 flex-shrink-0">
+                          <CategoryCombobox
+                            value={categories[categoryKey(type, merchant)] ?? ''}
+                            onValueChange={(value) => setCategories((current) => ({ ...current, [categoryKey(type, merchant)]: value }))}
+                            type={type === 'INCOME' ? TransactionType.INCOME : TransactionType.EXPENSE}
+                            householdId={householdId ?? undefined}
+                            disabled={isConfirming}
+                          />
+                        </div>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
               <p className="text-xs text-gray-500 dark:text-gray-400">{t.cardOfxPreviewOnly}</p>
 
               <div className="flex gap-3 justify-between pt-2">
                 <button
                   type="button"
+                  disabled={isConfirming}
                   onClick={() => {
                     setPreview(null);
                     setFormError(null);
@@ -362,10 +512,12 @@ const ImportCardOfxDialog = ({ open, onClose, account }: ImportCardOfxDialogProp
                 </button>
                 <button
                   type="button"
-                  onClick={onClose}
-                  className="px-4 py-2.5 text-sm font-light tracking-tight text-white bg-primary-600 dark:bg-primary-500 border border-primary-600 dark:border-primary-500 rounded-md hover:opacity-80 transition-opacity"
+                  onClick={handleConfirm}
+                  disabled={isConfirming || counts.import + counts.link === 0}
+                  title={counts.import + counts.link === 0 ? t.cardOfxNothingToImport : undefined}
+                  className="px-4 py-2.5 text-sm font-light tracking-tight text-white bg-primary-600 dark:bg-primary-500 border border-primary-600 dark:border-primary-500 rounded-md hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  {t.close}
+                  {isConfirming ? t.cardOfxConfirming : `${t.cardOfxConfirm} (${counts.import + counts.link})`}
                 </button>
               </div>
             </div>

@@ -37,6 +37,7 @@ import { AccountsSkeleton } from "../components/PageSkeletons";
 import { useToastContext } from "../context/ToastContext";
 import { effectiveClosingDay } from "../utils/closingDay";
 import { ClosingDayRows } from "../components/credit-cards/ClosingDayRows";
+import CardOfxImportButton from "../components/credit-cards/CardOfxImportButton";
 import TransactionModal from "../components/TransactionModal";
 import { CreditCardModal } from "../components/CreditCardModal";
 import { PageButton } from "../components/PageButton";
@@ -613,6 +614,9 @@ const CreditCards = () => {
   return (
     <div className="px-4 sm:px-6 lg:px-8 space-y-6 dashboard-fade-in">
       <PageHeader title={t.creditCards} description={t.creditCardsDescription}>
+        {selectedAccount?.id && (
+          <CardOfxImportButton account={{ id: selectedAccount.id, name: selectedAccount.name }} />
+        )}
         <PageButton
           onClick={handleNewTransaction}
           variant="primary"

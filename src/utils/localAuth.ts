@@ -9,7 +9,7 @@ export interface LocalSessionUser {
 }
 
 /** Why a local sign-in or sign-up failed, in terms the login page can translate. */
-export type LocalAuthErrorCode = 'invalid-credentials' | 'email-taken' | 'invalid-input' | 'unknown';
+export type LocalAuthErrorCode = 'invalid-credentials' | 'email-taken' | 'invalid-input' | 'rate-limited' | 'registration-closed' | 'unknown';
 
 export class LocalAuthError extends Error {
   constructor(public readonly code: LocalAuthErrorCode, message: string) {
@@ -20,6 +20,8 @@ export class LocalAuthError extends Error {
 
 function errorCodeFor(status: number): LocalAuthErrorCode {
   if (status === 401) return 'invalid-credentials';
+  if (status === 429) return 'rate-limited';
+  if (status === 403) return 'registration-closed';
   if (status === 409) return 'email-taken';
   if (status === 400) return 'invalid-input';
   return 'unknown';

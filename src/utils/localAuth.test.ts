@@ -35,6 +35,8 @@ describe('localLogin', () => {
     [401, 'invalid-credentials'],
     [409, 'email-taken'],
     [400, 'invalid-input'],
+    [429, 'rate-limited'],
+    [403, 'registration-closed'],
     [500, 'unknown'],
   ])('reports HTTP %i as %s and stores nothing', async (status, code) => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(reply(status)));

@@ -18,7 +18,7 @@ const Login = () => {
   // Check URL parameters to determine initial mode
   const searchParams = new URLSearchParams(location.search);
   const action = searchParams.get('action');
-  const initialMode = action === 'signup' && registrationEnabled ? false : true;
+  const initialMode = action === 'signup' ? false : true;
   
   const [isLogin, setIsLogin] = useState<boolean>(initialMode);
   const [error, setError] = useState<string>('');
@@ -65,6 +65,8 @@ const Login = () => {
       if (err.code === 'invalid-credentials') return t.localAuthInvalidCredentials;
       if (err.code === 'email-taken') return t.localAuthEmailTaken;
       if (err.code === 'invalid-input') return t.localAuthInvalidInput;
+      if (err.code === 'rate-limited') return t.localAuthRateLimited;
+      if (err.code === 'registration-closed') return t.localAuthRegistrationClosed;
       return t.loginError;
     }
     return sanitizeFirebaseError(err) || t.loginError;
@@ -163,7 +165,7 @@ const Login = () => {
               )
             ) : (
               <>
-                {t.loginSignupWithGoogle}{' '}
+                {authMode === 'local' ? t.localAuthHaveAccount : t.loginSignupWithGoogle}{' '}
                 <button
                   onClick={toggleMode}
                   className="font-medium text-primary-600 dark:text-primary-400 hover:text-primary-500 dark:hover:text-primary-300"

@@ -668,6 +668,9 @@ export interface Translations {
   localAuthInvalidCredentials: string;
   localAuthEmailTaken: string;
   localAuthInvalidInput: string;
+  localAuthRateLimited: string;
+  localAuthRegistrationClosed: string;
+  localAuthHaveAccount: string;
   loginBackToHome: string;
   loginSignupWithGoogle: string;
   

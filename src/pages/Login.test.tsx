@@ -64,6 +64,8 @@ describe('Login page', () => {
     ['invalid-credentials', 'localAuthInvalidCredentials'],
     ['email-taken', 'localAuthEmailTaken'],
     ['invalid-input', 'localAuthInvalidInput'],
+    ['rate-limited', 'localAuthRateLimited'],
+    ['registration-closed', 'localAuthRegistrationClosed'],
     ['unknown', 'loginError'],
   ] as const)('words a %s local failure with the %s message', async (code, key) => {
     auth.login.mockRejectedValue(new LocalAuthError(code, 'boom'));
@@ -91,6 +93,29 @@ describe('Login page', () => {
 
     expect(screen.queryByText('createNewAccount')).toBeNull();
     expect(screen.getByText('loginTitle')).toBeTruthy();
+  });
+
+  it('does not mention Google in the sign-up subtitle in local mode', () => {
+    render(
+      <MemoryRouter initialEntries={['/login?action=signup']}>
+        <Login />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText('localAuthHaveAccount')).toBeTruthy();
+    expect(screen.queryByText('loginSignupWithGoogle')).toBeNull();
+  });
+
+  it('keeps the Google wording in the sign-up subtitle in Firebase mode', () => {
+    auth.state.authMode = 'firebase';
+
+    render(
+      <MemoryRouter initialEntries={['/login?action=signup']}>
+        <Login />
+      </MemoryRouter>
+    );
+
+    expect(screen.getByText('loginSignupWithGoogle')).toBeTruthy();
   });
 
   it('signs in and leaves the page on success', async () => {

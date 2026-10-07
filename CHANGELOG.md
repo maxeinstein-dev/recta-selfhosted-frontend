@@ -18,6 +18,7 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 - Continuous integration on GitHub Actions: `check:tsc`, `lint`, `build` and `vitest` on every pull request and on `main`, on Node 20.19 and 22. On pull requests it also fails when `tsc-baseline.txt` grew compared with the base branch.
 - Import bank statements from the Transactions page: pick the destination account and an OFX or CSV file, review the preview (new rows versus duplicates, plus the lines that could not be read and a warning for credit card invoices) and confirm. The dialog cannot be closed while the import is being written, says how far it got if the server stopped half way, and the button hides when the server has no importer. Texts are available in all eight languages.
 - Component tests with jsdom and Testing Library (new devDependencies) for the import dialog.
+- Credit Cards page: an "Invoice (OFX)" button opens a preview of a card invoice exported by the bank. It shows the invoice month (taken from the file and the card's due day, or chosen by the user), the statement period and totals, how the invoice's payment compares with what is recorded for the previous invoice, and the lines that could not be read. It is read-only: nothing is saved. It needs the backend preview endpoint and hides itself for the session when the server answers that it has none. Texts in all eight languages (the six besides pt-BR and en-US were machine translated).
 
 ### Changed
 

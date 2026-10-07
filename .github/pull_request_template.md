@@ -10,6 +10,7 @@
 
 - [ ] `npm ci` runs without errors
 - [ ] `npm run check:tsc` passes: `tsc --noEmit` with **no new errors** compared with `tsc-baseline.txt` (the baseline can only shrink)
+- [ ] `tsc-baseline.txt` did not grow (CI compares it with the base branch; only removals are allowed)
 - [ ] `npm run lint` passes (0 errors; pre-existing warnings do not block, but do not add new ones)
 - [ ] `npm run build` passes
 - [ ] `npm test` (`vitest run`) passes, including this PR's new test (seen failing before the code)

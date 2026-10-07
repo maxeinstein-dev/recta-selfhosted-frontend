@@ -14,7 +14,7 @@ cp .env.example .env    # fill in the API URL and the Firebase configuration
 npm run dev
 ```
 
-Requirements: Node.js 20.19 or newer (a Vite 7 requirement) and a running backend
+Requirements: Node.js 20.19 or newer, or 22.12 or newer (a Vite 7 requirement; CI tests 20.19 and 22) and a running backend
 ([recta-selfhosted-backend](https://github.com/lucianodiisouza/recta-selfhosted-backend)).
 
 ### The commit hook (husky)
@@ -73,6 +73,9 @@ The repository has older type errors, listed in `tsc-baseline.txt` (one per line
 - Your PR introduced an error: fix it. Do not add it to the list.
 - Your PR fixed old errors: run `npm run check:tsc -- --update` and include the smaller
   `tsc-baseline.txt` in the PR. The command refuses to write if any error is new; the list can only shrink.
+- The list cannot be edited by hand to hide an error: on pull requests CI compares `tsc-baseline.txt`
+  with the copy on the base branch (`node scripts/check-tsc-baseline.mjs --against <file>`) and fails if any
+  entry was added. Only removals pass.
 - `npx tsc --noEmit` prints the errors with line and column so you can navigate to them.
 
 ### Tests
@@ -114,7 +117,14 @@ any observable bug fix. Internal refactors, dead-code removal and test-only chur
 
 Reviewers treat a missing entry as **blocking**; the PR template has a checkbox for it. Write one
 past-tense sentence and place it under the right heading (`### Added`, `### Changed`, `### Fixed`, ...).
-After opening the PR, append its number to the entry, like `([#123])`.
+After opening the PR, append its number to the entry as a reference-style link and define the link at the
+bottom of `CHANGELOG.md`:
+
+```markdown
+- Added the "Adjust balance" dialog ([#123]).
+
+[#123]: https://github.com/lucianodiisouza/recta-selfhosted-frontend/pull/123
+```
 
 ## Versioning and deprecation policy
 
@@ -127,7 +137,9 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 Put your CHANGELOG entry under the heading that matches its semver impact: a fix filed under `Added` (or
 vice versa) can make the maintainer pick the wrong version. Do not change the `version` field of
-`package.json` in a PR (see "The commit hook"). If your change is breaking, say so in the PR description and
+`package.json` in a PR (see "The commit hook"). The root `version` recorded in `package-lock.json` follows
+`package.json`; if npm rewrites it (it did once, when the lock had fallen behind), commit that on its own as
+`chore(deps): sync lockfile root version`. If your change is breaking, say so in the PR description and
 check "Major" in the template.
 
 Deprecated items go under `### Deprecated` in the CHANGELOG and are removed no sooner than the following

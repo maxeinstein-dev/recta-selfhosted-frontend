@@ -34,7 +34,7 @@ Use the same Firebase project as your backend and restrict allowed domains in th
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 20.19+ (or 22.12+)
 - Recta backend running (e.g. from `recta-public-backend` or your own deploy)
 - Firebase project with Authentication enabled (same project as the backend)
 

@@ -541,6 +541,7 @@ const RecurringTransactions = () => {
                   onValueChange={(value) => setValue('category', value, { shouldValidate: true, shouldDirty: true })}
                   type={watch('type') === TransactionType.INCOME ? TransactionType.INCOME : watch('type') === TransactionType.EXPENSE ? TransactionType.EXPENSE : undefined}
                   householdId={householdId ?? undefined}
+                  allowCreate
                 />
                 {errors.category && (
                   <p className="mt-1 text-sm text-red-600">{errors.category.message}</p>

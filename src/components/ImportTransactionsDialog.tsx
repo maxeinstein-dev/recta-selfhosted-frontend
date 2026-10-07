@@ -143,11 +143,11 @@ const ImportTransactionsDialog = ({
       setFormError(t.importStatementSelectAccount);
       return;
     }
-    const newRows = rowsToConfirm(preview.rows);
-    if (newRows.length === 0) return;
+    if (newCount === 0) return;
+    const fileRows = rowsToConfirm(preview.rows);
     try {
-      const result = await confirmMutation.mutateAsync({ accountId, rows: newRows });
-      const imported = result?.imported ?? newRows.length;
+      const result = await confirmMutation.mutateAsync({ accountId, rows: fileRows });
+      const imported = result?.imported ?? newCount;
       if (result?.error) {
         // Some rows were saved before a failure: keep the dialog open so the message is read, and let the user run it again.
         showError(

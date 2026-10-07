@@ -125,7 +125,7 @@ describe('ImportTransactionsDialog', () => {
     expect(within(rows[2]).getByText(enUS.importStatementRowDuplicate)).toBeTruthy()
   })
 
-  it('confirms only the rows flagged as new, reports the count and closes', async () => {
+  it('sends the whole file on confirm, duplicates included, and reports what the server imported', async () => {
     const { user, onClose } = setup()
     await fillAndPreview(user)
     await user.click(screen.getByRole('button', { name: enUS.importStatementConfirm }))
@@ -135,6 +135,7 @@ describe('ImportTransactionsDialog', () => {
       rows: [
         { date: PREVIEW.rows[0].date, description: 'Corner bakery', amount: 10, type: 'EXPENSE' },
         { date: PREVIEW.rows[1].date, description: 'Monthly salary', amount: 2500, type: 'INCOME' },
+        { date: PREVIEW.rows[2].date, description: 'Book store', amount: 40, type: 'EXPENSE' },
       ],
     })
     expect(toastSuccess).toHaveBeenCalledWith('2 transactions imported successfully.')

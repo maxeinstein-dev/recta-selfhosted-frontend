@@ -14,13 +14,15 @@ export function isStatementFile(filename: string): boolean {
 }
 
 /**
- * Rows to send on confirm: only the ones the preview flagged as new. The server checks duplicates again when it
- * writes, so this is a courtesy to the user, not the safety net. Extra preview fields (index, duplicate) are dropped.
+ * Rows to send on confirm: ALL of the file, duplicates included. The server decides which ones are already on the
+ * account by counting occurrences over the whole list (the Nth identical row is a duplicate only when the account
+ * already has N). Sending just the rows the preview called new would make the server count over a subset: with 3
+ * identical rows in the file and 1 on the account, the 2 "new" ones would be seen as 1 stored + 1 new and one would be
+ * lost. Sending the same list keeps preview and confirm in agreement, also when an import is run again after it
+ * stopped half way. Preview-only fields (index, duplicate) are dropped.
  */
 export function rowsToConfirm(rows: readonly ImportPreviewRow[]): ConfirmImportRow[] {
-  return rows
-    .filter((row) => !row.duplicate)
-    .map(({ date, description, amount, type }) => ({ date, description, amount, type }));
+  return rows.map(({ date, description, amount, type }) => ({ date, description, amount, type }));
 }
 
 /** Counts shown in the preview badges; trusts the server totals and recomputes them if the response omits them. */

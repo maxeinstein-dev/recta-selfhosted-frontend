@@ -36,18 +36,21 @@ describe('isStatementFile', () => {
 })
 
 describe('rowsToConfirm', () => {
-  it('sends only the new rows, without the preview-only fields', () => {
+  it('sends every row of the file, duplicates included, without the preview-only fields', () => {
     const sent = rowsToConfirm([row(0, false), row(1, true), row(2, false, 25.5)])
 
     expect(sent).toEqual([
       { date: '2026-11-05T00:00:00.000Z', description: 'Row 0', amount: 10, type: 'EXPENSE' },
+      { date: '2026-11-05T00:00:00.000Z', description: 'Row 1', amount: 10, type: 'EXPENSE' },
       { date: '2026-11-05T00:00:00.000Z', description: 'Row 2', amount: 25.5, type: 'EXPENSE' },
     ])
     expect(sent.every((r) => !('duplicate' in r) && !('index' in r))).toBe(true)
   })
 
-  it('returns nothing when every row is a duplicate', () => {
-    expect(rowsToConfirm([row(0, true), row(1, true)])).toEqual([])
+  it('does not filter: the server counts occurrences over the whole file, so a subset would lose rows', () => {
+    const file = [row(0, true), row(1, false), row(2, false)]
+
+    expect(rowsToConfirm(file)).toHaveLength(file.length)
   })
 })
 

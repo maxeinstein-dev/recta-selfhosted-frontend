@@ -143,6 +143,10 @@ export interface AuthContextType {
   login: (email: string, password: string) => Promise<{ user: User }>;
   loginWithGoogle: (referralCode?: string) => Promise<{ user: User }>;
   logout: () => Promise<void>;
+  /** Backend sign-in mode, once known (local: email and password against the backend itself). */
+  authMode?: 'local' | 'firebase';
+  /** Whether new local accounts can be created (AUTH_ALLOW_REGISTRATION); true outside local mode. */
+  registrationEnabled?: boolean;
 }
 
 /** Minimal custom category for display/color/icon resolution. */

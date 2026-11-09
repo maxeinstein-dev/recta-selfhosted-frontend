@@ -17,8 +17,9 @@ import { isNetworkError } from '../utils/api';
 import { queryClient } from '../lib/queryClient';
 import { clearUserFromLocalStorage } from '../hooks/api/useUsers';
 import { clearHouseholdFromLocalStorage } from '../utils/householdStorage';
-import { fetchAuthConfig, getCachedAuthMode, type AuthMode } from '../config/authMode';
+import { fetchAuthConfig, getCachedAuthMode, getRegistrationEnabled, type AuthMode } from '../config/authMode';
 import { getLocalToken, setLocalToken, clearLocalToken } from '../utils/localToken';
+import { LOCAL_USER_KEY, LocalAuthError, localAuthErrorCode } from '../utils/localSession';
 
 /**
  * Verificar se está em período de manutenção
@@ -41,7 +42,6 @@ export const useAuth = (): AuthContextType => useContext(AuthContext);
  * `recta_token` lida pelo interceptor de utils/api.ts).
  */
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000';
-const LOCAL_USER_KEY = 'recta_user';
 
 interface AuthProviderProps {
   children: ReactNode;
@@ -53,6 +53,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
   const [authMode, setAuthMode] = useState<AuthMode>(() => getCachedAuthMode() ?? 'firebase');
   const authModeRef = useRef<AuthMode>(authMode);
   authModeRef.current = authMode;
+  const [registrationEnabled, setRegistrationEnabled] = useState<boolean>(() => getRegistrationEnabled());
   const syncAuth = useSyncAuth();
   const syncAuthRef = useRef(syncAuth);
   syncAuthRef.current = syncAuth;
@@ -67,12 +68,8 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       body: JSON.stringify({ email, password }),
     });
     if (!loginRes.ok) {
-      const errBody = await loginRes.json().catch(() => null);
-      const msg =
-        (errBody?.error as { message?: string } | undefined)?.message ??
-        (typeof errBody?.error === 'string' ? errBody.error : undefined) ??
-        `HTTP ${loginRes.status}`;
-      throw new Error(msg);
+      // The status, not the backend's English message, decides what the login page says (see Login.tsx).
+      throw new LocalAuthError(localAuthErrorCode(loginRes.status), `/auth/login -> HTTP ${loginRes.status}`);
     }
     const json = (await loginRes.json()) as {
       data: { token: string; id: string; email: string };
@@ -97,12 +94,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       body: JSON.stringify({ email, password }),
     });
     if (!registerRes.ok) {
-      const errBody = await registerRes.json().catch(() => null);
-      const msg =
-        (errBody?.error as { message?: string } | undefined)?.message ??
-        (typeof errBody?.error === 'string' ? errBody.error : undefined) ??
-        `HTTP ${registerRes.status}`;
-      throw new Error(msg);
+      throw new LocalAuthError(localAuthErrorCode(registerRes.status), `/auth/register -> HTTP ${registerRes.status}`);
     }
     analyticsHelpers.logSignup('email');
     const pseudo = await localLoginRequest(email, password);
@@ -264,6 +256,7 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
       const mode = await fetchAuthConfig();
       if (!cancelled) {
         setAuthMode(mode);
+        setRegistrationEnabled(getRegistrationEnabled());
       }
     })();
     return () => {
@@ -387,7 +380,9 @@ export const AuthProvider = ({ children }: AuthProviderProps) => {
     login,
     loginWithGoogle,
     logout,
-  }), [currentUser, signup, login, loginWithGoogle, logout]);
+    authMode,
+    registrationEnabled,
+  }), [currentUser, signup, login, loginWithGoogle, logout, authMode, registrationEnabled]);
 
   return (
     <AuthContext.Provider value={value}>

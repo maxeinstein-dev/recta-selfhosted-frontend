@@ -1,5 +1,7 @@
 import axios, { AxiosInstance, AxiosError, AxiosRequestConfig, InternalAxiosRequestConfig } from 'axios';
 import { getLocalToken } from './localToken';
+import { getCachedAuthMode } from '../config/authMode';
+import { endExpiredLocalSession, shouldEndLocalSession, tokenSourceFor } from './localSession';
 
 export { TOKEN_KEY, getLocalToken, setLocalToken, clearLocalToken } from './localToken';
 
@@ -46,9 +48,9 @@ export interface PaginatedResponse<T> {
 /**
  * Dual-mode auth token resolver (AUTH_MODE=local, task C2).
  *
- * 1. Local JWT first: if `localStorage[TOKEN_KEY]` is present, return it
- *    directly (no expiry validation here — the backend answers 401).
- * 2. Firebase fallback: otherwise resolve the Firebase ID token as before.
+ * 1. The mode decides, not what is stored: in local mode the stored JWT is returned directly (no expiry
+ *    validation here — the backend answers 401, which ends the session, see the response interceptor).
+ * 2. Otherwise the Firebase ID token is resolved as before; a forgotten `recta_token` never shadows it.
  *
  * Assumption (parallel lane C1): `config/firebase.ts` may be refactored into
  * lazy exports, so there is NO static `import { auth }` at the top of this
@@ -58,9 +60,8 @@ export interface PaginatedResponse<T> {
  * or fails to load, this function degrades to `null` instead of throwing.
  */
 async function getAuthToken(forceRefresh = false): Promise<string | null> {
-  const localToken = getLocalToken();
-  if (localToken) {
-    return localToken;
+  if (tokenSourceFor(getCachedAuthMode()) === 'local') {
+    return getLocalToken();
   }
 
   try {
@@ -163,6 +164,9 @@ axiosInstance.interceptors.response.use(
     // Handle different error types
     if (error.response) {
       // Server responded with error status
+      if (shouldEndLocalSession(error.response.status, getCachedAuthMode(), getLocalToken())) {
+        endExpiredLocalSession();
+      }
       const data = error.response.data as unknown;
       const errorMessage = getBackendErrorMessage(data) || `HTTP ${error.response.status}`;
       

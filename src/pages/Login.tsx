@@ -7,6 +7,7 @@ import { Wallet, Mail, Lock, ArrowLeft, Eye, EyeOff } from 'lucide-react';
 import { createSchemas, LoginFormData } from '../schemas';
 import { useI18n } from '../context/I18nContext';
 import { sanitizeFirebaseError } from '../utils/errorHandler';
+import { LOCAL_AUTH_MESSAGE_KEY, LocalAuthError, isRegistrationOpen, wantsSignupForm } from '../utils/localSession';
 
 const Login = () => {
   const location = useLocation();
@@ -22,7 +23,8 @@ const Login = () => {
   const [error, setError] = useState<string>('');
   const [loading, setLoading] = useState<boolean>(false);
   const [showPassword, setShowPassword] = useState<boolean>(false);
-  const { login, signup, loginWithGoogle } = useAuth();
+  const { login, signup, loginWithGoogle, authMode, registrationEnabled: registrationFlag } = useAuth();
+  const registrationEnabled = isRegistrationOpen(authMode, registrationFlag);
   const { loginSchema } = createSchemas(t);
 
   const isObviousFakeEmail = (email: string) => {
@@ -37,13 +39,19 @@ const Login = () => {
   // Sync state with URL changes
   useEffect(() => {
     const newAction = searchParams.get('action');
-    const newMode = newAction === 'signup' ? false : true;
+    // ?action=signup is ignored while sign-ups are closed: the form would only end in a 403
+    const newMode = !wantsSignupForm(newAction, registrationEnabled);
     if (newMode !== isLogin) {
       setIsLogin(newMode);
       setError(''); // Clear error when mode changes
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [location.search]);
+  }, [location.search, registrationEnabled]);
+
+  // The message for a failed local sign-in or sign-up, chosen by what the backend answered (the app's language,
+  // not the backend's English text).
+  const localAuthMessage = (err: unknown): string | null =>
+    err instanceof LocalAuthError ? t[LOCAL_AUTH_MESSAGE_KEY[err.code]] : null;
 
   const {
     register,
@@ -76,7 +84,7 @@ const Login = () => {
       }
       navigate('/app');
     } catch (err: any) {
-      setError(sanitizeFirebaseError(err) || t.loginError);
+      setError(localAuthMessage(err) ?? (sanitizeFirebaseError(err) || t.loginError));
     } finally {
       setLoading(false);
     }
@@ -139,13 +147,17 @@ const Login = () => {
           <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
             {isLogin ? (
               <>
-                {t.loginOr}{' '}
-                <button
-                  onClick={toggleMode}
-                  className="font-medium text-primary-600 dark:text-primary-400 hover:text-primary-500 dark:hover:text-primary-300"
-                >
-                  {t.createNewAccount}
-                </button>
+                {registrationEnabled && (
+                  <>
+                    {t.loginOr}{' '}
+                    <button
+                      onClick={toggleMode}
+                      className="font-medium text-primary-600 dark:text-primary-400 hover:text-primary-500 dark:hover:text-primary-300"
+                    >
+                      {t.createNewAccount}
+                    </button>
+                  </>
+                )}
               </>
             ) : (
               <>

@@ -1,4 +1,4 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import { readFileSync, writeFileSync } from 'fs'
 import { resolve } from 'path'
@@ -29,9 +29,31 @@ const serviceWorkerVersionPlugin = () => {
   }
 }
 
+// The page's Content-Security-Policy (index.html) lists the hosts the app may call. A self-hosted build points
+// VITE_API_BASE_URL at its own API, so that origin is added to connect-src at build time; without it the browser
+// blocks every API request. Nothing changes when the variable is unset or already covered by the policy.
+export const apiOriginCspPlugin = (apiBaseUrl: string | undefined) => {
+  return {
+    name: 'api-origin-csp',
+    transformIndexHtml(html: string) {
+      let origin: string
+      try {
+        const url = new URL(apiBaseUrl ?? '')
+        if (url.protocol !== 'https:' && url.protocol !== 'http:') return html
+        origin = url.origin
+      } catch {
+        return html
+      }
+      return html.replace(/connect-src ([^;"]*)/, (match: string, sources: string) =>
+        sources.split(/\s+/).includes(origin) ? match : `connect-src ${sources.trimEnd()} ${origin}`
+      )
+    },
+  }
+}
+
 // https://vitejs.dev/config/
-export default defineConfig({
-  plugins: [react(), serviceWorkerVersionPlugin()],
+export default defineConfig(({ mode }) => ({
+  plugins: [react(), serviceWorkerVersionPlugin(), apiOriginCspPlugin(loadEnv(mode, process.cwd(), 'VITE_').VITE_API_BASE_URL)],
   define: {
     'import.meta.env.VITE_APP_VERSION': JSON.stringify(packageJson.version),
   },
@@ -71,5 +93,4 @@ export default defineConfig({
   optimizeDeps: {
     include: ['react', 'react-dom', 'react-router-dom'],
   },
-})
-
+}))

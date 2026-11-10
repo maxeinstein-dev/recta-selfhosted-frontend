@@ -21,6 +21,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Inbox,
+  TrendingUp,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import MobileBanner from "./MobileBanner";
@@ -36,6 +37,7 @@ import { useDefaultHousehold } from "../hooks/useDefaultHousehold";
 import { useCapturesCount } from "../hooks/api/useCaptures";
 import { captureBadgeText } from "../utils/captureInbox";
 import { captureText } from "../utils/captureTexts";
+import { cashFlowText } from "../utils/cashFlowTexts";
 import { isNativeApp } from "../native/captureReader";
 
 interface NavItem {
@@ -161,6 +163,7 @@ const Layout = () => {
     { path: "/app/transactions", label: t.transactions, icon: List },
     { path: "/app/captures", label: captureText(t, "captureNavLabel"), icon: Inbox, badge: captureBadgeText(pendingCaptures ?? 0) },
     { path: "/app/accounts", label: t.accounts, icon: Wallet },
+    { path: "/app/cash-flow", label: cashFlowText(t, "cashFlowNavLabel"), icon: TrendingUp },
     { path: "/app/credit-cards", label: `${t.creditCards}`, icon: CreditCard },
     { path: "/app/people", label: t.peoplePage || "Pessoas", icon: Users },
     { path: "/app/recurring", label: t.recurring, icon: Repeat },

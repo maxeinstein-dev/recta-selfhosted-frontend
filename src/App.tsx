@@ -33,6 +33,7 @@ const SavingsGoals = lazy(() => import('./pages/SavingsGoals'));
 const CreditCards = lazy(() => import('./pages/CreditCards'));
 const People = lazy(() => import('./pages/People'));
 const Settings = lazy(() => import('./pages/Settings'));
+const Captures = lazy(() => import('./pages/Captures'));
 const TermsOfService = lazy(() => import('./pages/TermsOfService'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 const Support = lazy(() => import('./pages/Support'));
@@ -212,6 +213,7 @@ function AppRoutes() {
           >
             <Route index element={<Dashboard />} />
             <Route path="transactions" element={<Transactions />} />
+            <Route path="captures" element={<Captures />} />
             <Route path="budgets" element={<Budgets />} />
             <Route path="recurring" element={<RecurringTransactions />} />
             <Route path="accounts" element={<Accounts />} />

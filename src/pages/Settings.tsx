@@ -51,6 +51,9 @@ import {
 } from "../hooks/useDefaultHousehold";
 import CategoryManager from "../components/categories/CategoryManager";
 import CaptureDiagnostics from "../components/capture/CaptureDiagnostics";
+import CaptureRulesCard from "../components/capture/CaptureRulesCard";
+import CaptureDevicesCard from "../components/capture/CaptureDevicesCard";
+import { isNativeApp } from "../native/captureReader";
 import { canWritePeople } from "../utils/people";
 import {
   deleteUser,
@@ -485,7 +488,8 @@ const SettingsPage = () => {
         </div>
       </div>
 
-      {/* Instalação do App */}
+      {/* Instalação do App: só no navegador. No app Android o aviso "instale pelo navegador" não se aplica. */}
+      {!isNativeApp() && (
       <div className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-lg p-4 sm:p-6 mb-4 sm:mb-6">
         <h2 className="text-lg sm:text-xl font-light tracking-tight text-gray-900 dark:text-white mb-4 flex items-center">
           <Download className="h-5 w-5 mr-2" />
@@ -552,6 +556,7 @@ const SettingsPage = () => {
           </div>
         )}
       </div>
+      )}
 
       {/* Aparência / Tema */}
       <div className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-lg p-4 sm:p-6 mb-4 sm:mb-6">
@@ -595,6 +600,10 @@ const SettingsPage = () => {
 
       {/* Leitor de notificações do app Android (não aparece no navegador) */}
       <CaptureDiagnostics />
+
+      {/* Capturas: a conta de cada notificação e os aparelhos vinculados */}
+      <CaptureRulesCard householdId={householdId ?? undefined} canEdit={canWritePeople(household)} />
+      <CaptureDevicesCard />
 
       {/* Categorias: padrão (somente leitura) e personalizadas (criar, renomear, unir, excluir) */}
       <CategoryManager householdId={householdId ?? undefined} canEdit={canWritePeople(household)} />

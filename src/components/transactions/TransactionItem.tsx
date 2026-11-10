@@ -69,7 +69,7 @@ export const TransactionItem = ({
           <div className="flex items-start gap-3 flex-1 min-w-0">
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2 mb-2">
-                <p className="text-base font-light text-gray-900 dark:text-white">
+                <p className="text-base font-light text-gray-900 dark:text-white break-words min-w-0">
                   {formatTransactionDescription(transaction)}
                 </p>
                 {transaction.paid === false && (
@@ -97,7 +97,7 @@ export const TransactionItem = ({
                     data-testid="row-confirm"
                     onClick={() => onConfirm(transaction)}
                     aria-label={confirmCopy(transaction.type).action}
-                    className="inline-flex items-center px-2.5 py-0.5 text-xs font-light text-primary-600 dark:text-primary-400 border border-primary-300 dark:border-primary-700 rounded-full hover:opacity-70 transition-opacity"
+                    className="inline-flex items-center min-h-[44px] sm:min-h-0 px-3 sm:px-2.5 py-0.5 text-xs font-light text-primary-600 dark:text-primary-400 border border-primary-300 dark:border-primary-700 rounded-full hover:opacity-70 transition-opacity"
                   >
                     {t.confirmShort || 'Confirmar'}
                   </button>

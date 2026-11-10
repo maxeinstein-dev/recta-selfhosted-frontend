@@ -106,7 +106,7 @@ export const CreditCardStatementPanel = ({ view, monthName, baseCurrency, classN
             onClick={() => setForecastOpen((open) => !open)}
             aria-expanded={forecastOpen}
             aria-controls={listId}
-            className="w-full flex items-center justify-between gap-3 text-left"
+            className="w-full min-h-[44px] flex items-center justify-between gap-3 text-left"
           >
             <span className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
               <CalendarClock className="h-4 w-4 text-gray-400" aria-hidden="true" />

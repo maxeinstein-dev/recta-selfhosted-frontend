@@ -50,6 +50,7 @@ import {
   useDefaultHousehold,
 } from "../hooks/useDefaultHousehold";
 import CategoryManager from "../components/categories/CategoryManager";
+import CaptureDiagnostics from "../components/capture/CaptureDiagnostics";
 import { canWritePeople } from "../utils/people";
 import {
   deleteUser,
@@ -591,6 +592,9 @@ const SettingsPage = () => {
           </button>
         </div>
       </div>
+
+      {/* Leitor de notificações do app Android (não aparece no navegador) */}
+      <CaptureDiagnostics />
 
       {/* Categorias: padrão (somente leitura) e personalizadas (criar, renomear, unir, excluir) */}
       <CategoryManager householdId={householdId ?? undefined} canEdit={canWritePeople(household)} />

@@ -4,6 +4,7 @@ import * as Sentry from '@sentry/react'
 import App from './App.tsx'
 import './index.css'
 import { isLocalHostname } from './utils/localHost'
+import { isNativeApp } from './native/captureReader'
 
 // Helper para verificar se está em localhost
 const isLocalhost = (): boolean => {
@@ -143,8 +144,9 @@ if (import.meta.env.VITE_SENTRY_DSN && !isLocalhost()) {
   }, true); // Use capture phase to catch errors early
 }
 
-// Register Service Worker for PWA
-if ('serviceWorker' in navigator && import.meta.env.PROD) {
+// Register Service Worker for PWA (not inside the Android app: it ships its own copy of the build, and a cache would
+// keep serving the old one after an update)
+if ('serviceWorker' in navigator && import.meta.env.PROD && !isNativeApp()) {
   window.addEventListener('load', () => {
     navigator.serviceWorker.register('/sw.js')
       .then((registration) => {

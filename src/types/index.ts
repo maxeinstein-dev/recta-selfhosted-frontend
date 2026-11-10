@@ -96,6 +96,8 @@ export interface RecurringTransaction {
   nonWorkingDays?: string[];
   /** PER_BUSINESS_DAY: optional holidays that do not count ('CARNIVAL', 'CORPUS_CHRISTI'). */
   optionalHolidays?: string[];
+  /** Other names the bank or card machine prints for this charge (empty list when none). */
+  aliases?: string[];
   /** Server-computed: what the next occurrence is expected to carry and how it was reached. */
   forecast?: ForecastDetail | null;
 }

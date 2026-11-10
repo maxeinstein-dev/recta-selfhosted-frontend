@@ -310,6 +310,7 @@ const convertRecurringTransactionFromBackend = (r: BackendRecurringTransaction, 
     safetyBusinessDays: r.safetyBusinessDays ?? 0,
     nonWorkingDays: r.nonWorkingDays ?? [],
     optionalHolidays: r.optionalHolidays ?? [],
+    aliases: r.aliases ?? [],
     forecast: r.forecast ?? null,
     lastOccurrenceDate: r.lastOccurrenceDate === undefined ? undefined : (r.lastOccurrenceDate ?? null),
   };
@@ -687,6 +688,7 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
       isActive: recurring.isActive,
       ...(recurring.followLastAmount !== undefined && { followLastAmount: recurring.followLastAmount }),
       ...(recurring.competenceOffsetMonths != null && { competenceOffsetMonths: recurring.competenceOffsetMonths }),
+      ...(recurring.aliases !== undefined && { aliases: recurring.aliases }),
       ...(recurring.forecastStrategy !== undefined && {
         forecastStrategy: recurring.forecastStrategy,
         forecastWindow: recurring.forecastWindow ?? null,
@@ -716,6 +718,8 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
     if (recurring.followLastAmount !== undefined) updateData.followLastAmount = recurring.followLastAmount;
     // Reference offset: a number sets it, null clears it (same month), absent leaves it alone.
     if (recurring.competenceOffsetMonths !== undefined) updateData.competenceOffsetMonths = recurring.competenceOffsetMonths;
+    // Aliases: sent whole when the form has them (an empty list clears), absent leaves the stored ones alone.
+    if (recurring.aliases !== undefined) updateData.aliases = recurring.aliases;
     // Forecast strategy: sent whole (the form always has all of it), absent leaves the stored one alone.
     if (recurring.forecastStrategy !== undefined) {
       updateData.forecastStrategy = recurring.forecastStrategy;

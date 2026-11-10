@@ -26,7 +26,7 @@ import { PageButton } from '../components/PageButton';
 import { RecurringTransactionsSkeleton } from '../components/PageSkeletons';
 import { CategoryType, getCategoriesByType, getCategoryNameFromDisplay, AccountType, TransactionType, CategoryName, RecurrenceFrequency } from '../lib/enums';
 import { DatePicker } from '../components/DatePicker';
-import { ReferenceOffsetField, DueToConfirmPanel } from '../components/transactions';
+import { ReferenceOffsetField, RecurringAliasesField, DueToConfirmPanel } from '../components/transactions';
 import { ForecastStrategyField } from '../components/transactions/ForecastStrategyField';
 import { useConfirmReceipt } from '../hooks/useConfirmReceipt';
 import { offsetToSend, recurrenceChip } from '../utils/referenceMonth';
@@ -66,6 +66,7 @@ const RecurringTransactions = () => {
   const currencyMask = useCurrencyMask();
   const confirmReceipt = useConfirmReceipt();
   const [competenceOffset, setCompetenceOffset] = useState<number | null>(null);
+  const [aliases, setAliases] = useState<string[]>([]);
   const [forecastDraft, setForecastDraft] = useState<ForecastDraft>(emptyForecastDraft());
 
   // Verificar se o usuário já viu o modal de ajuda
@@ -152,6 +153,7 @@ const RecurringTransactions = () => {
         followLastAmount: editingRecurring.followLastAmount === true,
       });
       setCompetenceOffset(editingRecurring.competenceOffsetMonths ?? null);
+      setAliases(editingRecurring.aliases ?? []);
       setForecastDraft(draftFromRecurrence(editingRecurring));
       currencyMask.setValue(editingRecurring.amount || 0);
       setValue('amount', editingRecurring.amount || 0);
@@ -170,6 +172,7 @@ const RecurringTransactions = () => {
         followLastAmount: false,
       });
       setCompetenceOffset(null);
+      setAliases([]);
       setForecastDraft(emptyForecastDraft());
       currencyMask.setValue('');
       setValue('amount', 0);
@@ -244,6 +247,7 @@ const RecurringTransactions = () => {
         // Only the "último valor" strategy follows the confirmed value
         followLastAmount: forecastDraft.strategy === 'LAST' && data.followLastAmount === true,
         competenceOffsetMonths: offsetToSend(competenceOffset),
+        aliases,
         ...forecastPayload(forecastDraft),
       };
 
@@ -766,6 +770,8 @@ const RecurringTransactions = () => {
               />
 
               <ReferenceOffsetField value={competenceOffset} onChange={setCompetenceOffset} />
+
+              <RecurringAliasesField value={aliases} onChange={setAliases} />
 
               <div className="flex justify-end space-x-3 pt-6 border-t border-gray-100 dark:border-gray-800">
                 <button

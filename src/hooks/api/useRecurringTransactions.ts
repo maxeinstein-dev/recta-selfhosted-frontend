@@ -30,6 +30,7 @@ export interface RecurringTransaction {
   safetyBusinessDays?: number;
   nonWorkingDays?: string[];
   optionalHolidays?: string[];
+  aliases?: string[];
   /** What the next occurrence is expected to carry and how it was reached (list only). */
   forecast?: ForecastDetail | null;
   createdAt: string;
@@ -127,6 +128,7 @@ export function useCreateRecurringTransaction() {
       safetyBusinessDays?: number;
       nonWorkingDays?: string[];
       optionalHolidays?: string[];
+      aliases?: string[];
     }) => {
       const response = await apiClient.post<RecurringTransaction>('/recurring-transactions', data);
       return response.data!;

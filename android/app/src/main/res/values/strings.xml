@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Recta</string>
+    <string name="title_activity_main">Recta</string>
+    <string name="package_name">dev.maxsueleinstein.recta</string>
+    <string name="custom_url_scheme">dev.maxsueleinstein.recta</string>
+</resources>

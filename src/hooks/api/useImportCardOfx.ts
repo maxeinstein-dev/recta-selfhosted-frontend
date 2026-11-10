@@ -44,12 +44,12 @@ export interface CardOfxLine {
 }
 
 /** The server may add kinds later: a proposal of a kind this client does not know is shown but never sent. */
-export type CardOfxProposalKind = 'enrich-exact' | 'enrich-plan' | 'enrich-sum' | 'enrich-merge' | 'enrich-neighbour' | 'enrich-group' | 'enrich-near' | 'consume-future' | 'create' | 'reversal' | 'advance-payment';
+export type CardOfxProposalKind = 'enrich-exact' | 'enrich-plan' | 'enrich-sum' | 'enrich-merge' | 'enrich-neighbour' | 'enrich-group' | 'enrich-near' | 'enrich-recurrence' | 'consume-future' | 'create' | 'reversal' | 'advance-payment';
 
 /** Why the server leaves a proposal unticked. The server may add reasons: the UI never relies on this list. */
 export type CardOfxProposalReason =
   | 'ambiguous' | 'no-shared-words' | 'mixed-categories' | 'sheet-residue' | 'neighbour-ambiguous' | 'neighbour-weak'
-  | 'neighbour-month-not-imported' | 'near-amount' | 'near-ambiguous' | 'pool-too-large' | 'sheet-credit-near' | 'changed-in-statement' | 'payment-ambiguous';
+  | 'neighbour-month-not-imported' | 'near-amount' | 'near-ambiguous' | 'recurrence-ambiguous' | 'pool-too-large' | 'sheet-credit-near' | 'changed-in-statement' | 'payment-ambiguous';
 
 /** The stored transaction a proposal changes: the sheet row (enrich) or the future installment (consume). */
 export interface CardOfxTarget {

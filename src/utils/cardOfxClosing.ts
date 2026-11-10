@@ -121,8 +121,8 @@ function effectOf(group: CardOfxGroupView, selected: boolean, inPeriod: (date: s
   const target = proposal.target;
   if (!target) return NO_EFFECT;
   if (selected) {
-    // Merges, consumed futures and near-amount adoptions write the bank amount into the row; the other matches keep the sheet's.
-    const cents = proposal.kind === 'enrich-merge' || proposal.kind === 'consume-future' || proposal.kind === 'enrich-near' ? group.netCents : signedCents(target.amount, target.type);
+    // Merges, consumed futures, near-amount adoptions and recurrence pairings write the bank amount into the row; the other matches keep the sheet's.
+    const cents = proposal.kind === 'enrich-merge' || proposal.kind === 'consume-future' || proposal.kind === 'enrich-near' || proposal.kind === 'enrich-recurrence' ? group.netCents : signedCents(target.amount, target.type);
     const counted = inPeriod(proposal.result?.date ?? target.date) ? cents : 0;
     // An advance payment line is not in the OFX total; the sheet credit it pairs with stays in the card total.
     const advance = group.lines.length > 0 && group.lines.every((line) => line.kind === 'payment') ? counted : 0;

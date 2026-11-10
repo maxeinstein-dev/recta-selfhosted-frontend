@@ -80,6 +80,8 @@ export function getFirebaseAnalytics(): Analytics | null {
   if (analyticsInstance) return analyticsInstance;
   if (analyticsInitStarted) return null;
   if (typeof window === 'undefined' || isLocalhost()) return null;
+  // Local auth mode ships without Firebase keys: no analytics then, instead of throwing on every page view.
+  if (!readFirebaseConfig()) return null;
   analyticsInitStarted = true;
   const firebaseApp = getFirebaseApp();
   isSupported().then((supported: boolean) => {

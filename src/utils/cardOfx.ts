@@ -64,6 +64,7 @@ const KIND_SECTION: Record<CardOfxProposalKind, Exclude<CardOfxGroupSection, 'ot
   'enrich-neighbour': 'matched',
   'enrich-group': 'matched',
   'enrich-near': 'matched',
+  'enrich-recurrence': 'matched',
   'consume-future': 'futures',
   create: 'new',
   reversal: 'reversal',
@@ -78,6 +79,7 @@ export const PROPOSAL_KIND_LABEL: Record<CardOfxProposalKind, string> = {
   'enrich-neighbour': 'mês vizinho',
   'enrich-group': 'por comerciante',
   'enrich-near': 'valor próximo',
+  'enrich-recurrence': 'recorrência',
   'consume-future': 'parcela futura',
   create: 'nova',
   reversal: 'compra e estorno',
@@ -123,6 +125,33 @@ export function nearChange(
   return { oldCents, newCents: lineNetCents, diffCents: lineNetCents - oldCents };
 }
 
+/**
+ * A recurrence occurrence takes the bank amount (enrich-recurrence): what it holds now (the forecast), what it will hold and the
+ * difference, integer cents. Same arithmetic as the near-amount adoption.
+ */
+export function recurrenceChange(
+  proposal: Pick<CardOfxProposal, 'kind' | 'target'>,
+  lineNetCents: number,
+): { oldCents: number; newCents: number; diffCents: number } | null {
+  if (proposal.kind !== 'enrich-recurrence' || !proposal.target) return null;
+  const oldCents = signedCents(proposal.target.amount, proposal.target.type);
+  return { oldCents, newCents: lineNetCents, diffCents: lineNetCents - oldCents };
+}
+
+/** "Valor: R$ 50,00 → R$ 47,90 (−R$ 2,10)", or "Valor: R$ 50,00 (igual ao previsto)" when the bank amount is the forecast one. */
+export function recurrenceChangeText(change: { oldCents: number; newCents: number; diffCents: number }, formatCents: (cents: number) => string): string {
+  if (change.diffCents === 0) return `Valor: ${formatCents(change.newCents)} (igual ao previsto)`;
+  const sign = change.diffCents > 0 ? '+' : '−';
+  return `Valor: ${formatCents(change.oldCents)} → ${formatCents(change.newCents)} (${sign}${formatCents(Math.abs(change.diffCents))})`;
+}
+
+/** Visible explanation of an ambiguous recurrence pairing (unticked by the server); null for any other proposal. */
+export function recurrenceAmbiguityNotice(proposal: Pick<CardOfxProposal, 'kind' | 'reason' | 'ambiguous'>): string | null {
+  if (proposal.kind !== 'enrich-recurrence') return null;
+  if (proposal.reason !== 'recurrence-ambiguous' && proposal.ambiguous !== true) return null;
+  return 'Mais de uma linha do OFX ou mais de um lançamento da recorrência podem formar este par: confira se é o par certo antes de marcar.';
+}
+
 /** "R$ 10,00 → R$ 10,03 (+3 centavos)" for a near-amount adoption; null for any other proposal. */
 export function nearChangeText(change: { oldCents: number; newCents: number; diffCents: number }, formatCents: (cents: number) => string): string {
   const abs = Math.abs(change.diffCents);
@@ -140,6 +169,8 @@ export function proposalHeadline(proposal: Pick<CardOfxProposal, 'kind' | 'targe
       return mergeSummary(proposal);
     case 'enrich-near':
       return 'Valor próximo: a planilha passa a ter o valor do banco';
+    case 'enrich-recurrence':
+      return 'Recorrência: o lançamento gerado passa a ter o valor e a data do banco e mantém o nome';
     case 'enrich-neighbour':
       return 'Compra do mês vizinho';
     case 'enrich-group':
@@ -234,6 +265,11 @@ export function proposalReasonChip(
       return {
         reason, tone: 'orange', text: 'valor próximo, mais de uma opção',
         title: 'Mais de uma linha tem valor a poucos centavos de diferença: confira qual é o par certo antes de marcar.',
+      };
+    case 'recurrence-ambiguous':
+      return {
+        reason, tone: 'orange', text: 'recorrência, mais de uma opção',
+        title: 'Mais de uma linha do OFX ou mais de um lançamento gerado pela recorrência podem formar este par: confira qual é o par certo antes de marcar.',
       };
     case 'pool-too-large':
       return {
@@ -730,8 +766,8 @@ export function buildCardOfxConfirm(
   for (const group of sections.groups) {
     // An advance payment (paired with a sheet credit, or recorded from the OFX): payments are outside the OFX total, so outside this one too.
     if (group.hasPayment) continue;
-    if ((group.proposal.kind === 'enrich-merge' || group.proposal.kind === 'enrich-near') && group.proposal.target) {
-      // A ticked merge (or near-amount adoption) leaves ONE row with the bank amount; unticked, the row and the ones it would absorb stay as they are.
+    if ((group.proposal.kind === 'enrich-merge' || group.proposal.kind === 'enrich-near' || group.proposal.kind === 'enrich-recurrence') && group.proposal.target) {
+      // A ticked merge (or near-amount adoption, or recurrence pairing) leaves ONE row with the bank amount; unticked, the row and the ones it would absorb stay as they are.
       const target = group.proposal.target;
       if (targets.has(target.transactionId)) continue;
       targets.add(target.transactionId);

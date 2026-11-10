@@ -27,7 +27,7 @@ import { monthKeyLabel } from '../utils/maxfinWorkbook';
 import {
   PROPOSAL_KIND_LABEL, buildCardOfxConfirm, buildCardOfxSections, buildCardOfxSummary, cardOfxConfirmBlocker, cardOfxFailureMessage,
   cardOfxMonthSourceLabel, cardOfxResultLines, clearGroups, defaultPaymentChoice, isGroupSelected, isKnownProposalKind,
-  ADVANCE_PAYMENT_HEADLINE, advancePaymentEffect, counterpartNote, isPaymentActionable, lineKindLabel, mergeAbsorbedNotice, mergeSummary, nearChange, nearChangeText, neighbourMonthLabel, newLinesNotice, paymentNeedsSource, paymentSourceAccounts,
+  ADVANCE_PAYMENT_HEADLINE, advancePaymentEffect, counterpartNote, isPaymentActionable, lineKindLabel, mergeAbsorbedNotice, mergeSummary, nearChange, nearChangeText, recurrenceAmbiguityNotice, recurrenceChange, recurrenceChangeText, neighbourMonthLabel, newLinesNotice, paymentNeedsSource, paymentSourceAccounts,
   proposalHeadline, proposalReasonChip, reconcileGroupSelection, reconcilePaymentChoice, selectAllGroups, setGroupSelected, validateCardOfxFile,
 } from '../utils/cardOfx';
 import { buildClosingView, closingBasisLabel, closingHeadline, closingResidualStatus, closingRows } from '../utils/cardOfxClosing';
@@ -350,11 +350,15 @@ const MergeCell = ({ proposal, netCents, currency }: { proposal: CardOfxGroupVie
   const absorbed = proposal.absorbed ?? [];
   const notice = mergeAbsorbedNotice(proposal);
   const near = nearChange(proposal, netCents);
+  const recurrence = recurrenceChange(proposal, netCents);
+  const ambiguity = recurrenceAmbiguityNotice(proposal);
   const month = neighbourMonthLabel(proposal);
   return (
     <div className="space-y-1 min-w-0">
       <p className="font-medium text-gray-900 dark:text-white">{proposalHeadline(proposal)}</p>
       {near && <p data-near-change className="text-xs text-gray-900 dark:text-white">{nearChangeText(near, (cents) => money(cents, currency))}</p>}
+      {recurrence && <p data-recurrence-change className="text-xs text-gray-900 dark:text-white">{recurrenceChangeText(recurrence, (cents) => money(cents, currency))}</p>}
+      {ambiguity && <p data-recurrence-ambiguity className="text-[11px] leading-snug text-orange-700 dark:text-orange-400">{ambiguity}</p>}
       {month && <p className={`text-xs ${MUTED_CLS}`}>Linha da planilha de {month}.</p>}
       <ul className="space-y-0.5">
         {proposal.target && (
@@ -382,6 +386,7 @@ const groupCheckboxLabel = (group: CardOfxGroupView): string => {
   switch (group.section) {
     case 'matched':
       if (group.proposal.kind === 'enrich-merge') return `Somar ${mergeSummary(group.proposal)?.replace('Soma de ', '') ?? 'lançamentos da planilha'} e enriquecer com o OFX: ${about}`;
+      if (group.proposal.kind === 'enrich-recurrence') return `Parear com o lançamento gerado pela recorrência: ${about}`;
       return `Enriquecer com o OFX: ${about}`;
     case 'futures':
       return `Consumir parcela futura: ${about}`;
@@ -1514,7 +1519,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
                 )}
                 <ReconciledSection lines={sections.reconciled} currency={baseCurrency} />
                 <GroupSection id="card-ofx-matched" title="Pareadas com a planilha" groups={sections.matched} {...groupSectionProps}
-                  hint="A linha da planilha fica, com categoria, notas e marcações; “Como fica” mostra a data e a descrição que ela recebe."
+                  hint="A linha da planilha fica, com categoria, notas e marcações; “Como fica” mostra a data e a descrição que ela recebe. Na “recorrência”, o lançamento gerado mantém o nome e passa a ter o valor e a data do banco; o nome do banco vai para as notas."
                   bulk={{ selectAll: 'Marcar todas as pareadas', clear: 'Desmarcar todas as pareadas' }} />
                 <GroupSection id="card-ofx-futures" title="Parcelas futuras consumidas" groups={sections.futures} {...groupSectionProps}
                   hint="A parcela futura já registrada passa a ser a compra real (data, descrição e pagamento do banco)."

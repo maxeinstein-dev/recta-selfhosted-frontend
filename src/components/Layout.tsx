@@ -20,6 +20,7 @@ import {
   MessageCircle,
   ChevronLeft,
   ChevronRight,
+  Inbox,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import MobileBanner from "./MobileBanner";
@@ -31,18 +32,28 @@ import { useCommandMenu } from "../context/CommandMenuContext";
 import { HouseholdSelector } from "./HouseholdSelector";
 import { InvitesNotification } from "./InvitesNotification";
 import { InvitesModal } from "./InvitesModal";
+import { useDefaultHousehold } from "../hooks/useDefaultHousehold";
+import { useCapturesCount } from "../hooks/api/useCaptures";
+import { captureBadgeText } from "../utils/captureInbox";
+import { captureText } from "../utils/captureTexts";
+import { isNativeApp } from "../native/captureReader";
 
 interface NavItem {
   path: string;
   label: string;
   icon: LucideIcon;
   external?: boolean;
+  /** Short text on the item (the captures waiting for a decision); empty or absent: no badge. */
+  badge?: string;
 }
 
 const Layout = () => {
   const { logout, currentUser } = useAuth();
   const { t } = useI18n();
   const { setDisabled: setCommandMenuDisabled, registerHandler, unregisterHandler } = useCommandMenu();
+  // The captures waiting for a decision: the badge of the "Capturas" item.
+  const { householdId } = useDefaultHousehold();
+  const { data: pendingCaptures } = useCapturesCount(householdId);
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
@@ -148,6 +159,7 @@ const Layout = () => {
   const navItems: NavItem[] = [
     { path: "/app", label: t.dashboard, icon: BarChart3 },
     { path: "/app/transactions", label: t.transactions, icon: List },
+    { path: "/app/captures", label: captureText(t, "captureNavLabel"), icon: Inbox, badge: captureBadgeText(pendingCaptures ?? 0) },
     { path: "/app/accounts", label: t.accounts, icon: Wallet },
     { path: "/app/credit-cards", label: `${t.creditCards}`, icon: CreditCard },
     { path: "/app/people", label: t.peoplePage || "Pessoas", icon: Users },
@@ -214,7 +226,7 @@ const Layout = () => {
               const Icon = item.icon;
               const isActive = !item.external && location.pathname === item.path;
               const className = `
-                flex items-center text-sm font-light tracking-tight rounded-lg transition-opacity
+                relative flex items-center text-sm font-light tracking-tight rounded-lg transition-opacity
                 ${sidebarCollapsed ? 'justify-center px-2 py-3' : 'px-4 py-3'}
                 ${
                   isActive
@@ -256,6 +268,17 @@ const Layout = () => {
                     }`}
                   />
                   {!sidebarCollapsed && item.label}
+                  {item.badge && (
+                    <span
+                      className={
+                        sidebarCollapsed
+                          ? "absolute top-1 right-1 min-w-[1.25rem] h-5 px-1 rounded-full bg-primary-600 text-white text-[11px] leading-5 text-center"
+                          : "ml-auto min-w-[1.5rem] h-5 px-1.5 rounded-full bg-primary-600 text-white text-xs leading-5 text-center"
+                      }
+                    >
+                      {item.badge}
+                    </span>
+                  )}
                 </Link>
               );
             })}
@@ -380,8 +403,8 @@ const Layout = () => {
           </div>
         </main>
         
-        {/* Mobile Banner */}
-        <MobileBanner />
+        {/* Mobile Banner: on the web only; inside the Android app it says the site is not the app, which is not true there */}
+        {!isNativeApp() && <MobileBanner />}
       </div>
       
       {/* Onboarding Modal */}

@@ -1,4 +1,5 @@
-import { useMutation } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '../../utils/api';
 
 /** What GET/POST /devices return for a device (never the hash). `token` exists only in the POST /devices answer. */
@@ -22,9 +23,27 @@ export function useCreateDevice() {
   });
 }
 
-/** Revokes one of the caller's devices (idempotent). */
+/** The caller's devices (no token, no hash), newest first. */
+export function useDevices() {
+  const { currentUser } = useAuth();
+  return useQuery({
+    queryKey: ['devices'],
+    enabled: !!currentUser,
+    queryFn: async () => {
+      const response = await apiClient.get<DeviceRecord[]>('/devices');
+      return (response as unknown as { data?: DeviceRecord[] }).data ?? [];
+    },
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** Revokes one of the caller's devices (idempotent). The device list is refreshed when it answers. */
 export function useRevokeDevice() {
+  const queryClient = useQueryClient();
   return useMutation({
     mutationFn: (deviceId: string) => apiClient.delete<DeviceRecord>(`/devices/${deviceId}`),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['devices'] });
+    },
   });
 }

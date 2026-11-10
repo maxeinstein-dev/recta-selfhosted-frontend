@@ -891,7 +891,7 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
       
       {/* Scrollable Container */}
       <div className="flex min-h-full items-center justify-center p-4">
-        <div className="relative w-full sm:w-[450px] max-w-lg p-6 border rounded-lg bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 max-h-[90vh] overflow-y-auto min-w-0 animate-slide-in-bottom">
+        <div className="relative w-full sm:w-[450px] max-w-lg p-4 sm:p-6 border rounded-lg bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 max-h-[90vh] overflow-y-auto min-w-0 animate-slide-in-bottom">
           <TransactionModalHeader
             title={readOnly ? t.viewDetails : (transaction ? t.editTransaction : t.newTransaction)}
             onClose={onClose}

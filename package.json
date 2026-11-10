@@ -9,9 +9,12 @@
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx,js --report-unused-disable-directives",
     "prepare": "husky",
-    "bump-version": "node scripts/bump-version.js"
+    "bump-version": "node scripts/bump-version.js",
+    "android:sync": "node scripts/android-sync.mjs",
+    "android:open": "cap open android"
   },
   "dependencies": {
+    "@capacitor/core": "^8.6.0",
     "@dnd-kit/core": "^6.3.1",
     "@dnd-kit/sortable": "^10.0.0",
     "@dnd-kit/utilities": "^3.2.2",
@@ -35,6 +38,8 @@
     "zod": "^3.23.8"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.6.0",
+    "@capacitor/cli": "^8.6.0",
     "@tanstack/react-query-devtools": "^5.91.2",
     "@types/canvas-confetti": "^1.6.4",
     "@types/node": "^20.11.0",

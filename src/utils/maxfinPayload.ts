@@ -5,6 +5,13 @@
  */
 import { AccountType, CategoryType, getCategoriesByType } from '../lib/enums';
 import type { CategoryName } from '../lib/enums';
+import {
+  MAXFIN_MAX_REALIGN_DECISIONS, buildRealignDecisions, pendingRealignRefs, realignProposals, realignResultNeedsReview, realignTotals,
+  realignedSummaryPart,
+} from './maxfinRealign';
+import type { MaxFinRealignSelection, MaxFinRealignTotals } from './maxfinRealign';
+import { realignTextPt } from './maxfinRealignTexts';
+import type { MaxFinRealignTextFn } from './maxfinRealignTexts';
 import type {
   MaxFinAccountsInput, MaxFinCategoryMapEntry, MaxFinCategoryMapInput, MaxFinCategorySuggestion, MaxFinCategoryTargetInput,
   MaxFinConfirmRequest, MaxFinConfirmResponse, MaxFinConfirmRow, MaxFinImportOptions, MaxFinMonth, MaxFinPreviewResponse,
@@ -169,12 +176,19 @@ export function reconcileSelection(
   return next;
 }
 
-/** Rows confirm will receive: ticked AND sendable. Duplicates and unknown statuses never go, ticked or not. */
+/**
+ * Rows confirm will receive: ticked AND sendable. Duplicates, shifted rows and unknown statuses never go, ticked or
+ * not. `heldRefs` (refs of a realignment block that stays pending, see pendingRealignRefs) holds new rows back: the
+ * server would not write them either.
+ */
 export function selectRowsToSend(
   rows: readonly MaxFinPreviewRow[],
   selected: Readonly<Record<string, boolean>>,
+  heldRefs?: ReadonlySet<string>,
 ): MaxFinPreviewRow[] {
-  return rows.filter((row) => selected[rowKey(row)] === true && isSendableStatus(row.status));
+  return rows.filter(
+    (row) => selected[rowKey(row)] === true && isSendableStatus(row.status) && !(heldRefs?.has(row.sourceRef) && row.status === 'new'),
+  );
 }
 
 export interface MaxFinStatusCounts {
@@ -210,6 +224,9 @@ export function countByStatus(rows: ReadonlyArray<Pick<MaxFinPreviewRow, 'status
         break;
       case 'matches-recurring':
         counts.matchesRecurring += 1;
+        break;
+      case 'shifted':
+        // Known, but not a bucket of its own here: countShiftedRows (maxfinRealign.ts) counts them.
         break;
       default:
         counts.unknown += 1;
@@ -508,6 +525,8 @@ export interface MaxFinConfirmTotals {
   /** Of those, the ticked rows that take a recurrence over (`matches-recurring`). */
   recurring: number;
   invoice: MaxFinInvoiceSelection;
+  /** Realignment proposals of the preview, how many are ticked and how many transactions they move. */
+  realign: MaxFinRealignTotals;
 }
 
 export interface MaxFinBuiltConfirm {
@@ -526,8 +545,12 @@ export function buildConfirmPayload(
   selected: Readonly<Record<string, boolean>>,
   categoryChoices: Readonly<Record<string, MaxFinCategoryTargetInput>>,
   context: MaxFinConfirmContext,
+  realignSelection?: Readonly<MaxFinRealignSelection>,
 ): MaxFinBuiltConfirm {
-  const rowsSent = selectRowsToSend(preview.rows, selected);
+  // Realignment: the proposals of the preview (none on an older server) and what is ticked (the defaults when not told).
+  const proposals = realignProposals(preview);
+  const realign = realignTotals(proposals, realignSelection);
+  const rowsSent = selectRowsToSend(preview.rows, selected, pendingRealignRefs(proposals, realignSelection));
   let incomeCents = 0;
   let expenseCents = 0;
   let incomeCount = 0;
@@ -561,6 +584,8 @@ export function buildConfirmPayload(
         options: preview.options,
         categoryMap: categoryMapForRows(preview, categoryChoices, rowsSent, context.customIdsByType),
         rows: rowsSent.map(toConfirmRow),
+        // One decision per proposal, ticked or not (a block without a decision is refused); nothing on an older server.
+        ...(proposals.length > 0 ? { realignments: buildRealignDecisions(proposals, realignSelection) } : {}),
       }
     : null;
   return {
@@ -575,12 +600,13 @@ export function buildConfirmPayload(
       replacements,
       recurring,
       invoice,
+      realign,
     },
   };
 }
 
 export interface MaxFinConfirmBlocker {
-  code: 'no-month' | 'none-selected' | 'too-many' | 'needs-refresh';
+  code: 'no-month' | 'none-selected' | 'too-many' | 'too-many-realign' | 'needs-refresh';
   message: string;
 }
 
@@ -596,7 +622,14 @@ export function confirmBlocker(built: MaxFinBuiltConfirm | null, needsRefresh: b
     return { code: 'no-month', message: 'Informe o mês de referência antes de confirmar.' };
   }
   const count = built.rowsSent.length;
-  if (count === 0) return { code: 'none-selected', message: 'Selecione ao menos uma transação.' };
+  const { realign } = built.totals;
+  if (realign.total > MAXFIN_MAX_REALIGN_DECISIONS) {
+    return { code: 'too-many-realign', message: realignTextPt('maxfinRealignTooMany', { max: MAXFIN_MAX_REALIGN_DECISIONS }) };
+  }
+  // Rows or a ticked realignment: a confirm that only realigns has no rows.
+  if (count === 0 && realign.applied === 0) {
+    return { code: 'none-selected', message: realign.total > 0 ? realignTextPt('maxfinRealignNoneSelected') : 'Selecione ao menos uma transação.' };
+  }
   if (count > MAXFIN_MAX_ROWS) {
     return {
       code: 'too-many',
@@ -609,7 +642,11 @@ export function confirmBlocker(built: MaxFinBuiltConfirm | null, needsRefresh: b
 // ---- Result of a confirmed import -------------------------------------------------------------------------
 
 /** Toast text after a confirmed import; zero-valued parts are omitted. */
-export function buildConfirmSummary(result: MaxFinConfirmResponse, formatAmount: (value: number) => string): string {
+export function buildConfirmSummary(
+  result: MaxFinConfirmResponse,
+  formatAmount: (value: number) => string,
+  tx: MaxFinRealignTextFn = realignTextPt,
+): string {
   const parts: string[] = [countLabel(result.imported, 'transação importada', 'transações importadas')];
   if (result.replaced > 0) parts.push(countLabel(result.replaced, 'substituída', 'substituídas'));
   const consumed = result.consumedFutureInstallments ?? 0;
@@ -621,6 +658,8 @@ export function buildConfirmSummary(result: MaxFinConfirmResponse, formatAmount:
   if (result.futureInstallments > 0) {
     parts.push(countLabel(result.futureInstallments, 'parcela futura', 'parcelas futuras'));
   }
+  const realigned = realignedSummaryPart(result.realigned, tx);
+  if (realigned) parts.push(realigned);
   if (result.invoicePayment) parts.push(`fatura de ${formatAmount(result.invoicePayment.amount)} registrada`);
   if (result.skipped > 0) parts.push(countLabel(result.skipped, 'linha ignorada', 'linhas ignoradas'));
 
@@ -630,11 +669,17 @@ export function buildConfirmSummary(result: MaxFinConfirmResponse, formatAmount:
   return text;
 }
 
-/** The dialog stays open on a result step when there is something to read: warnings, skipped rows, consumed installments. */
+/**
+ * The dialog stays open on a result step when there is something to read: warnings, skipped rows, consumed
+ * installments, or a realignment block that did not go through.
+ */
 export function confirmResultNeedsReview(
-  result: Pick<MaxFinConfirmResponse, 'warnings' | 'skipped' | 'consumedFutureInstallments'>,
+  result: Pick<MaxFinConfirmResponse, 'warnings' | 'skipped' | 'consumedFutureInstallments'> & Partial<Pick<MaxFinConfirmResponse, 'realignments'>>,
 ): boolean {
-  return (result.warnings?.length ?? 0) > 0 || result.skipped > 0 || (result.consumedFutureInstallments ?? 0) > 0;
+  return (
+    (result.warnings?.length ?? 0) > 0 || result.skipped > 0 || (result.consumedFutureInstallments ?? 0) > 0
+    || realignResultNeedsReview(result.realignments)
+  );
 }
 
 export const PARTIAL_IMPORT_NOTICE =

@@ -8,7 +8,8 @@
  */
 import type { CashFlowTextKey } from './cashFlowTexts';
 
-export type CashFlowSource = 'pending' | 'recurrence' | 'invoice';
+/** 'payroll': 13th, vacation and birthday FGTS withdrawal forecast by a CLT employment (an entry, never a bill). */
+export type CashFlowSource = 'pending' | 'recurrence' | 'payroll' | 'invoice';
 export type CashFlowCertainty = 'confirmed' | 'expected' | 'estimated';
 export type CashFlowReason = 'no_payer_account' | 'no_due_date';
 
@@ -156,7 +157,9 @@ export function firstNegativeDate(points: readonly CashFlowPoint[]): string | nu
   return hit ? hit.date : null;
 }
 
-const SOURCE_ORDER: Record<CashFlowSource, number> = { pending: 0, recurrence: 1, invoice: 2 };
+/** The order of the sources on one day. A source this build does not know sorts last (a future one must not break the list). */
+const SOURCE_ORDER: Record<CashFlowSource, number> = { pending: 0, recurrence: 1, payroll: 2, invoice: 3 };
+const sourceRank = (source: string): number => (source in SOURCE_ORDER ? SOURCE_ORDER[source as CashFlowSource] : 99);
 
 const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
 
@@ -164,7 +167,7 @@ const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 
 export function compareEvents(a: CashFlowEvent, b: CashFlowEvent): number {
   return (
     compareText(a.date, b.date) ||
-    SOURCE_ORDER[a.source] - SOURCE_ORDER[b.source] ||
+    sourceRank(a.source) - sourceRank(b.source) ||
     compareText(a.description, b.description) ||
     compareText(a.sourceId, b.sourceId) ||
     toCents(a.amount) - toCents(b.amount)
@@ -206,10 +209,13 @@ export function eventTone(amount: number): 'income' | 'expense' | 'neutral' {
   return 'neutral';
 }
 
-export function sourceTextKey(source: CashFlowSource): CashFlowTextKey {
+/** The label of a source; a source this build does not know is "Outra origem", never mistaken for a pending entry. */
+export function sourceTextKey(source: CashFlowSource | string): CashFlowTextKey {
   if (source === 'recurrence') return 'cashFlowSourceRecurrence';
   if (source === 'invoice') return 'cashFlowSourceInvoice';
-  return 'cashFlowSourcePending';
+  if (source === 'payroll') return 'cashFlowSourcePayroll';
+  if (source === 'pending') return 'cashFlowSourcePending';
+  return 'cashFlowSourceOther';
 }
 
 export function certaintyTextKey(certainty: CashFlowCertainty): CashFlowTextKey {

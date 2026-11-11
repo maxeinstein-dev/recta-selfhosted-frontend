@@ -77,6 +77,8 @@ export function buildBills(events: readonly CashFlowEvent[], today: string, hidd
   const end = monthEnd(today);
   const bills: Bill[] = [];
   for (const event of events) {
+    // Payroll (13th, vacation, birthday withdrawal, benefits) is money coming in: an entry, never a bill to pay here.
+    if (event.source === 'payroll') continue;
     if (!isDayKey(event.date) || event.date > end) continue;
     const cents = toCents(event.amount);
     if (cents >= 0) continue;

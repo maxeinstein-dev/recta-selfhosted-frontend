@@ -14,7 +14,9 @@ export const CARD_COMMITMENT_TEXTS_PT = {
   cardCommitNoIncome: 'Sem renda prevista neste mês',
   cardCommitHeaviestMonth: 'Mês mais pesado: {month}',
 
-  cardCommitPosted: 'Já lançado',
+  cardCommitInstallments: 'Parcelas',
+  cardCommitRecurrences: 'Recorrências lançadas',
+  cardCommitPurchases: 'Compras',
   cardCommitForecast: 'Recorrências previstas',
   cardCommitHeaviest: 'Mais pesado',
   cardCommitOverIncome: 'Acima da renda esperada',

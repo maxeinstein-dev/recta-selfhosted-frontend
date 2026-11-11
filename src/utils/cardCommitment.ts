@@ -173,6 +173,16 @@ export function commitmentState(rows: readonly CommitmentRow[]): 'empty' | 'fill
   return rows.some((row) => row.totalCents > 0) ? 'filled' : 'empty';
 }
 
+/**
+ * The first later month whose total is bigger than the first month's total, when the first month has a commitment.
+ * That is the warning: something new (an installment or a recurrence) weighs on the months after the first one.
+ * Null when no later month is bigger, or when there are fewer than two months.
+ */
+export function firstRiseRow(rows: readonly CommitmentRow[]): CommitmentRow | null {
+  if (rows.length < 2 || rows[0].totalCents <= 0) return null;
+  return rows.slice(1).find((row) => row.totalCents > rows[0].totalCents) ?? null;
+}
+
 /** A ratio as a whole percent in the given locale ('27%'); '' when there is no income to compare with. */
 export function percentText(share: number | null | undefined, locale: string): string {
   if (share === null || share === undefined || !Number.isFinite(share)) return '';

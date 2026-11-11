@@ -1236,6 +1236,7 @@
   "cardCommitForecast": "Expected recurring charges",
   "cardCommitHeaviest": "Heaviest",
   "cardCommitOverIncome": "Above expected income",
+  "cardCommitRiseWarning": "The {month} invoice ({amount}) is above the {base} invoice: an installment or a recurring charge weighs on the following months.",
   "cardCommitNotIncluded": "Income = only monthly income recurrences. One-off income (Pix, refunds, family help) is not included.",
   "cardCommitLoading": "Calculating the commitment…",
   "cardCommitLoadError": "Could not calculate the commitment.",

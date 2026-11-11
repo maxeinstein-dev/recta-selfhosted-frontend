@@ -51,8 +51,9 @@ export function useBillActions() {
   const update = useUpdateTransaction();
   const execute = useExecuteRecurringTransaction();
 
-  const payPending = useCallback(async (transactionId: string) => {
-    await update.mutateAsync({ id: transactionId, paid: true });
+  /** `day` ('YYYY-MM-DD') moves the entry to that day as it is paid; omit it to keep the entry's own day. */
+  const payPending = useCallback(async (transactionId: string, day?: string | null) => {
+    await update.mutateAsync({ id: transactionId, paid: true, ...(day ? { date: day } : {}) });
   }, [update]);
 
   const generateOccurrence = useCallback(async (recurringId: string, paid: boolean) => {

@@ -249,3 +249,12 @@ export function recurrenceMap(raw: unknown): Map<string, RecurrenceInfo> {
   }
   return map;
 }
+
+/**
+ * The day to pay on when the bill is not due yet: today (the money leaves now, and a paid entry never carries a future
+ * day). Null when the day needs no change: a bill due today or already overdue keeps its day (the confirmation dialog
+ * itself proposes today for an overdue one).
+ */
+export function earlyPaymentDay(dueDate: string, today: string): string | null {
+  return isDayKey(dueDate) && isDayKey(today) && dueDate > today ? today : null;
+}

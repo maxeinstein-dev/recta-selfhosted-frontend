@@ -18,6 +18,7 @@ import {
   billsProgress,
   billsTotalCents,
   dayNumber,
+  earlyPaymentDay,
   filterBills,
   monthEnd,
   monthStart,
@@ -89,20 +90,23 @@ export default function BillsChecklist({ householdId, accountId }: BillsChecklis
   const mark = async (bill: Bill, action: BillAction) => {
     if (action.type !== 'pay' && action.type !== 'execute') return;
     setBusyKey(bill.key);
+    // A bill not due yet is paid today, never on its future due day
+    const early = today ? earlyPaymentDay(bill.dueDate, today) : null;
     try {
       if (action.type === 'pay') {
         if (action.confirm) {
           // An estimated value is confirmed with the real amount and day, in the dialog the app already has
-          confirmReceipt.request({ id: bill.sourceId, type: 'EXPENSE', amount: bill.amountCents / 100, date: bill.dueDate, paid: false, description: bill.description });
+          confirmReceipt.request({ id: bill.sourceId, type: 'EXPENSE', amount: bill.amountCents / 100, date: early ?? bill.dueDate, paid: false, description: bill.description });
           return;
         }
-        await payPending(bill.sourceId);
+        await payPending(bill.sourceId, early);
         markDone(bill, bill.sourceId);
         success(tx('billsPaidToast'));
         return;
       }
       // The occurrence is generated once by the route (paid at once, or pending to be confirmed when its value is an estimate)
-      const result = await generateOccurrence(bill.sourceId, !action.confirm);
+      // Generated pending when the value is an estimate (confirmed next) or when it must be moved to today first
+      const result = await generateOccurrence(bill.sourceId, !action.confirm && !early);
       const created = result.transaction;
       if (created.paid) {
         if (result.skipped) info(tx('billsAlreadyGenerated'));
@@ -117,7 +121,7 @@ export default function BillsChecklist({ householdId, accountId }: BillsChecklis
           id: created.id,
           type: 'EXPENSE',
           amount: Number(created.amount),
-          date: String(created.date).slice(0, 10),
+          date: early ?? String(created.date).slice(0, 10),
           paid: false,
           recurringTransactionId: created.recurringTransactionId,
           description: created.description,
@@ -125,8 +129,8 @@ export default function BillsChecklist({ householdId, accountId }: BillsChecklis
         info(tx('billsConfirmValueToast'));
         return;
       }
-      // The month already held a pending occurrence: the route did not create another, so pay that one
-      await payPending(created.id);
+      // Pending still (not due yet, or the month already held a pending occurrence): pay that one, on today when early
+      await payPending(created.id, early);
       markDone(bill, created.id);
       success(tx('billsPaidToast'));
     } catch {

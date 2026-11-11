@@ -18,7 +18,7 @@ import { BudgetList } from '../components/budgets';
 import { isGeneralBudget } from '../utils/categories';
 import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
 import { useBudgetSummary } from '../hooks/api/useBudgets';
-import { ownShareByBudget, summaryMonthOf } from '../utils/budgetOwnShare';
+import { ownShareByBudget, serverSpendingByBudget, summaryMonthOf } from '../utils/budgetOwnShare';
 
 const Budgets = () => {
   const { budgets, transactions, deleteBudget, loading } = useTransactions();
@@ -61,6 +61,7 @@ const Budgets = () => {
   const { householdId } = useDefaultHousehold();
   const summary = useBudgetSummary({ householdId: householdId ?? '', month: summaryMonthOf(selectedMonth) });
   const ownShares = useMemo(() => ownShareByBudget(summary.data?.budgets), [summary.data]);
+  const serverSpending = useMemo(() => serverSpendingByBudget(summary.data?.budgets), [summary.data]);
 
   const monthBudgets = useMemo(() => {
     if (!budgets || budgets.length === 0) {
@@ -107,6 +108,9 @@ const Budgets = () => {
           : (categoryTransactions?.receita || 0);
       }
 
+      // The API sums the whole month; the list in memory is only the latest page.
+      spent = serverSpending.get(budget.id ?? '') ?? spent;
+
       const percentage = budget.amount > 0 ? (spent / budget.amount) * 100 : 0;
       const remaining = budget.amount - spent;
 
@@ -122,7 +126,7 @@ const Budgets = () => {
         ownSpent: budget.type === TransactionType.EXPENSE ? ownShares.get(budget.id ?? '')?.ownSpent : undefined,
       };
     });
-  }, [monthBudgets, categoryData, monthTransactions, ownShares]);
+  }, [monthBudgets, categoryData, monthTransactions, ownShares, serverSpending]);
 
   const handleDelete = (id: string) => {
     setConfirmModal({ isOpen: true, budgetId: id });

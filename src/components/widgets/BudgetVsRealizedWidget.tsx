@@ -12,7 +12,7 @@ import { isGeneralBudget } from '../../utils/categories';
 import { useCategories } from '../../hooks/api/useCategories';
 import { useDefaultHousehold } from '../../hooks/useDefaultHousehold';
 import { useBudgetSummary } from '../../hooks/api/useBudgets';
-import { ownShareByBudget, summaryMonthOf } from '../../utils/budgetOwnShare';
+import { ownShareByBudget, serverSpendingByBudget, summaryMonthOf } from '../../utils/budgetOwnShare';
 
 interface BudgetVsRealizedWidgetProps {
   selectedMonth: Date;
@@ -41,6 +41,7 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
 
   const summary = useBudgetSummary({ householdId: householdId ?? '', month: summaryMonthOf(selectedMonth) });
   const ownShares = useMemo(() => ownShareByBudget(summary.data?.budgets), [summary.data]);
+  const serverSpending = useMemo(() => serverSpendingByBudget(summary.data?.budgets), [summary.data]);
 
   const budgetData = useMemo(() => {
     const monthBudgets = budgets.filter((b) => {
@@ -73,6 +74,9 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
             : categoryTransactions?.receita || 0;
       }
 
+      // The API sums the whole month; the list in memory is only the latest page.
+      spent = serverSpending.get(budget.id ?? '') ?? spent;
+
       // Calcular porcentagem, limitando a exibição para valores muito altos
       const rawPercentage = budget.amount > 0 ? (spent / budget.amount) * 100 : 0;
       // Limitar a porcentagem exibida a 1000% para evitar números extremos
@@ -101,7 +105,7 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
       // Se mesmo status, ordenar por porcentagem (maior primeiro)
       return b.percentage - a.percentage;
     });
-  }, [budgets, selectedMonth, transactions, ownShares]);
+  }, [budgets, selectedMonth, transactions, ownShares, serverSpending]);
 
   if (budgetData.length === 0) {
     return (

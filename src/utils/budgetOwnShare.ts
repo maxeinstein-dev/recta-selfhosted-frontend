@@ -38,6 +38,18 @@ export function ownShareByBudget(rows: readonly OwnShareSummaryRow[] | undefined
   return out;
 }
 
+/**
+ * Budget id -> realized amount the API computed over every transaction of the month. The screens only hold the latest
+ * page of transactions in memory, so their own sum misses the rest of the month: when the API answers, its number wins.
+ */
+export function serverSpendingByBudget(rows: readonly OwnShareSummaryRow[] | undefined): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const row of rows ?? []) {
+    if (typeof row.spending === 'number' && Number.isFinite(row.spending)) out.set(row.budgetId, row.spending);
+  }
+  return out;
+}
+
 /** Own share as a percentage of the limit (0 when there is no limit). */
 export function ownSharePercentage(ownSpent: number, limit: number): number {
   return limit > 0 ? (ownSpent / limit) * 100 : 0;

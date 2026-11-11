@@ -87,9 +87,10 @@ export function calendarEntries(sets: readonly PayrollEvents[]): CalendarEntry[]
         periodDays: v.period.days,
       });
     }
-    for (const b of set.birthdayWithdrawals) {
-      out.push({ key: `bday:${id}:${b.date}`, kind: 'birthday', date: b.date, employmentId: id, amountCents: toCents(b.amount), estimated: b.source !== 'recorded', availableCash: true });
-    }
+    // Two recorded withdrawals can share a day (the bank splits one withdrawal in two): the position keeps the keys apart.
+    set.birthdayWithdrawals.forEach((b, i) => {
+      out.push({ key: `bday:${id}:${b.date}:${i}`, kind: 'birthday', date: b.date, employmentId: id, amountCents: toCents(b.amount), estimated: b.source !== 'recorded', availableCash: true });
+    });
     for (const b of set.benefits) {
       out.push({
         key: `ben:${id}:${b.itemId}:${b.referenceMonth}`,

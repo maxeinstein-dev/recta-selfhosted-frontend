@@ -41,6 +41,9 @@ import { captureText } from "../utils/captureTexts";
 import { cashFlowText } from "../utils/cashFlowTexts";
 import { incomeText } from "../utils/incomeTexts";
 import { isNativeApp } from "../native/captureReader";
+import MobileShell from "./mobile/MobileShell";
+import { SelectedMonthProvider } from "../context/SelectedMonthContext";
+import { useIsMobileShell } from "../hooks/useIsMobileShell";
 
 interface NavItem {
   path: string;
@@ -58,6 +61,7 @@ const Layout = () => {
   // The captures waiting for a decision: the badge of the "Capturas" item.
   const { householdId } = useDefaultHousehold();
   const { data: pendingCaptures } = useCapturesCount(householdId);
+  const isMobile = useIsMobileShell();
   const location = useLocation();
   const navigate = useNavigate();
   const [sidebarOpen, setSidebarOpen] = useState<boolean>(false);
@@ -177,7 +181,58 @@ const Layout = () => {
     { path: "https://www.reddit.com/r/RectaApp/", label: t.community, icon: MessageSquare, external: true },
   ];
 
+  // Modals shared by the desktop layout and the mobile shell.
+  const modals = (
+    <>
+      {/* Onboarding Modal */}
+      {!checkingOnboarding && (
+        <OnboardingModal
+          isOpen={showOnboarding}
+          onComplete={handleOnboardingComplete}
+        />
+      )}
+
+      {/* Verification Modal */}
+      <VerificationModal />
+
+      {/* Feedback Modal */}
+      <FeedbackModal
+        isOpen={showFeedbackModal}
+        onClose={() => setShowFeedbackModal(false)}
+      />
+
+      {/* Invites Modal - Opens when clicking on a notification */}
+      <InvitesModal
+        isOpen={!!selectedInviteId}
+        onClose={() => setSelectedInviteId(null)}
+        selectedInviteId={selectedInviteId}
+      />
+    </>
+  );
+
+  // Below 768 px the mobile shell replaces the sidebar and the header; from 768 px up, nothing below changes.
+  if (isMobile) {
+    return (
+      <SelectedMonthProvider>
+        <MobileShell
+          pendingCaptures={pendingCaptures ?? 0}
+          onOpenFeedback={() => setShowFeedbackModal(true)}
+          onLogout={handleLogout}
+          householdSelector={<HouseholdSelector collapsed={false} />}
+          invitesNotification={
+            <InvitesNotification onInviteClick={(inviteId) => setSelectedInviteId(inviteId)} />
+          }
+          banner={!isNativeApp() ? <MobileBanner /> : null}
+        >
+          <Outlet />
+        </MobileShell>
+        {modals}
+      </SelectedMonthProvider>
+    );
+  }
+
   return (
+    <SelectedMonthProvider>
     <div className="h-screen bg-gray-50 dark:bg-gray-900 flex overflow-hidden">
       {/* Sidebar */}
       <aside
@@ -413,30 +468,9 @@ const Layout = () => {
         {!isNativeApp() && <MobileBanner />}
       </div>
       
-      {/* Onboarding Modal */}
-      {!checkingOnboarding && (
-        <OnboardingModal
-          isOpen={showOnboarding}
-          onComplete={handleOnboardingComplete}
-        />
-      )}
-
-      {/* Verification Modal */}
-      <VerificationModal />
-
-      {/* Feedback Modal */}
-      <FeedbackModal
-        isOpen={showFeedbackModal}
-        onClose={() => setShowFeedbackModal(false)}
-      />
-
-      {/* Invites Modal - Opens when clicking on a notification */}
-      <InvitesModal
-        isOpen={!!selectedInviteId}
-        onClose={() => setSelectedInviteId(null)}
-        selectedInviteId={selectedInviteId}
-      />
+      {modals}
     </div>
+    </SelectedMonthProvider>
   );
 };
 

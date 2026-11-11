@@ -408,6 +408,15 @@ input[type="month"] {
   z-index: 40 !important;
 }
 
+/* Abaixo de 768 px o botão do devtools vai para o canto inferior esquerdo, acima da barra de abas, para não cobrir o "+". */
+@media (max-width: 767.98px) {
+  .tsqd-open-btn-container {
+    left: 16px !important;
+    right: auto !important;
+    bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 12px) !important;
+  }
+}
+
 /* ---------- Tokens da casca móvel (redesenho para celular, lote R0) ----------
    Valores do protótipo specs/prototipos/redesign-celular. Claro em :root; escuro na classe .dark,
    que o ThemeContext põe em <html>. Usados pelas classes rc-* do tailwind.config.js. */
@@ -422,6 +431,7 @@ input[type="month"] {
   --rc-accent: #2457e6;
   --rc-accent-ink: #1f4ed6;
   --rc-on-accent: #ffffff;
+  --rc-on-red: #ffffff;
   --rc-accent-soft: #e7edff;
   --rc-green: #0c7a3e;
   --rc-green-soft: #e2f5ea;
@@ -449,6 +459,7 @@ input[type="month"] {
   --rc-accent: #3f6ff0;
   --rc-accent-ink: #8fb0ff;
   --rc-on-accent: #ffffff;
+  --rc-on-red: #1a0a0e;
   --rc-accent-soft: #1b2a52;
   --rc-green: #4ad587;
   --rc-green-soft: #12301f;

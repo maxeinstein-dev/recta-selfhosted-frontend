@@ -31,6 +31,7 @@ export default {
           accent: 'var(--rc-accent)',
           accentInk: 'var(--rc-accent-ink)',
           onAccent: 'var(--rc-on-accent)',
+          onRed: 'var(--rc-on-red)',
           accentSoft: 'var(--rc-accent-soft)',
           green: 'var(--rc-green)',
           greenSoft: 'var(--rc-green-soft)',

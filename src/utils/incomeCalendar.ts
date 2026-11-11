@@ -88,7 +88,7 @@ export function calendarEntries(sets: readonly PayrollEvents[]): CalendarEntry[]
       });
     }
     for (const b of set.birthdayWithdrawals) {
-      out.push({ key: `bday:${id}:${b.date}`, kind: 'birthday', date: b.date, employmentId: id, amountCents: toCents(b.amount), estimated: true, availableCash: true });
+      out.push({ key: `bday:${id}:${b.date}`, kind: 'birthday', date: b.date, employmentId: id, amountCents: toCents(b.amount), estimated: b.source !== 'recorded', availableCash: true });
     }
     for (const b of set.benefits) {
       out.push({
@@ -114,8 +114,8 @@ export function compareEntries(a: CalendarEntry, b: CalendarEntry): number {
 
 /**
  * The twelve months of a year, each with its entries (by payment date), its total, the part that is estimated and the
- * rest. `today` only marks the past and current months; nothing is filtered by it here (the API already leaves out the
- * 13th and vacations paid before today).
+ * rest. `today` only marks the past and current months; nothing is filtered by it here (the page asks the API
+ * for the past events too, with `includePast`).
  */
 export function buildCalendarYear(sets: readonly PayrollEvents[], year: number, today: string): CalendarYear {
   const entries = calendarEntries(sets).filter((e) => e.date.startsWith(`${year}-`));
@@ -133,5 +133,5 @@ export function buildCalendarYear(sets: readonly PayrollEvents[], year: number, 
   return { year, months, totalCents, estimatedCents, firmCents: totalCents - estimatedCents };
 }
 
-/** Whether the year has any month before the current one (then the note about the 13th and vacations applies). */
+/** Whether the year has any month before the current one (then the note about recalculated past months applies). */
 export const yearHasPast = (year: number, today: string): boolean => `${year}-01` < monthOf(today);

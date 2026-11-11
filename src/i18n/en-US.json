@@ -1664,7 +1664,7 @@
   "incomeCalendarEmptyYear": "No events forecast this year.",
   "incomeCalendarThisMonth": "This month",
   "incomeCalendarPast": "Past",
-  "incomeCalendarPastNote": "13th and vacations already paid do not show here: the forecast only brings what has not happened yet. Salary and benefits show for the whole year.",
+  "incomeCalendarPastNote": "Past months show the amount calculated from the registered rules, not what was actually received. Only a recorded birthday withdrawal shows its real amount.",
   "incomeCalendarSalary": "Salary of {month}",
   "incomeCalendarVacation": "Vacation from {start} to {end}, {days} days",
   "cashFlowSourcePayroll": "Income",

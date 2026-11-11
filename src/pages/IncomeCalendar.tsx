@@ -38,7 +38,7 @@ const IncomeCalendar = () => {
   const noMine = scope === 'mine' && !myPersonId;
   const personId = scopePersonId(scope, myPersonId);
   const range = yearRange(year);
-  const events = useHouseholdEvents(householdId, range.from, range.to, personId);
+  const events = useHouseholdEvents(householdId, range.from, range.to, personId, true);
 
   const sets = useMemo(() => (noMine ? [] : (events.data?.employments ?? [])), [noMine, events.data]);
   const calendar = useMemo(() => buildCalendarYear(sets, year, today), [sets, year, today]);

@@ -363,7 +363,7 @@ export const INCOME_TEXTS_PT = {
   incomeCalendarEmptyYear: 'Nenhum evento previsto neste ano.',
   incomeCalendarThisMonth: 'Este mês',
   incomeCalendarPast: 'Passado',
-  incomeCalendarPastNote: 'Os 13º e as férias já pagos não aparecem aqui: a previsão só traz o que ainda não aconteceu. Salário e benefícios aparecem o ano todo.',
+  incomeCalendarPastNote: 'Meses passados mostram o valor calculado pelas regras do cadastro, não o que foi de fato recebido. Só o saque-aniversário já registrado aparece com o valor real.',
   incomeCalendarSalary: 'Salário de {month}',
   incomeCalendarVacation: 'Férias de {start} a {end}, {days} dias',
 } as const;

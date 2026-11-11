@@ -110,6 +110,12 @@ export function usesMonthSelector(screen: ScreenId | null): boolean {
   return screen !== null && MONTH_SELECTOR_SCREENS.has(screen);
 }
 
+/** The header title of a tab route: the tab's own label, so the header and the tab always say the same word. Null off the tabs. */
+export function headerTitleFor(pathname: string): string | null {
+  const tab = tabForPath(pathname);
+  return tab === null ? null : (SHELL_TABS.find((t) => t.id === tab)?.label ?? null);
+}
+
 /** The accessible name of the Extrato tab: says how many captures wait for a decision. */
 export function extratoTabName(pendingCaptures: number): string {
   if (!Number.isFinite(pendingCaptures) || pendingCaptures <= 0) return 'Extrato';

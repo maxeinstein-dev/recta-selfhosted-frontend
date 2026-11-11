@@ -33,6 +33,8 @@ export const CASH_FLOW_TEXTS_PT = {
   cashFlowSourcePending: 'Pendente',
   cashFlowSourceRecurrence: 'Recorrência',
   cashFlowSourceInvoice: 'Fatura',
+  cashFlowSourcePayroll: 'Renda',
+  cashFlowSourceOther: 'Outra origem',
   cashFlowCertaintyConfirmed: 'Confirmado',
   cashFlowCertaintyExpected: 'Previsto',
   cashFlowCertaintyEstimated: 'Estimado',

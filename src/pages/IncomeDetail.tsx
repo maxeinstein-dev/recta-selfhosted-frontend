@@ -135,6 +135,9 @@ const IncomeDetail = () => {
             <span className={`${CHIP_CLS} ${statusTone}`}>{statusLabel}</span>
           </div>
           {!e.isActive && <p className="text-sm text-amber-700 dark:text-amber-300">{tx('incomeInactiveNotice')}</p>}
+          <div className="flex flex-wrap gap-2 pt-1">
+            <Link to={`/app/income/simulator?employmentId=${e.id}`} className={BTN_SECONDARY_TOUCH}>{tx('incomeSimRaiseButton')}</Link>
+          </div>
           {canEdit && (
             <div className="flex flex-wrap gap-2 pt-1">
               <button type="button" onClick={() => setEditing(true)} className={BTN_SECONDARY_TOUCH}>

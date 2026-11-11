@@ -4,7 +4,7 @@ import { Briefcase, Plus, Users } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { PageButton } from '../components/PageButton';
 import EmploymentFormDialog from '../components/income/EmploymentFormDialog';
-import { CARD_CLS, EmptyLine, MUTED, SECTION_TITLE_CLS, useIncomeTexts, useMoneyCents } from '../components/income/shared';
+import { BTN_SECONDARY_TOUCH, CARD_CLS, EmptyLine, MUTED, SECTION_TITLE_CLS, useIncomeTexts, useMoneyCents } from '../components/income/shared';
 import { useI18n } from '../context/I18nContext';
 import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
 import { useAuthUser } from '../hooks/api/useAuth';
@@ -251,6 +251,10 @@ const Income = () => {
           <PageButton icon={Plus} onClick={() => setFormOpen(true)}>{tx('incomeNewEmployment')}</PageButton>
         )}
       </PageHeader>
+      <div className="mb-4 flex flex-wrap gap-2 max-w-2xl">
+        <Link to="/app/income/simulator" className={BTN_SECONDARY_TOUCH}>{tx('incomeSimulatorLink')}</Link>
+        <Link to="/app/income/calendar" className={BTN_SECONDARY_TOUCH}>{tx('incomeCalendarLink')}</Link>
+      </div>
       <div className="max-w-2xl">{body}</div>
       {formOpen && householdId && (
         <EmploymentFormDialog open={formOpen} onClose={() => setFormOpen(false)} householdId={householdId} employment={null} onCreated={(id) => navigate(`/app/income/${id}`)} />

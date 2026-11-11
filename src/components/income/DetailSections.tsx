@@ -6,9 +6,9 @@ import { useDeleteSub, type PayrollResource } from '../../hooks/api/usePayroll';
 import ConfirmModal from '../ConfirmModal';
 import {
   addDayKey,
-  addMonthKey,
   benefitBreakdown,
-  benefitForReference,
+  benefitToShow,
+  neighbourBenefit,
   benefitWarningKey,
   fgtsBasis,
   fgtsDepositOfMonth,
@@ -16,7 +16,6 @@ import {
   longDay,
   modeHistory,
   modeInForce,
-  monthName,
   monthOf,
   nextBirthdayWithdrawal,
   realMinusExpected,
@@ -33,6 +32,7 @@ import {
   type PayrollEvents,
   type Vacation,
 } from '../../utils/income';
+import { capitalize, monthNameOf, monthOnlyOf } from '../../utils/incomeMonth';
 import { CARD_CLS, BTN_SECONDARY_TOUCH, EmptyLine, MUTED, Pair, SECTION_TITLE_CLS, errorText, useIncomeTexts, useMoney, useMoneyCents, type IncomeTx } from './shared';
 import {
   FgtsBalanceDialog,
@@ -190,7 +190,6 @@ function LaunchCompare({ ctx, recurringId, forSalary, money, expectedCents, paym
   return (
     <div className="space-y-1 rounded-md bg-gray-50 p-3 text-sm dark:bg-gray-800/50">
       <p className="text-gray-900 dark:text-white">{tx('incomeCountLastReal', { amount: money(launch.amountCents / 100), date: longDay(launch.date) })}</p>
-      {diff === null && <Note>{tx('incomeCountDiffNone')}</Note>}
       {diff !== null && diff !== 0 && <Note>{tx('incomeCountDiff', { amount: money(diff / 100) })}</Note>}
       {diff !== null && diff < 0 && <Note tone="warn">{tx('incomeCountDiffLow')}</Note>}
     </div>
@@ -274,9 +273,9 @@ export function ItemsSection({ ctx }: { ctx: DetailCtx }) {
                       {item.referenceMonthOffset === 1 ? tx('incomeItemOffsetNext') : item.referenceMonthOffset === -1 ? tx('incomeItemOffsetPrev') : tx('incomeItemOffsetSame')}
                     </span>
                   </Pair>
-                  <Pair label={tx('incomeFormMargin')}>{item.marginDays > 0 ? tx('incomeItemMargin', { days: item.marginDays }) : tx('incomeItemMarginNone')}</Pair>
-                  <Pair label={tx('incomeFieldAccount')}>{item.accountId ? ctx.accountName(item.accountId) : tx('incomeItemAccountSalary')}</Pair>
-                  <Pair label={tx('incomeFieldRecurrence')}>
+                  {item.marginDays > 0 && <Pair label={tx('incomeFormMargin')}>{tx('incomeItemMargin', { days: item.marginDays })}</Pair>}
+                  <Pair label={tx('incomeFieldDestAccount')}>{item.accountId ? ctx.accountName(item.accountId) : tx('incomeItemDestSame')}</Pair>
+                  <Pair label={tx('incomeFieldLinkedRecurrence')}>
                     {item.recurringTransactionId ? ctx.recurrenceName(item.recurringTransactionId) : tx('incomeItemNoRecurrence')}
                     {!item.isAvailableCash && <span className={`block text-xs ${MUTED}`}>{tx('incomeItemNotCash')}</span>}
                   </Pair>
@@ -320,36 +319,37 @@ export function ItemsSection({ ctx }: { ctx: DetailCtx }) {
 }
 
 /**
- * The count of one month of a benefit paid per business day: the business days, the holidays removed (with their names),
- * the vacation days, the margin, the counted days and the amount; the warnings in plain text; the real entry next to it.
+ * The count of a benefit paid per business day, for the payment that falls in the current month (the same one the list
+ * counts), or the next payment when none falls now. The title names both months: when it was paid and the month it counts.
  */
 function BenefitMonth({ ctx, item }: { ctx: DetailCtx; item: Item }) {
   const tx = useIncomeTexts();
   const money = useMoney();
   const { locale } = useI18n();
-  const current = ctx.today.slice(0, 7);
-  const [ref, setRef] = useState(current);
-  const min = addMonthKey(current, -1);
-  const max = addMonthKey(current, 12);
-  const event: BenefitEvent | null = ctx.events ? benefitForReference(ctx.events.benefits, item.id, ref) : null;
-  const step = (delta: number) => {
-    const next = addMonthKey(ref, delta);
-    if (next >= min && next <= max) setRef(next);
+  const list = ctx.events?.benefits ?? [];
+  const [chosen, setChosen] = useState<string | null>(null);
+  const shown = (chosen && list.find((b) => b.itemId === item.id && b.paymentDate === chosen)) || benefitToShow(list, item.id, ctx.today);
+  const previous = shown ? neighbourBenefit(list, item.id, shown.paymentDate, -1) : null;
+  const next = shown ? neighbourBenefit(list, item.id, shown.paymentDate, 1) : null;
+  const move = (target: BenefitEvent | null) => {
+    if (target) setChosen(target.paymentDate);
   };
   return (
     <div className="space-y-3 rounded-md border border-gray-200 p-3 dark:border-gray-800">
       <div className="flex items-center justify-between gap-2">
-        <button type="button" onClick={() => step(-1)} disabled={ref <= min} aria-label={tx('incomeMonthPrev')} className={BTN_ICON}>
+        <button type="button" onClick={() => move(previous)} disabled={!previous} aria-label={tx('incomeMonthPrev')} className={BTN_ICON}>
           <ChevronLeft className="h-5 w-5" aria-hidden="true" />
         </button>
-        <p className="text-center text-sm font-medium text-gray-900 dark:text-white">{tx('incomeCountTitle', { month: monthName(ref, locale) })}</p>
-        <button type="button" onClick={() => step(1)} disabled={ref >= max} aria-label={tx('incomeMonthNext')} className={BTN_ICON}>
+        <p className="text-center text-sm font-medium text-gray-900 dark:text-white">
+          {shown ? tx('incomeCountTitle', { paid: monthNameOf(monthOf(shown.paymentDate), locale), ref: monthNameOf(shown.referenceMonth, locale) }) : tx('incomeCountNoMonth')}
+        </p>
+        <button type="button" onClick={() => move(next)} disabled={!next} aria-label={tx('incomeMonthNext')} className={BTN_ICON}>
           <ChevronRight className="h-5 w-5" aria-hidden="true" />
         </button>
       </div>
-      {event ? <BenefitCountBody event={event} tx={tx} money={money} /> : <EmptyLine>{tx('incomeCountNoMonth')}</EmptyLine>}
-      {event && item.recurringTransactionId && (
-        <LaunchCompare ctx={ctx} recurringId={item.recurringTransactionId} money={money} expectedCents={toCents(event.amount)} paymentMonth={monthOf(event.paymentDate)} />
+      {shown && <BenefitCountBody event={shown} tx={tx} money={money} />}
+      {shown && item.recurringTransactionId && (
+        <LaunchCompare ctx={ctx} recurringId={item.recurringTransactionId} money={money} expectedCents={toCents(shown.amount)} paymentMonth={monthOf(shown.paymentDate)} />
       )}
       <p className={`text-xs ${MUTED}`}>{tx('incomeCountEstimateNote')}</p>
     </div>
@@ -366,8 +366,8 @@ function BenefitCountBody({ event, tx, money }: { event: BenefitEvent; tx: Incom
         <Pair label={tx('incomeCountMargin')}>{view.marginDays}</Pair>
         <Pair label={tx('incomeCountCounted')}>{view.countedDays}</Pair>
         <Pair label={tx('incomeCountAmount')}>{money(view.amountCents / 100)}</Pair>
-        <Pair label={tx('incomeCountPaid', { date: longDay(event.paymentDate) })}>{shortDay(event.paymentDate)}</Pair>
       </dl>
+      <p className={`text-sm text-gray-900 dark:text-white`}>{tx('incomeCountPaid', { date: longDay(event.paymentDate) })}</p>
       <div className="space-y-1">
         <p className={`text-xs ${MUTED}`}>{tx('incomeCountHolidays')}</p>
         {view.holidays.length === 0 ? (
@@ -395,6 +395,7 @@ function BenefitCountBody({ event, tx, money }: { event: BenefitEvent; tx: Incom
 
 export function VacationsSection({ ctx }: { ctx: DetailCtx }) {
   const tx = useIncomeTexts();
+  const { locale } = useI18n();
   const [adding, setAdding] = useState(false);
   const remove = useRowDelete(ctx);
   const rows = [...ctx.employment.vacations].sort((a, b) => (a.startDate ?? `${a.month ?? ''}-00`).localeCompare(b.startDate ?? `${b.month ?? ''}-00`));
@@ -402,7 +403,7 @@ export function VacationsSection({ ctx }: { ctx: DetailCtx }) {
   const span = (v: Vacation): string => {
     const days = v.days ?? 30;
     if (v.startDate) return tx('incomeVacationDates', { start: shortDay(v.startDate), end: shortDay(addDayKey(v.startDate, days - 1)), days });
-    return tx('incomeVacationMonth', { month: v.month ?? '', days });
+    return tx('incomeVacationMonth', { month: capitalize(monthNameOf(v.month ?? '', locale)), days });
   };
   return (
     <section aria-label={tx('incomeSectionVacations')} className={`${CARD_CLS} space-y-3`}>
@@ -440,6 +441,7 @@ const WITHDRAWAL_KIND_KEY = { BIRTHDAY: 'incomeWithdrawalKindBirthday', TERMINAT
 
 export function FgtsSection({ ctx }: { ctx: DetailCtx }) {
   const tx = useIncomeTexts();
+  const { locale } = useI18n();
   const money = useMoney();
   const [dialog, setDialog] = useState<'balance' | 'withdrawal' | 'mode' | 'expected' | null>(null);
   const remove = useRowDelete(ctx);
@@ -452,7 +454,7 @@ export function FgtsSection({ ctx }: { ctx: DetailCtx }) {
   const withdrawals = [...ctx.employment.fgtsWithdrawals].sort((a, b) => b.date.localeCompare(a.date));
   const balances = [...ctx.employment.fgtsBalances].sort((a, b) => b.asOfDate.localeCompare(a.asOfDate));
   const history = modeHistory(ctx.employment.fgtsModes);
-  const modeText = (m: FgtsModeRecord) => (m.mode === 'BIRTHDAY' ? tx('incomeFgtsModeBirthday', { month: m.birthdayMonth ?? '' }) : tx('incomeFgtsModeTermination'));
+  const modeText = (m: FgtsModeRecord) => (m.mode === 'BIRTHDAY' ? tx('incomeFgtsModeBirthday', { month: monthOnlyOf(m.birthdayMonth, locale) }) : tx('incomeFgtsModeTermination'));
   return (
     <section aria-label={tx('incomeSectionFgts')} className={`${CARD_CLS} space-y-4`}>
       <h2 className={SECTION_TITLE_CLS}>{tx('incomeSectionFgts')}</h2>

@@ -18,7 +18,6 @@ import {
   groupEmploymentsByPerson,
   isCoupleView,
   longDay,
-  monthName,
   monthRange,
   monthTotals,
   scopePersonId,
@@ -30,6 +29,7 @@ import {
   type UpcomingEvent,
 } from '../utils/income';
 import { todayIso } from '../components/people/ui';
+import { capitalize, monthNameOf } from '../utils/incomeMonth';
 
 /** How far ahead the upcoming events reach (months after the current one). */
 const UPCOMING_MONTHS = 6;
@@ -46,7 +46,7 @@ const Income = () => {
   const canEdit = canWritePeople(household);
   const today = todayIso();
   const month = today.slice(0, 7);
-  const monthLabel = monthName(month, locale);
+  const monthLabel = capitalize(monthNameOf(month, locale));
 
   const people = usePeople(householdId, true);
   const authUser = useAuthUser();

@@ -1442,7 +1442,7 @@
   "incomeMonthAccountSelect": "Mês da conta",
   "incomeMonthPrev": "Mês anterior",
   "incomeMonthNext": "Próximo mês",
-  "incomeCountTitle": "Conta de {month}",
+  "incomeCountTitle": "Pago em {paid}, referente a {ref}",
   "incomeCountWeekdays": "Dias úteis (seg a sex)",
   "incomeCountHolidays": "Feriados descontados",
   "incomeCountNoHolidays": "Nenhum feriado no mês.",
@@ -1598,5 +1598,10 @@
   "incomeDeleteRowTitle": "Excluir este registro?",
   "incomeDeleteRowMessage": "Esta ação não pode ser desfeita. Os lançamentos que já entraram no extrato não são apagados.",
   "incomeDeleteRowConfirm": "Excluir",
-  "incomeVacationMonth": "Mês de {month} ({days} dias)"
+  "incomeVacationMonth": "{month} ({days} dias)",
+  "incomeCountNoMonth": "Esta verba não tem pagamento previsto.",
+  "incomeFieldDestAccount": "Conta de destino",
+  "incomeItemDestSame": "A mesma do salário",
+  "incomeFieldLinkedRecurrence": "Recorrência vinculada",
+  "incomeFgtsModeBirthday": "Saque-aniversário, em {month}"
 }

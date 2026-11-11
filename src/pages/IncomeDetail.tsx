@@ -50,7 +50,7 @@ const IncomeDetail = () => {
   const events = useEmploymentEvents(householdId, employmentId, monthRange(addMonthKey(current, -2)).from, monthRange(addMonthKey(current, 13)).to);
   const launchesQuery = useTransactions({
     householdId,
-    startDate: localDate(monthRange(addMonthKey(current, -3)).from),
+    startDate: localDate(monthRange(addMonthKey(current, -12)).from),
     endDate: localDate(monthRange(current).to),
     type: CategoryType.INCOME,
     limit: 100,

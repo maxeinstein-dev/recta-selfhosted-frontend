@@ -292,17 +292,6 @@ export const shortDay = (day: string | null | undefined): string => (isDayKey(da
 /** 'dd/mm/yyyy' of a day ('' for anything else). */
 export const longDay = (day: string | null | undefined): string => (isDayKey(day) ? `${day.slice(8, 10)}/${day.slice(5, 7)}/${day.slice(0, 4)}` : '');
 
-/** Month name and year for a 'YYYY-MM' in a locale ('' for anything else). */
-export function monthName(month: string, locale: string): string {
-  if (!isMonthKey(month)) return '';
-  const date = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1, 15));
-  try {
-    return new Intl.DateTimeFormat(locale, { month: 'long', year: 'numeric', timeZone: 'UTC' }).format(date);
-  } catch {
-    return month;
-  }
-}
-
 // ---- Money -------------------------------------------------------------------------------------------------------
 
 /** Reais to whole cents (Math.round absorbs the float noise of the API's decimals). */
@@ -474,6 +463,31 @@ export function upcomingEvents(sets: readonly PayrollEvents[], today: string): U
 }
 
 // ---- Benefit paid per business day -----------------------------------------------------------------------------
+
+/**
+ * The benefit the detail shows for an item: the one paid in the current month (the same criterion as the list's month
+ * total); when nothing is paid this month, the next payment. Null when no payment is ahead.
+ */
+export function benefitToShow(events: readonly BenefitEvent[], itemId: string, today: string): BenefitEvent | null {
+  const month = monthOf(today);
+  const mine = paymentsOf(events, itemId);
+  const now = mine.find((b) => monthOf(b.paymentDate) === month);
+  if (now) return now;
+  return mine.find((b) => monthOf(b.paymentDate) > month) ?? null;
+}
+
+/** The payment of the same item just before (-1) or after (+1) the given payment date; null at either end. */
+export function neighbourBenefit(events: readonly BenefitEvent[], itemId: string, paymentDate: string, step: -1 | 1): BenefitEvent | null {
+  const mine = paymentsOf(events, itemId);
+  const index = mine.findIndex((b) => b.paymentDate === paymentDate);
+  if (index < 0) return null;
+  return mine[index + step] ?? null;
+}
+
+/** One item's payments in date order. */
+function paymentsOf(events: readonly BenefitEvent[], itemId: string): BenefitEvent[] {
+  return events.filter((b) => b.itemId === itemId).sort((a, b) => a.paymentDate.localeCompare(b.paymentDate));
+}
 
 /** The benefit of one reference month for one item (the one whose payment falls in the range the caller asked for). */
 export function benefitForReference(events: readonly BenefitEvent[], itemId: string, referenceMonth: string): BenefitEvent | null {

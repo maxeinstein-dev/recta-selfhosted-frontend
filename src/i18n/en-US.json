@@ -1581,5 +1581,11 @@
   "incomeDeleteRowTitle": "Delete this record?",
   "incomeDeleteRowMessage": "This cannot be undone. Entries already posted to the statement are not deleted.",
   "incomeDeleteRowConfirm": "Delete",
-  "incomeVacationMonth": "Month of {month} ({days} days)"
+  "incomeVacationMonth": "{month} ({days} days)",
+  "incomeCountTitle": "Paid in {paid}, for {ref}",
+  "incomeCountNoMonth": "This item has no payment forecast.",
+  "incomeFieldDestAccount": "Destination account",
+  "incomeItemDestSame": "Same as the salary",
+  "incomeFieldLinkedRecurrence": "Linked recurrence",
+  "incomeFgtsModeBirthday": "Birthday withdrawal, in {month}"
 }

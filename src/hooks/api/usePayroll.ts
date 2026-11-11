@@ -2,6 +2,30 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '../../utils/api';
 import type { Employment, HouseholdPayrollEvents, PayrollEvents } from '../../utils/income';
+import type { SimBody, SimGrossResult, SimNetResult } from '../../utils/incomeSimulator';
+
+/** POST /payroll/simulate/net: gross to net of one month. Nothing is saved and no employment is needed. */
+export async function simulateNetRequest(body: SimBody): Promise<SimNetResult> {
+  const response = await apiClient.post<SimNetResult>('/payroll/simulate/net', body);
+  if (!response.data) throw new Error('Empty simulation response');
+  return response.data;
+}
+
+/** POST /payroll/simulate/gross: the smallest gross whose net reaches the target. */
+export async function simulateGrossRequest(body: SimBody): Promise<SimGrossResult> {
+  const response = await apiClient.post<SimGrossResult>('/payroll/simulate/gross', body);
+  if (!response.data) throw new Error('Empty simulation response');
+  return response.data;
+}
+
+/** The simulator runs on a button press, so it is a mutation (not a query): one request per press. */
+export function useSimulateNet() {
+  return useMutation<SimNetResult, Error, SimBody>({ mutationFn: simulateNetRequest });
+}
+
+export function useSimulateGross() {
+  return useMutation<SimGrossResult, Error, SimBody>({ mutationFn: simulateGrossRequest });
+}
 
 // The payroll routes (GET /payroll/..., see payroll.routes.ts). Money comes in reais. The household is sent on every
 // route: it scopes the lookup, so a foreign id is a plain 404.

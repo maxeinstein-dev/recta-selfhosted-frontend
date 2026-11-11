@@ -1,5 +1,6 @@
 import { useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
+import { useSearchParams } from "react-router-dom";
 import { useTransactions } from "../context/TransactionsContext";
 import { useI18n } from "../context/I18nContext";
 import { useCurrency } from "../context/CurrencyContext";
@@ -164,12 +165,19 @@ const CreditCards = () => {
     return accounts.filter((account) => account.type === AccountType.CREDIT || account.type === "CREDIT");
   }, [accounts]);
 
-  // Selecionar o primeiro cartão se nenhum estiver selecionado
+  // Selecionar o cartão pedido na URL (?card=&month=, vindo de "Contas a pagar") ou, sem ele, o primeiro cartão
+  const [searchParams] = useSearchParams();
+  const cardParam = searchParams.get('card');
+  const monthParam = searchParams.get('month');
   useEffect(() => {
     if (creditCards.length > 0 && !selectedAccountId) {
-      setSelectedAccountId(creditCards[0].id || null);
+      const wanted = cardParam ? creditCards.find((acc) => acc.id === cardParam) : undefined;
+      setSelectedAccountId((wanted ?? creditCards[0]).id || null);
+      if (wanted && monthParam && /^\d{4}-(0[1-9]|1[0-2])$/.test(monthParam)) {
+        setSelectedMonth(new Date(Number(monthParam.slice(0, 4)), Number(monthParam.slice(5, 7)) - 1, 1));
+      }
     }
-  }, [creditCards, selectedAccountId]);
+  }, [creditCards, selectedAccountId, cardParam, monthParam]);
 
   const selectedAccount = useMemo(() => {
     return creditCards.find((acc) => acc.id === selectedAccountId);

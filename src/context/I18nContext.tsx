@@ -69,10 +69,13 @@ export interface Translations {
   cardCommitShareOfIncome?: string;
   cardCommitNoIncome?: string;
   cardCommitHeaviestMonth?: string;
-  cardCommitPosted?: string;
+  cardCommitInstallments?: string;
+  cardCommitRecurrences?: string;
+  cardCommitPurchases?: string;
   cardCommitForecast?: string;
   cardCommitHeaviest?: string;
   cardCommitOverIncome?: string;
+  cardCommitRiseWarning?: string;
   cardCommitNotIncluded?: string;
   cardCommitLoading?: string;
   cardCommitLoadError?: string;

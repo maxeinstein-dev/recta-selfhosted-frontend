@@ -191,8 +191,8 @@ export function useExecuteRecurringTransaction() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async ({ recurringId, ...data }: { recurringId: string; date?: string; amount?: number }) => {
-      const response = await apiClient.post<{ transaction: Transaction; recurringTransaction: RecurringTransaction }>(
+    mutationFn: async ({ recurringId, ...data }: { recurringId: string; date?: string; amount?: number; paid?: boolean }) => {
+      const response = await apiClient.post<{ transaction: Transaction; nextRunAt?: string; skipped?: boolean; recurringTransaction?: RecurringTransaction }>(
         `/recurring-transactions/${recurringId}/execute`,
         data
       );

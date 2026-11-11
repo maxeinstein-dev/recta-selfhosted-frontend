@@ -2,6 +2,7 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { AlertTriangle, Info } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import CashFlowChart from '../components/cashflow/CashFlowChart';
+import BillsChecklist from '../components/bills/BillsChecklist';
 import { useI18n } from '../context/I18nContext';
 import { useCurrency } from '../context/CurrencyContext';
 import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
@@ -244,7 +245,10 @@ const CashFlow = () => {
         </label>
       </div>
 
-      <div className="max-w-2xl">{body}</div>
+      <div className="max-w-2xl space-y-6">
+        <BillsChecklist householdId={householdId ?? undefined} accountId={accountId || undefined} />
+        {body}
+      </div>
     </div>
   );
 };

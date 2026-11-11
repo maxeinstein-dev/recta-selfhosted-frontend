@@ -193,7 +193,9 @@ function MonthRow({
       </div>
 
       <div className="mt-1.5 flex flex-wrap gap-x-3 gap-y-1 text-xs font-light text-gray-500 dark:text-gray-400">
-        <span>{tx('cardCommitPosted')}: {money(row.posted)}</span>
+        <span>{tx('cardCommitInstallments')}: {money(row.installments)}</span>
+        <span>{tx('cardCommitRecurrences')}: {money(row.recurrences)}</span>
+        <span>{tx('cardCommitPurchases')}: {money(row.purchases)}</span>
         <span>{tx('cardCommitForecast')}: {money(row.forecast)}</span>
       </div>
 

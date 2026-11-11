@@ -16,7 +16,7 @@ import {
   ClipboardCheck,
 } from "lucide-react";
 import { AccountActionsMenu } from "../components/AccountActionsMenu";
-import { CreditCardStatementPanel } from "../components/credit-cards";
+import { CreditCardCommitmentPanel, CreditCardStatementPanel } from "../components/credit-cards";
 import { buildInvoiceStatement } from "../utils/invoiceStatement";
 import {
   isSameMonth,
@@ -724,6 +724,16 @@ const CreditCards = () => {
 
       {/* Componente de resumo consolidado de todos os cartões */}
       <CreditCardsSummary selectedMonth={selectedMonth} />
+
+      {/* Quanto as próximas faturas do cartão selecionado já comprometem (parcelas, recorrências e renda esperada). */}
+      {selectedAccountId && (
+        <CreditCardCommitmentPanel
+          householdId={householdId}
+          accountId={selectedAccountId}
+          baseCurrency={baseCurrency}
+          className="mb-6"
+        />
+      )}
 
       {selectedAccount && cardDetails ? (
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">

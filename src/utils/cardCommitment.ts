@@ -1,0 +1,180 @@
+/**
+ * Pure logic of the card commitment panel: the types of GET /transactions/credit-cards/:accountId/commitment, the month
+ * choices, the rows of the table (cents, bars, heaviest month, months above the expected income), the summary and the
+ * empty check. No React and no imports but the texts types, so tools/fe-tests/t29_card_commitment.mts runs it under tsx
+ * (CARD_COMMITMENT_MODULE points it at a mutated copy).
+ *
+ * What the route does NOT split: purchases and installments come together in `posted`; `forecast` is only the
+ * recurrences still expected before the invoice closes. So the panel separates "already posted" from "expected
+ * recurrences", not installments from recurrences.
+ *
+ * Money: the API answers in money units; every sum here is done in whole cents so a float never drifts.
+ */
+
+export interface CardCommitmentMonth {
+  /** Invoice month, 'YYYY-MM' (the month it is due in). */
+  month: string;
+  closingDate: string;
+  dueDate: string | null;
+  state: string;
+  /** Already on the invoice: purchases and installments, net of refunds. */
+  posted: number;
+  /** Recurrences still expected before the invoice closes. */
+  forecast: number;
+  /** posted + forecast. */
+  expectedTotal: number;
+  /** Income the household's monthly income recurrences are expected to bring in that month. */
+  expectedIncome: number;
+  /** expectedTotal / expectedIncome (4 decimals); null when no income is expected. */
+  incomeShare: number | null;
+}
+
+export interface CardCommitmentTotals {
+  posted: number;
+  forecast: number;
+  expectedTotal: number;
+  expectedIncome: number;
+  incomeShare: number | null;
+}
+
+/** The `data` of GET /transactions/credit-cards/:accountId/commitment. */
+export interface CardCommitmentResponse {
+  accountId: string;
+  months: CardCommitmentMonth[];
+  totals: CardCommitmentTotals;
+}
+
+/** The route accepts 1 to 12 months; the screen offers these three. */
+export const COMMITMENT_MONTH_OPTIONS = [3, 6, 12] as const;
+export const DEFAULT_COMMITMENT_MONTHS = 6;
+
+/** Money units to whole cents (the API's values have at most two decimals; Math.round absorbs the float noise). */
+export const toCents = (amount: number): number => Math.round(amount * 100);
+export const fromCents = (cents: number): number => cents / 100;
+
+/** Any value that is not one of the options falls back to the default, so a bad URL never breaks the panel. */
+export function normalizeMonths(value: number): number {
+  return (COMMITMENT_MONTH_OPTIONS as readonly number[]).includes(value) ? value : DEFAULT_COMMITMENT_MONTHS;
+}
+
+const MONTH_RE = /^\d{4}-\d{2}$/;
+
+/** Invoice month 'YYYY-MM' as 'MM/yyyy'; '' for anything else. */
+export function monthLabel(month: string | null | undefined): string {
+  return month && MONTH_RE.test(month) ? `${month.slice(5, 7)}/${month.slice(0, 4)}` : '';
+}
+
+export interface CommitmentRow {
+  month: string;
+  label: string;
+  postedCents: number;
+  forecastCents: number;
+  totalCents: number;
+  incomeCents: number;
+  posted: number;
+  forecast: number;
+  total: number;
+  income: number;
+  /** total / income (4 decimals); null when no income is expected that month. */
+  share: number | null;
+  /** Width in percent of the heaviest month: the posted part, then the expected part stacked on top of it. */
+  postedBar: number;
+  forecastBar: number;
+  /** The month with the biggest total (the first one when two tie); never set when every month is zero. */
+  heaviest: boolean;
+  /** The total is more than the income expected for the month. */
+  overIncome: boolean;
+}
+
+/**
+ * One row per invoice, in the order the route sent them. Bars are scaled to the heaviest month so the months compare
+ * at a glance; the share is recomputed in cents from the same numbers the row shows.
+ */
+export function buildCommitmentRows(response: Pick<CardCommitmentResponse, 'months'> | null | undefined): CommitmentRow[] {
+  const months = response?.months ?? [];
+  const cents = months.map((m) => ({
+    postedCents: toCents(m.posted),
+    forecastCents: toCents(m.forecast),
+    incomeCents: toCents(m.expectedIncome),
+  }));
+  const totals = cents.map((c) => c.postedCents + c.forecastCents);
+  const maxTotal = Math.max(0, ...totals);
+  const heaviestIndex = maxTotal > 0 ? totals.indexOf(maxTotal) : -1;
+
+  return months.map((m, i): CommitmentRow => {
+    const { postedCents, forecastCents, incomeCents } = cents[i];
+    const totalCents = totals[i];
+    const postedBar = maxTotal > 0 ? Math.round((postedCents / maxTotal) * 100) : 0;
+    const forecastBar = maxTotal > 0 ? Math.round((totalCents / maxTotal) * 100) - postedBar : 0;
+    const share = incomeCents > 0 ? Math.round((totalCents / incomeCents) * 10000) / 10000 : null;
+    return {
+      month: m.month,
+      label: monthLabel(m.month),
+      postedCents,
+      forecastCents,
+      totalCents,
+      incomeCents,
+      posted: fromCents(postedCents),
+      forecast: fromCents(forecastCents),
+      total: fromCents(totalCents),
+      income: fromCents(incomeCents),
+      share,
+      postedBar,
+      forecastBar,
+      heaviest: i === heaviestIndex,
+      overIncome: share !== null && share > 1,
+    };
+  });
+}
+
+export interface CommitmentSummary {
+  postedCents: number;
+  forecastCents: number;
+  totalCents: number;
+  incomeCents: number;
+  posted: number;
+  forecast: number;
+  total: number;
+  income: number;
+  share: number | null;
+  /** Label ('MM/yyyy') of the heaviest month, or null when the period has no commitment. */
+  heaviestLabel: string | null;
+}
+
+/** The period as a whole, summed from the rows (in cents), so it always agrees with what the rows show. */
+export function summarizeCommitment(rows: readonly CommitmentRow[]): CommitmentSummary {
+  let postedCents = 0;
+  let forecastCents = 0;
+  let incomeCents = 0;
+  let heaviestLabel: string | null = null;
+  for (const row of rows) {
+    postedCents += row.postedCents;
+    forecastCents += row.forecastCents;
+    incomeCents += row.incomeCents;
+    if (row.heaviest) heaviestLabel = row.label;
+  }
+  const totalCents = postedCents + forecastCents;
+  return {
+    postedCents,
+    forecastCents,
+    totalCents,
+    incomeCents,
+    posted: fromCents(postedCents),
+    forecast: fromCents(forecastCents),
+    total: fromCents(totalCents),
+    income: fromCents(incomeCents),
+    share: incomeCents > 0 ? Math.round((totalCents / incomeCents) * 10000) / 10000 : null,
+    heaviestLabel: totalCents > 0 ? heaviestLabel : null,
+  };
+}
+
+/** 'empty' when there are no invoices or every one of them is zero; 'filled' otherwise. */
+export function commitmentState(rows: readonly CommitmentRow[]): 'empty' | 'filled' {
+  return rows.some((row) => row.totalCents > 0) ? 'filled' : 'empty';
+}
+
+/** A ratio as a whole percent in the given locale ('27%'); '' when there is no income to compare with. */
+export function percentText(share: number | null | undefined, locale: string): string {
+  if (share === null || share === undefined || !Number.isFinite(share)) return '';
+  return new Intl.NumberFormat(locale, { style: 'percent', maximumFractionDigits: 0 }).format(share);
+}

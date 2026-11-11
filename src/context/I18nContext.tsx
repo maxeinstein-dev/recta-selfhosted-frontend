@@ -60,6 +60,24 @@ export interface Translations {
   community: string;
   /** Projected cash flow page (fluxo de caixa); other locales fall back to Portuguese. */
   cashFlowNavLabel?: string;
+  /** Card commitment panel (credit card page); other locales fall back to Portuguese. */
+  cardCommitTitle?: string;
+  cardCommitDescription?: string;
+  cardCommitMonthsLabel?: string;
+  cardCommitMonthsOption?: string;
+  cardCommitTotal?: string;
+  cardCommitShareOfIncome?: string;
+  cardCommitNoIncome?: string;
+  cardCommitHeaviestMonth?: string;
+  cardCommitPosted?: string;
+  cardCommitForecast?: string;
+  cardCommitHeaviest?: string;
+  cardCommitOverIncome?: string;
+  cardCommitNotIncluded?: string;
+  cardCommitLoading?: string;
+  cardCommitLoadError?: string;
+  cardCommitRetry?: string;
+  cardCommitEmpty?: string;
   cashFlowTitle?: string;
   cashFlowDescription?: string;
   cashFlowPeriodLabel?: string;

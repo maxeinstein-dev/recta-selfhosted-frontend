@@ -222,7 +222,6 @@ const Layout = () => {
           invitesNotification={
             <InvitesNotification onInviteClick={(inviteId) => setSelectedInviteId(inviteId)} />
           }
-          banner={!isNativeApp() ? <MobileBanner /> : null}
         >
           <Outlet />
         </MobileShell>

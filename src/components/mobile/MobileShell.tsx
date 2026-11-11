@@ -14,6 +14,7 @@ import {
   TabId,
   extratoBadgeText,
   extratoTabName,
+  headerTitleFor,
   moreItemForPath,
   screenForPath,
   tabForPath,
@@ -38,8 +39,6 @@ interface MobileShellProps {
   householdSelector: ReactNode;
   /** The invites bell, in the header's right corner. */
   invitesNotification: ReactNode;
-  /** The MobileBanner (web only), placed above the tab bar. */
-  banner: ReactNode;
   onOpenFeedback: () => void;
   onLogout: () => void;
 }
@@ -84,7 +83,6 @@ const MobileShell = ({
   pendingCaptures,
   householdSelector,
   invitesNotification,
-  banner,
   onOpenFeedback,
   onLogout,
 }: MobileShellProps) => {
@@ -98,7 +96,7 @@ const MobileShell = ({
   const activeTab = tabForPath(pathname);
   const activeMore = moreItemForPath(pathname);
   const showMonth = usesMonthSelector(screen);
-  const title = screen ? screenLabel(t, screen) : 'Recta';
+  const title = headerTitleFor(pathname) ?? (screen ? screenLabel(t, screen) : 'Recta');
   const dict = t as unknown as Dict;
 
   // Esc closes the "Mais" sheet; its close button takes the focus when the sheet opens.
@@ -133,16 +131,14 @@ const MobileShell = ({
         {showMonth ? (
           <MonthSelector />
         ) : (
-          <h1 className="min-w-0 flex-1 truncate text-center text-base font-semibold">{title}</h1>
+          <p className="min-w-0 flex-1 truncate text-center text-base font-semibold">{title}</p>
         )}
-        <div className="flex h-11 w-11 flex-none items-center justify-center">{invitesNotification}</div>
+        <div className="flex h-11 w-11 flex-none items-center justify-center [&_button]:flex [&_button]:h-11 [&_button]:w-11 [&_button]:items-center [&_button]:justify-center [&_button]:p-0">{invitesNotification}</div>
       </header>
 
       <main id="main-content" role="main" className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
         <div className="px-4 pb-32 pt-4">{children}</div>
       </main>
-
-      {banner}
 
       <nav
         aria-label="Navegação principal"
@@ -171,7 +167,7 @@ const MobileShell = ({
               {badge && (
                 <span
                   aria-hidden="true"
-                  className="absolute left-[calc(50%+6px)] top-1.5 inline-grid h-[18px] min-w-[18px] place-items-center rounded-full bg-rc-red px-1 text-[11px] font-bold leading-none text-rc-onAccent"
+                  className="absolute left-[calc(50%+6px)] top-1.5 inline-grid h-[18px] min-w-[18px] place-items-center rounded-full bg-rc-red px-1 text-[11px] font-bold leading-none text-rc-onRed"
                 >
                   {badge}
                 </span>

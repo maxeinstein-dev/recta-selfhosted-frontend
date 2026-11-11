@@ -122,6 +122,41 @@ export interface Translations {
   cashFlowLoadError?: string;
   cashFlowRetry?: string;
   cashFlowCurrencyMismatch?: string;
+  /** "Contas a pagar" checklist (see utils/billsChecklistTexts.ts); other locales fall back to Portuguese. */
+  billsTitle?: string;
+  billsTotalCaption?: string;
+  billsPaidCounter?: string;
+  billsFilterLabel?: string;
+  billsFilterAll?: string;
+  billsFilterOverdue?: string;
+  billsPillLabel?: string;
+  billsNounOne?: string;
+  billsNounMany?: string;
+  billsOverdueLabel?: string;
+  billsLoading?: string;
+  billsLoadError?: string;
+  billsRetry?: string;
+  billsEmpty?: string;
+  billsEmptyAllPaid?: string;
+  billsSourcePending?: string;
+  billsSourceRecurrence?: string;
+  billsSourceInvoice?: string;
+  billsSourceOther?: string;
+  billsBadgeEstimated?: string;
+  billsBadgeOverdue?: string;
+  billsOverdueFrom?: string;
+  billsDueOn?: string;
+  billsMarkPaid?: string;
+  billsPayInvoice?: string;
+  billsPayInvoiceFor?: string;
+  billsRecurrenceLater?: string;
+  billsNoAction?: string;
+  billsMarking?: string;
+  billsPaidToast?: string;
+  billsConfirmValueToast?: string;
+  billsAlreadyGenerated?: string;
+  billsMarkError?: string;
+  billsNoDescription?: string;
   
   // Common
   save: string;

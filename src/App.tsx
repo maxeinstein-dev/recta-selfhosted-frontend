@@ -37,6 +37,8 @@ const Captures = lazy(() => import('./pages/Captures'));
 const CashFlow = lazy(() => import('./pages/CashFlow'));
 const Income = lazy(() => import('./pages/Income'));
 const IncomeDetail = lazy(() => import('./pages/IncomeDetail'));
+const IncomeSimulator = lazy(() => import('./pages/IncomeSimulator'));
+const IncomeCalendar = lazy(() => import('./pages/IncomeCalendar'));
 const TermsOfService = lazy(() => import('./pages/TermsOfService'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 const Support = lazy(() => import('./pages/Support'));
@@ -222,6 +224,8 @@ function AppRoutes() {
             <Route path="accounts" element={<Accounts />} />
             <Route path="cash-flow" element={<CashFlow />} />
             <Route path="income" element={<Income />} />
+            <Route path="income/simulator" element={<IncomeSimulator />} />
+            <Route path="income/calendar" element={<IncomeCalendar />} />
             <Route path="income/:employmentId" element={<IncomeDetail />} />
             <Route path="credit-cards" element={<CreditCards />} />
             <Route path="people" element={<People />} />

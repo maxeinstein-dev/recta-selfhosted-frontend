@@ -73,6 +73,7 @@ export interface Translations {
   cardCommitForecast?: string;
   cardCommitHeaviest?: string;
   cardCommitOverIncome?: string;
+  cardCommitRiseWarning?: string;
   cardCommitNotIncluded?: string;
   cardCommitLoading?: string;
   cardCommitLoadError?: string;

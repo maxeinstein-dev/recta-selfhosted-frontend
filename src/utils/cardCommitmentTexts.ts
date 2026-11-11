@@ -19,6 +19,9 @@ export const CARD_COMMITMENT_TEXTS_PT = {
   cardCommitHeaviest: 'Mais pesado',
   cardCommitOverIncome: 'Acima da renda esperada',
 
+  cardCommitRiseWarning:
+    'A fatura de {month} ({amount}) passa da fatura de {base}: alguma compra parcelada ou recorrência pesa nos meses seguintes.',
+
   cardCommitNotIncluded:
     'Renda = só recorrências mensais de receita. Entradas avulsas (Pix, reembolso, ajuda de família) não entram.',
 

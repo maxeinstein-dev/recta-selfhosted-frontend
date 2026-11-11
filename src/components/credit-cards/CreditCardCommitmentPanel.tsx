@@ -1,4 +1,5 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { useId, useMemo, useState, type ReactNode } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useI18n } from '../../context/I18nContext';
 import { useCardCommitment } from '../../hooks/api/useCardCommitment';
 import { formatCurrency } from '../../utils/format';
@@ -7,6 +8,7 @@ import {
   DEFAULT_COMMITMENT_MONTHS,
   buildCommitmentRows,
   commitmentState,
+  firstRiseRow,
   normalizeMonths,
   percentText,
   summarizeCommitment,
@@ -33,10 +35,16 @@ export default function CreditCardCommitmentPanel({ householdId, accountId, base
   const { t, locale } = useI18n();
   const tx = (key: CardCommitmentTextKey, vars?: Record<string, string | number>) => cardCommitmentText(t, key, vars);
   const [months, setMonths] = useState<number>(DEFAULT_COMMITMENT_MONTHS);
+  /** Open by default from the 640 px breakpoint up; on the phone it starts folded, with the total in the header. */
+  const [open, setOpen] = useState<boolean>(() =>
+    typeof window === 'undefined' || !window.matchMedia ? true : window.matchMedia('(min-width: 640px)').matches,
+  );
+  const bodyId = useId();
   const query = useCardCommitment({ householdId, accountId, months });
   const rows = useMemo(() => buildCommitmentRows(query.data), [query.data]);
   const summary = useMemo(() => summarizeCommitment(rows), [rows]);
   const state = commitmentState(rows);
+  const riseRow = useMemo(() => firstRiseRow(rows), [rows]);
   const money = (value: number) => formatCurrency(value, baseCurrency);
 
   if (!accountId || !householdId) return null;
@@ -87,6 +95,12 @@ export default function CreditCardCommitmentPanel({ householdId, accountId, base
           ))}
         </ul>
 
+        {riseRow && (
+          <p role="note" className="mt-3 rounded-md bg-amber-50 dark:bg-amber-900/20 px-3 py-2 text-xs font-light text-amber-800 dark:text-amber-300">
+            {tx('cardCommitRiseWarning', { month: riseRow.label, amount: money(riseRow.total), base: rows[0].label })}
+          </p>
+        )}
+
         {summary.heaviestLabel && (
           <p className="mt-3 text-xs font-light text-gray-500 dark:text-gray-400">
             {tx('cardCommitHeaviestMonth', { month: summary.heaviestLabel })}
@@ -102,19 +116,37 @@ export default function CreditCardCommitmentPanel({ householdId, accountId, base
       data-testid="card-commitment-panel"
       className={`rounded-lg border border-gray-100 dark:border-gray-800 bg-white dark:bg-gray-900 p-4 sm:p-5 ${className}`}
     >
-      <div className="flex flex-wrap items-start justify-between gap-3 mb-3">
-        <div className="min-w-0">
-          <h3 className="text-sm font-medium text-gray-900 dark:text-white">{tx('cardCommitTitle')}</h3>
-          <p className="mt-1 text-xs font-light text-gray-500 dark:text-gray-400">{tx('cardCommitDescription')}</p>
-        </div>
-        <div role="group" aria-label={tx('cardCommitMonthsLabel')} className="flex gap-1 rounded-md bg-gray-100 dark:bg-gray-800 p-1">
+      <div className="flex items-start justify-between gap-3">
+        <button
+          type="button"
+          aria-expanded={open}
+          aria-controls={bodyId}
+          onClick={() => setOpen((value) => !value)}
+          className="min-w-0 min-h-[44px] flex-1 text-left"
+        >
+          <span className="block text-sm font-medium text-gray-900 dark:text-white">{tx('cardCommitTitle')}</span>
+          {!open && state === 'filled' && (
+            <span data-testid="commitment-summary" className="block mt-0.5 text-xs font-light text-gray-500 dark:text-gray-400 tabular-nums">
+              {tx('cardCommitTotal')}: {money(summary.total)}
+            </span>
+          )}
+        </button>
+        <span aria-hidden="true" className="mt-3 text-gray-400 dark:text-gray-500">
+          {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+        </span>
+      </div>
+
+      <div id={bodyId} hidden={!open} className={open ? 'mt-3' : ''}>
+        <p className="text-xs font-light text-gray-500 dark:text-gray-400">{tx('cardCommitDescription')}</p>
+
+        <div role="group" aria-label={tx('cardCommitMonthsLabel')} className="mt-3 flex gap-1 rounded-md bg-gray-100 dark:bg-gray-800 p-1">
           {COMMITMENT_MONTH_OPTIONS.map((option) => (
             <button
               key={option}
               type="button"
               aria-pressed={months === option}
               onClick={() => setMonths(normalizeMonths(option))}
-              className={`min-h-[44px] px-3 text-xs font-light rounded transition-colors ${
+              className={`flex-1 min-h-[44px] px-3 text-xs font-light rounded transition-colors ${
                 months === option
                   ? 'bg-white dark:bg-gray-700 text-gray-900 dark:text-white shadow-sm'
                   : 'text-gray-500 dark:text-gray-400'
@@ -124,11 +156,11 @@ export default function CreditCardCommitmentPanel({ householdId, accountId, base
             </button>
           ))}
         </div>
+
+        <div className="mt-3">{body}</div>
+
+        <p className="mt-4 text-[11px] font-light text-gray-400 dark:text-gray-500">{tx('cardCommitNotIncluded')}</p>
       </div>
-
-      {body}
-
-      <p className="mt-4 text-[11px] font-light text-gray-400 dark:text-gray-500">{tx('cardCommitNotIncluded')}</p>
     </section>
   );
 }

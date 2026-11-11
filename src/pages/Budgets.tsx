@@ -16,6 +16,9 @@ import { DatePicker } from '../components/DatePicker';
 import { TransactionType } from '../lib/enums';
 import { BudgetList } from '../components/budgets';
 import { isGeneralBudget } from '../utils/categories';
+import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
+import { useBudgetSummary } from '../hooks/api/useBudgets';
+import { ownShareByBudget, summaryMonthOf } from '../utils/budgetOwnShare';
 
 const Budgets = () => {
   const { budgets, transactions, deleteBudget, loading } = useTransactions();
@@ -53,6 +56,11 @@ const Budgets = () => {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Own share (what is left after what other people owe): from the API, only shown where there is a division.
+  const { householdId } = useDefaultHousehold();
+  const summary = useBudgetSummary({ householdId: householdId ?? '', month: summaryMonthOf(selectedMonth) });
+  const ownShares = useMemo(() => ownShareByBudget(summary.data?.budgets), [summary.data]);
 
   const monthBudgets = useMemo(() => {
     if (!budgets || budgets.length === 0) {
@@ -111,9 +119,10 @@ const Budgets = () => {
         remaining,
         percentage,
         status,
+        ownSpent: budget.type === TransactionType.EXPENSE ? ownShares.get(budget.id ?? '')?.ownSpent : undefined,
       };
     });
-  }, [monthBudgets, categoryData, monthTransactions]);
+  }, [monthBudgets, categoryData, monthTransactions, ownShares]);
 
   const handleDelete = (id: string) => {
     setConfirmModal({ isOpen: true, budgetId: id });

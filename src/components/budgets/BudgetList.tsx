@@ -8,6 +8,8 @@ interface BudgetListProps {
     remaining: number;
     percentage: number;
     status: 'exceeded' | 'warning' | 'ok';
+    /** Own share of the spending, only when other people owe part of it. */
+    ownSpent?: number;
   }>;
   baseCurrency: string;
   onEdit: (budget: Budget) => void;

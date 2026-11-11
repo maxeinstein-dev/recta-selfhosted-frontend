@@ -11,6 +11,8 @@ import { getTransactionsByMonth } from '../../utils/calculations';
 import { isGeneralBudget } from '../../utils/categories';
 import { useCategories } from '../../hooks/api/useCategories';
 import { useDefaultHousehold } from '../../hooks/useDefaultHousehold';
+import { useBudgetSummary } from '../../hooks/api/useBudgets';
+import { ownShareByBudget, summaryMonthOf } from '../../utils/budgetOwnShare';
 
 interface BudgetVsRealizedWidgetProps {
   selectedMonth: Date;
@@ -36,6 +38,9 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
   const resolveCategoryName = (categoryName: string): string => {
     return getCategoryDisplayName(categoryName, t as unknown as Record<string, string>, customCategories);
   };
+
+  const summary = useBudgetSummary({ householdId: householdId ?? '', month: summaryMonthOf(selectedMonth) });
+  const ownShares = useMemo(() => ownShareByBudget(summary.data?.budgets), [summary.data]);
 
   const budgetData = useMemo(() => {
     const monthBudgets = budgets.filter((b) => {
@@ -80,6 +85,7 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
         category: budget.category,
         budget: budget.amount,
         spent,
+        ownSpent: budget.type === TransactionType.EXPENSE ? ownShares.get(budget.id ?? '')?.ownSpent : undefined,
         remaining,
         percentage,
         rawPercentage,
@@ -95,7 +101,7 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
       // Se mesmo status, ordenar por porcentagem (maior primeiro)
       return b.percentage - a.percentage;
     });
-  }, [budgets, selectedMonth, transactions]);
+  }, [budgets, selectedMonth, transactions, ownShares]);
 
   if (budgetData.length === 0) {
     return (
@@ -196,6 +202,14 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
                       {blurNumbers ? '••••' : formatCurrency(budget.spent, baseCurrency)}
                     </span>
                   </div>
+                  {budget.ownSpent !== undefined && (
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400">{t.budgetOwnShare}: </span>
+                      <span className={`font-light tracking-tight text-gray-900 dark:text-gray-100 ${blurNumbers ? 'demo-blur' : ''}`}>
+                        {blurNumbers ? '••••' : formatCurrency(budget.ownSpent, baseCurrency)}
+                      </span>
+                    </div>
+                  )}
                 </div>
                 {budget.remaining !== 0 && (
                   <div>

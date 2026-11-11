@@ -485,6 +485,8 @@ export interface Translations {
   editBudget: string;
   budgetAmount: string;
   spent: string;
+  budgetOwnShare: string;
+  budgetOwnShareOfLimit: string;
   remaining: string;
   exceeded: string;
   general: string;

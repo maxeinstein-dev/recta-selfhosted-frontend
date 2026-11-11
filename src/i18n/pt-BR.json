@@ -349,6 +349,8 @@
   "editBudget": "Editar Orçamento",
   "budgetAmount": "Orçamento",
   "spent": "Gasto",
+  "budgetOwnShare": "Sua parte",
+  "budgetOwnShareOfLimit": "do limite",
   "remaining": "Restante",
   "exceeded": "Excedido",
   "general": "Geral (Todas as categorias)",

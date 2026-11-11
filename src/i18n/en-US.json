@@ -321,6 +321,8 @@
   "editBudget": "Edit Budget",
   "budgetAmount": "Budget",
   "spent": "Spent",
+  "budgetOwnShare": "Your share",
+  "budgetOwnShareOfLimit": "of the limit",
   "remaining": "Remaining",
   "exceeded": "Exceeded",
   "general": "General (All categories)",

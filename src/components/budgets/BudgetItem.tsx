@@ -2,6 +2,7 @@ import { Budget } from '../../types';
 import { formatCurrency } from '../../utils/format';
 import { BudgetActionsMenu } from '../BudgetActionsMenu';
 import { isGeneralBudget } from '../../utils/categories';
+import { ownSharePercentage } from '../../utils/budgetOwnShare';
 
 interface BudgetItemProps {
   budget: Budget & {
@@ -9,6 +10,8 @@ interface BudgetItemProps {
     remaining: number;
     percentage: number;
     status: 'exceeded' | 'warning' | 'ok';
+    /** Own share of the spending, only when other people owe part of it. */
+    ownSpent?: number;
   };
   baseCurrency: string;
   onEdit: (budget: Budget) => void;
@@ -49,6 +52,12 @@ export const BudgetItem = ({
                 </div>
               </div>
             </div>
+            {budget.ownSpent !== undefined && (
+              <p className="text-xs font-light text-gray-500 dark:text-gray-400">
+                {t.budgetOwnShare}: <span className="text-gray-900 dark:text-white">{formatCurrency(budget.ownSpent, baseCurrency)}</span>
+                {budget.amount > 0 && <> ({ownSharePercentage(budget.ownSpent, budget.amount).toFixed(1)}% {t.budgetOwnShareOfLimit})</>}
+              </p>
+            )}
             <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-gray-500 dark:text-gray-300">

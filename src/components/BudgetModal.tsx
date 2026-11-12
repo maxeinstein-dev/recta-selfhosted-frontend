@@ -9,6 +9,7 @@ import { useI18n } from '../context/I18nContext';
 import { parseCurrencyValue } from '../utils/currency';
 import { Budget } from '../types';
 import { startOfMonth } from 'date-fns';
+import { measureForSave } from '../utils/budgetOwnShare';
 import { createSchemas, BudgetFormData } from '../schemas';
 import SelectCombobox from './SelectCombobox';
 import { getMergedCategories } from '../utils/categories';
@@ -48,12 +49,14 @@ export const BudgetModal = ({
       amount: 0,
       type: TransactionType.EXPENSE,
       month: new Date(),
+      measure: 'WHOLE',
     },
   });
 
   const watchedType = useWatch({ control, name: 'type' });
   const watchedCategory = useWatch({ control, name: 'category' });
   const watchedMonth = useWatch({ control, name: 'month' });
+  const watchedMeasure = useWatch({ control, name: 'measure' });
 
   const typeOptions = useMemo(() => [
     { value: TransactionType.INCOME, label: t.income },
@@ -100,6 +103,7 @@ export const BudgetModal = ({
         amount: budgetAmount,
         type: editingBudget.type,
         month: budgetMonth,
+        measure: editingBudget.measure ?? 'WHOLE',
       });
 
       currencyMask.setValue(budgetAmount);
@@ -110,6 +114,7 @@ export const BudgetModal = ({
         amount: 0,
         type: TransactionType.EXPENSE,
         month: selectedMonth,
+        measure: 'WHOLE',
       });
       currencyMask.setValue('');
       setValue('amount', 0, { shouldValidate: false });
@@ -165,6 +170,7 @@ export const BudgetModal = ({
         amount: data.amount,
         type: data.type,
         month: data.month,
+        measure: measureForSave(data.measure, data.type === TransactionType.EXPENSE),
       };
 
       if (editingBudget?.id) {
@@ -262,6 +268,29 @@ export const BudgetModal = ({
               <p className="mt-1 text-sm text-red-600">{errors.amount.message}</p>
             )}
           </div>
+
+          {watchedType === TransactionType.EXPENSE && (
+            <fieldset>
+              <legend className="block text-sm font-light text-gray-500 dark:text-gray-400 mb-2">{t.budgetMeasureLabel}</legend>
+              <div className="space-y-1">
+                {(['WHOLE', 'OWN_SHARE'] as const).map((option) => (
+                  <label key={option} htmlFor={`budget-measure-${option}`} className="flex min-h-[44px] items-center gap-3 text-sm font-light text-gray-900 dark:text-white cursor-pointer">
+                    <input
+                      id={`budget-measure-${option}`}
+                      type="radio"
+                      name="budget-measure"
+                      value={option}
+                      checked={(watchedMeasure ?? 'WHOLE') === option}
+                      onChange={() => setValue('measure', option, { shouldValidate: true, shouldDirty: true })}
+                      className="h-4 w-4 text-primary-600 border-gray-300 dark:border-gray-700"
+                    />
+                    {option === 'WHOLE' ? t.budgetMeasureWhole : t.budgetMeasureOwn}
+                  </label>
+                ))}
+              </div>
+              <p className="mt-1 text-xs font-light text-gray-400 dark:text-gray-500">{t.budgetMeasureHint}</p>
+            </fieldset>
+          )}
 
           <div className="min-w-0">
             <label className="block text-sm font-light text-gray-500 dark:text-gray-400 mb-2">

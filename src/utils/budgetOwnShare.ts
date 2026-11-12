@@ -11,6 +11,10 @@ export interface OwnShareSummaryRow {
   budgetId: string;
   spending: number;
   ownSpent?: number;
+  /** How the budget is measured (absent on an older API: the full spending). */
+  measure?: string;
+  /** The amount the limit is compared with, as the API computed it. */
+  measured?: number;
 }
 
 export interface OwnShare {
@@ -40,14 +44,20 @@ export function ownShareByBudget(rows: readonly OwnShareSummaryRow[] | undefined
 
 export type BudgetRealizedStatus = 'ok' | 'warning' | 'exceeded';
 
+/** WHOLE: the full spending (a budget kept together). OWN_SHARE: only the own share (kept separately). */
+export type BudgetMeasure = 'WHOLE' | 'OWN_SHARE';
+
 export interface BudgetRealized {
-  /** Realized amount of the month, as the API computed it. */
+  measure: BudgetMeasure;
+  /** Full realized amount of the month, as the API computed it. */
   spent: number;
+  /** The amount the limit is compared with: `spent`, or the own share for a budget measured separately. */
+  measured: number;
   /** Own share, only for an expense budget where other people owe part of the spending. Never above `spent`. */
   ownSpent?: number;
-  /** Limit minus spent (negative when exceeded). */
+  /** Limit minus the measured amount (negative when exceeded). */
   remaining: number;
-  /** Spent over the limit, in percent (0 without a limit). */
+  /** Measured amount over the limit, in percent (0 without a limit). */
   percentage: number;
   status: BudgetRealizedStatus;
 }
@@ -63,20 +73,26 @@ export function summaryRowsByBudget(rows: readonly OwnShareSummaryRow[] | undefi
  * type and of the shares live). No row, or an invalid amount, gives null: the screen then shows that the amount is not
  * available instead of a number of its own.
  *
- * Sums are made in whole cents. The status follows the spending over the limit: 100% or more is exceeded, 80% or more
- * a warning.
+ * Sums are made in whole cents. The status follows the MEASURED amount over the limit (the amount the API measured for
+ * the mode of the budget; never one computed here): 100% or more is exceeded, 80% or more a warning.
  */
 export function budgetRealized(limit: number, row: OwnShareSummaryRow | undefined, isExpense: boolean): BudgetRealized | null {
   if (!row || typeof row.spending !== 'number' || !Number.isFinite(row.spending) || !Number.isFinite(limit)) return null;
   const spentCents = Math.max(0, cents(row.spending));
   const limitCents = cents(limit);
-  const percentage = limitCents > 0 ? (spentCents / limitCents) * 100 : 0;
+  // Only an expense budget can be measured separately, and only with the amount the API measured
+  const separate = isExpense && row.measure === 'OWN_SHARE' && typeof row.measured === 'number' && Number.isFinite(row.measured);
+  const measure: BudgetMeasure = isExpense && row.measure === 'OWN_SHARE' ? 'OWN_SHARE' : 'WHOLE';
+  const measuredCents = separate ? Math.max(0, cents(row.measured as number)) : spentCents;
+  const percentage = limitCents > 0 ? (measuredCents / limitCents) * 100 : 0;
   const status: BudgetRealizedStatus = percentage >= 100 ? 'exceeded' : percentage >= 80 ? 'warning' : 'ok';
   const own = isExpense ? ownShareByBudget([row]).get(row.budgetId) : undefined;
   return {
+    measure,
     spent: spentCents / 100,
+    measured: measuredCents / 100,
     ...(own ? { ownSpent: Math.min(own.ownSpent, spentCents / 100) } : {}),
-    remaining: (limitCents - spentCents) / 100,
+    remaining: (limitCents - measuredCents) / 100,
     percentage,
     status,
   };
@@ -90,4 +106,9 @@ export function ownSharePercentage(ownSpent: number, limit: number): number {
 /** 'YYYY-MM' of a local date: the planning month the summary is asked for. */
 export function summaryMonthOf(date: Date): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** The mode a budget is saved with: only an expense budget can be measured separately; anything else is WHOLE. */
+export function measureForSave(choice: string | undefined, isExpense: boolean): BudgetMeasure {
+  return isExpense && choice === 'OWN_SHARE' ? 'OWN_SHARE' : 'WHOLE';
 }

@@ -111,6 +111,7 @@ export const createSchemas = (t: Translations) => {
       }
       return new Date(val);
     }),
+    measure: z.enum(['WHOLE', 'OWN_SHARE']).optional(),
   });
 
   // Account Schema - usando enum para corresponder ao backend

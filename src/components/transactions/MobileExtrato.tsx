@@ -71,14 +71,15 @@ const MobileExtrato = ({
   const empty = !loading && days.length === 0;
 
   return (
-    <div className="space-y-0">
+    <div>
       <h1 className="text-2xl font-light tracking-tight text-rc-ink">Extrato</h1>
 
       {/* The 44 px rule reaches the buttons of the panels the Extrato embeds (they are sized for the desktop). */}
       <div className="[&_button]:min-h-[44px]">{dueBox}</div>
-      {captureBox}
+      {/* 12 px between the box and the search; the wrapper disappears when the box renders nothing. */}
+      <div className="mb-3 empty:hidden">{captureBox}</div>
 
-      <label className={`mt-3 flex min-h-[48px] items-center gap-2 rounded-2xl border border-rc-line bg-rc-card px-3 text-rc-ink3`}>
+      <label className={`flex min-h-[48px] items-center gap-2 rounded-2xl border border-rc-line bg-rc-card px-3 text-rc-ink3`}>
         <Search className="h-5 w-5 flex-none" aria-hidden="true" />
         <span className="sr-only">Buscar lançamento</span>
         <input

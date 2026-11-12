@@ -54,6 +54,28 @@ const MobileCaptureBox = ({ householdId, accounts, canEdit }: MobileCaptureBoxPr
   const shown = items.slice(0, visible);
   const hiddenCount = Math.max(0, total - shown.length);
 
+  const footerButton = `${TOUCH} flex w-full items-center text-left text-sm font-semibold text-rc-accentInk`;
+  // At most one of these applies: more to show, less to hide, or the next page of the list.
+  const footer =
+    rest > 0 ? (
+      <button type="button" onClick={() => setOpen(true)} className={footerButton}>
+        Ver mais {rest}
+      </button>
+    ) : open && hiddenCount === 0 && total > 1 ? (
+      <button type="button" onClick={() => setOpen(false)} className={footerButton}>
+        Ver menos
+      </button>
+    ) : open && hiddenCount > 0 && list.hasNextPage ? (
+      <button
+        type="button"
+        onClick={() => void list.fetchNextPage()}
+        disabled={list.isFetchingNextPage}
+        className={`${footerButton} disabled:opacity-50`}
+      >
+        Carregar mais capturas
+      </button>
+    ) : null;
+
   const reportFailure = (error: unknown) => {
     const conflict = (error as { status?: number } | null)?.status === 409;
     showError(conflict ? tx('captureChangedElsewhere') : tx('captureActionFailed'));
@@ -110,7 +132,7 @@ const MobileCaptureBox = ({ householdId, accounts, canEdit }: MobileCaptureBoxPr
           const accountName = accounts.find((a) => a.id === item.suggestion.accountId)?.name ?? null;
           const busy = (confirm.isPending && confirm.variables?.id === item.id) || (dismiss.isPending && dismiss.variables?.id === item.id);
           return (
-            <li key={item.id} className="border-t border-rc-line py-2.5 first:border-t-0">
+            <li key={item.id} className="border-t border-rc-line py-2.5 first:border-t-0 last:pb-0">
               <div className="flex min-w-0 items-baseline gap-2">
                 <p className="min-w-0 flex-1 truncate font-medium">{desc}</p>
                 <p className={`whitespace-nowrap font-semibold tabular-nums ${isIncome && amount !== null ? 'text-rc-green' : ''}`}>
@@ -145,25 +167,10 @@ const MobileCaptureBox = ({ householdId, accounts, canEdit }: MobileCaptureBoxPr
         })}
       </ul>
 
-      {rest > 0 && (
-        <button type="button" onClick={() => setOpen(true)} className={`${TOUCH} mt-1 w-full text-left text-sm font-semibold text-rc-accentInk`}>
-          Ver mais {rest}
-        </button>
-      )}
-      {open && hiddenCount === 0 && total > 1 && (
-        <button type="button" onClick={() => setOpen(false)} className={`${TOUCH} mt-1 w-full text-left text-sm font-semibold text-rc-accentInk`}>
-          Ver menos
-        </button>
-      )}
-      {open && hiddenCount > 0 && list.hasNextPage && (
-        <button
-          type="button"
-          onClick={() => void list.fetchNextPage()}
-          disabled={list.isFetchingNextPage}
-          className={`${TOUCH} mt-1 w-full text-left text-sm font-semibold text-rc-accentInk disabled:opacity-50`}
-        >
-          Carregar mais capturas
-        </button>
+      {footer && (
+        // The text sits centred in its 44 px target; the -mb-3 takes the target's empty half-line off the bottom,
+        // so the space under the text equals the box's side padding (16 px), as it does without this line.
+        <div className="-mb-3.5 mt-1">{footer}</div>
       )}
 
       {editing && householdId && (

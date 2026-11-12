@@ -16,7 +16,7 @@ const MonthSelector = () => {
       >
         <ChevronLeft className="h-5 w-5" aria-hidden="true" />
       </button>
-      <span className="min-w-0 truncate text-base font-semibold capitalize tabular-nums text-rc-ink" aria-live="polite">
+      <span className="min-w-0 truncate text-base font-semibold first-letter:uppercase tabular-nums text-rc-ink" aria-live="polite">
         {label}
       </span>
       <button

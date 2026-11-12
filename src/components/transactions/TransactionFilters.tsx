@@ -6,7 +6,7 @@ import { ChevronDown, Filter, X } from 'lucide-react';
 import { TransactionType } from '../../lib/enums';
 import { TransactionSearchBar } from '../shared';
 
-interface TransactionFiltersProps {
+export interface TransactionFiltersProps {
   searchInput: string;
   onSearchChange: (value: string) => void;
   dateRange: DateRange;
@@ -26,6 +26,8 @@ interface TransactionFiltersProps {
   onClearFilters: () => void;
   hasActiveFilters: boolean;
   disabled?: boolean;
+  /** Mobile "Mais filtros" sheet: no search bar and no accordion trigger (the Extrato has its own), filters open. */
+  inSheet?: boolean;
 }
 
 export const TransactionFilters = ({
@@ -48,10 +50,12 @@ export const TransactionFilters = ({
   onClearFilters,
   hasActiveFilters,
   disabled = false,
+  inSheet = false,
 }: TransactionFiltersProps) => {
   // On mobile, hide secondary filters behind a collapsible accordion so the user
   // can immediately see the transaction list. Expanded by default on desktop.
   const [isExpanded, setIsExpanded] = useState(false);
+  const expanded = inSheet || isExpanded;
   const hasNonSearchFilters =
     typeFilter !== 'todos' ||
     categoryFilter !== 'todas' ||
@@ -64,18 +68,20 @@ export const TransactionFilters = ({
       <div className="space-y-4">
         {/* Primeira linha: Busca e Data (Data oculta na aba Próximos agendamentos) */}
         <div className={`grid gap-4 ${activeTab === 'scheduled' ? 'grid-cols-1' : 'grid-cols-1 md:grid-cols-3'}`}>
-          <div className={activeTab === 'scheduled' ? '' : 'md:col-span-2'}>
-            <TransactionSearchBar
-              value={searchInput}
-              onChange={onSearchChange}
-              placeholder={t.search}
-              disabled={disabled}
-            />
-          </div>
+          {!inSheet && (
+            <div className={activeTab === 'scheduled' ? '' : 'md:col-span-2'}>
+              <TransactionSearchBar
+                value={searchInput}
+                onChange={onSearchChange}
+                placeholder={t.search}
+                disabled={disabled}
+              />
+            </div>
+          )}
           {activeTab !== 'scheduled' && (
             <>
               {/* Mobile: collapsed accordion trigger for date range + secondary filters */}
-              <button
+              {!inSheet && <button
                 type="button"
                 onClick={() => setIsExpanded((prev) => !prev)}
                 className="md:hidden inline-flex items-center justify-between w-full px-4 py-2 h-10 text-sm font-medium border border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-200 bg-white dark:bg-gray-900 rounded-md hover:opacity-80 transition-opacity"
@@ -93,7 +99,7 @@ export const TransactionFilters = ({
                 <ChevronDown
                   className={`h-4 w-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
                 />
-              </button>
+              </button>}
               {/* Desktop: always show date range side by side with search */}
               <div className="hidden md:flex gap-2">
                 <div className="flex-1">
@@ -119,7 +125,7 @@ export const TransactionFilters = ({
         </div>
 
         {/* Mobile: collapsible content (date range + secondary filters) */}
-        {activeTab !== 'scheduled' && isExpanded && (
+        {activeTab !== 'scheduled' && expanded && (
           <div className="md:hidden space-y-4">
             <div className="flex gap-2">
               <div className="flex-1">

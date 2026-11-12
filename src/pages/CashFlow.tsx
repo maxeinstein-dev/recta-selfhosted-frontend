@@ -2,12 +2,14 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { AlertTriangle, Info } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import CashFlowChart from '../components/cashflow/CashFlowChart';
+import MobileCashFlow from '../components/cashflow/MobileCashFlow';
 import BillsChecklist from '../components/bills/BillsChecklist';
 import { useI18n } from '../context/I18nContext';
 import { useCurrency } from '../context/CurrencyContext';
 import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
 import { useAccounts } from '../hooks/api/useAccounts';
 import { useCashFlow } from '../hooks/api/useCashFlow';
+import { useIsMobileShell } from '../hooks/useIsMobileShell';
 import { formatCurrency } from '../utils/format';
 import {
   CASH_FLOW_PERIODS,
@@ -57,6 +59,8 @@ const CashFlow = () => {
 
   const [days, setDays] = useState<number>(DEFAULT_CASH_FLOW_DAYS);
   const [accountId, setAccountId] = useState<string>('');
+  // Below 768 px the Fluxo tab of the mobile shell (lote R4); the desktop layout is unchanged.
+  const isMobileShell = useIsMobileShell();
 
   const accounts = useAccounts({ householdId: householdId ?? '' });
   const cashList = useMemo(() => cashAccounts(accounts.data?.accounts ?? []), [accounts.data]);
@@ -71,6 +75,32 @@ const CashFlow = () => {
   const dayGroups = useMemo(() => (data ? groupEventsByDay(allEvents(data)) : []), [data]);
 
   const selectPeriod = (value: number) => setDays(normalizePeriod(value));
+
+  if (isMobileShell) {
+    const loading = !householdId || query.isPending;
+    return (
+      <MobileCashFlow
+        loading={loading}
+        failed={!loading && (query.isError || !data)}
+        mismatch={(query.error as { status?: number } | null)?.status === 400}
+        onRetry={() => void query.refetch()}
+        data={data}
+        points={points}
+        lowest={lowest}
+        negativeDate={negativeDate}
+        dayGroups={dayGroups}
+        pointByDate={pointByDate}
+        currency={currency}
+        days={days}
+        onSelectDays={selectPeriod}
+        accountId={accountId}
+        onSelectAccount={setAccountId}
+        accounts={cashList.map((account) => ({ id: account.id, name: account.name }))}
+        footer={<BillsChecklist householdId={householdId ?? undefined} accountId={accountId || undefined} />}
+        tx={tx}
+      />
+    );
+  }
 
   let body: ReactNode;
   if (!householdId || query.isPending) {

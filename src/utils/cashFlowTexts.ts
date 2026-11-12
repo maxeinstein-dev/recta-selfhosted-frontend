@@ -20,6 +20,14 @@ export const CASH_FLOW_TEXTS_PT = {
   cashFlowNegativeWarning: 'A conta fica negativa em {date}. Os eventos desse dia estão na lista abaixo.',
   cashFlowEndBalance: 'Saldo em {date}',
 
+  // Aviso do celular: só fatos calculados, sem sugestão do que fazer (lote R4).
+  cashFlowMissingAmount: 'faltam {amount}',
+  cashFlowWarnNegativeFrom: 'A conta fica negativa em {date}.',
+  cashFlowWarnWorst: 'O pior dia é {date}, quando faltam {amount}.',
+  cashFlowWarnBackPositive: 'O saldo volta ao positivo em {date}.',
+  cashFlowWarnStaysNegative: 'O saldo não volta ao positivo até {date}.',
+  cashFlowTodayWord: 'Hoje',
+
   cashFlowChartTitle: 'Saldo dia a dia',
   cashFlowChartLabel: 'Gráfico do saldo dia a dia. Menor saldo: {amount}, em {date}.',
   cashFlowZeroLine: 'zero',

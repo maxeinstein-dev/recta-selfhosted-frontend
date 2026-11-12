@@ -29,6 +29,7 @@ import {
   type BillAction,
 } from '../../utils/billsChecklist';
 import { billsText, type BillsTextKey } from '../../utils/billsChecklistTexts';
+import { EarlyDiscountNotice, usePayNow } from '../cashflow/EarlyDiscountBits';
 
 const CARD_CLS = 'rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3';
 const CHIP_CLS = 'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-light';
@@ -53,6 +54,7 @@ export default function BillsChecklist({ householdId, accountId }: BillsChecklis
   const navigate = useNavigate();
   const confirmReceipt = useConfirmReceipt();
   const { payPending, generateOccurrence } = useBillActions();
+  const pay = usePayNow();
 
   const [filter, setFilter] = useState<string>(FILTER_ALL);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -74,8 +76,8 @@ export default function BillsChecklist({ householdId, accountId }: BillsChecklis
 
   const paidKnown = !!today && !paidQuery.isPending && !paidQuery.isError;
   const paidCount = useMemo(
-    () => (today ? paidIds(paidQuery.data?.data ?? [], monthStart(today), monthEnd(today), markedIds).size : 0),
-    [paidQuery.data, markedIds, today],
+    () => (today ? paidIds(paidQuery.data?.data ?? [], monthStart(today), monthEnd(today), markedIds, recurrenceById).size : 0),
+    [paidQuery.data, markedIds, today, recurrenceById],
   );
   const progress = billsProgress(bills, paidCount);
 
@@ -88,6 +90,18 @@ export default function BillsChecklist({ householdId, accountId }: BillsChecklis
   };
 
   const mark = async (bill: Bill, action: BillAction) => {
+    if (action.type === 'payNext') {
+      // Not generated yet and with a discount: the route creates the occurrence already paid (discounted until the limit)
+      // and moves the recurrence on, so the job does not generate another one at the due date.
+      setBusyKey(bill.key);
+      try {
+        const id = await pay.payNow(action.recurringId);
+        if (id) markDone(bill, id);
+      } finally {
+        setBusyKey(null);
+      }
+      return;
+    }
     if (action.type !== 'pay' && action.type !== 'execute') return;
     setBusyKey(bill.key);
     // A bill not due yet is paid today, never on its future due day
@@ -209,10 +223,10 @@ export default function BillsChecklist({ householdId, accountId }: BillsChecklis
                 return (
                   <li key={bill.key} className="flex min-h-[44px] items-start gap-2 py-2">
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center">
-                      {action.type === 'pay' || action.type === 'execute' ? (
+                      {action.type === 'pay' || action.type === 'execute' || action.type === 'payNext' ? (
                         <button
                           type="button"
-                          disabled={busyKey !== null}
+                          disabled={busyKey !== null || pay.busy}
                           aria-label={tx('billsMarkPaid', { name })}
                           onClick={() => void mark(bill, action)}
                           className="flex h-11 w-11 items-center justify-center rounded-full text-gray-400 hover:text-emerald-600 disabled:opacity-60 dark:text-gray-500 dark:hover:text-emerald-400"
@@ -239,6 +253,7 @@ export default function BillsChecklist({ householdId, accountId }: BillsChecklis
                           <span className={`${CHIP_CLS} bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300`}>{tx('billsDueOn', { date: shortDate(bill.date) })}</span>
                         )}
                       </div>
+                      <EarlyDiscountNotice quote={bill.earlyDiscount} today={today} currency={currency} />
                       {action.type === 'none' && (
                         <p className="mt-1 text-xs font-light text-gray-500 dark:text-gray-400">{action.reason === 'later' ? tx('billsRecurrenceLater') : tx('billsNoAction')}</p>
                       )}

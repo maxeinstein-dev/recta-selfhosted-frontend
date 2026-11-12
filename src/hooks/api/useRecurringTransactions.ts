@@ -31,6 +31,11 @@ export interface RecurringTransaction {
   nonWorkingDays?: string[];
   optionalHolidays?: string[];
   aliases?: string[];
+  earlyDiscountDay?: number | null;
+  earlyDiscountType?: 'FIXED' | 'PERCENT' | null;
+  earlyDiscountValue?: number | null;
+  /** The discount of the next occurrence while it can still be had (list only). */
+  earlyDiscount?: { limitDate: string; fullAmount: number; discountedAmount: number; savings: number } | null;
   /** What the next occurrence is expected to carry and how it was reached (list only). */
   forecast?: ForecastDetail | null;
   createdAt: string;
@@ -129,6 +134,9 @@ export function useCreateRecurringTransaction() {
       nonWorkingDays?: string[];
       optionalHolidays?: string[];
       aliases?: string[];
+      earlyDiscountDay?: number | null;
+      earlyDiscountType?: 'FIXED' | 'PERCENT' | null;
+      earlyDiscountValue?: number | null;
     }) => {
       const response = await apiClient.post<RecurringTransaction>('/recurring-transactions', data);
       return response.data!;
@@ -210,3 +218,26 @@ export function useExecuteRecurringTransaction() {
   });
 }
 
+
+/**
+ * Pay the next occurrence of a recurrence ahead (POST /recurring-transactions/:id/pay-next): creates the occurrence of its
+ * nextRunAt already paid (the discounted amount until the limit day, the full one after) and moves the recurrence on.
+ * Refreshes everything that shows money: balances, bills, cash flow, card commitment and the recurrences.
+ */
+export function usePayNextOccurrence() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ recurringId, ...body }: { recurringId: string; amount?: number; date?: string; accountId?: string }) => {
+      const response = await apiClient.post<{ transaction: Transaction; nextRunAt?: string }>(`/recurring-transactions/${recurringId}/pay-next`, body);
+      return response.data!;
+    },
+    // On success or failure: a 409 means the data on screen is stale, so it is refreshed either way.
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ['recurring-transactions'] });
+      queryClient.invalidateQueries({ queryKey: ['transactions'] }); // lists, summaries, card invoice and commitment
+      queryClient.invalidateQueries({ queryKey: ['accounts'] });
+      queryClient.invalidateQueries({ queryKey: ['dashboard'] }); // cash flow, bills, home
+    },
+  });
+}

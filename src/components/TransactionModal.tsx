@@ -11,7 +11,9 @@ import { useCurrency } from '../context/CurrencyContext';
 import { formatCurrency } from '../utils/format';
 import { amountChanged, followLastHint, recurrenceUpdatedMessage } from '../utils/recurringFollow';
 import { competenceToSend, defaultReferenceMonth, isMonthKey, offsetToSend } from '../utils/referenceMonth';
-import { Transaction } from '../types';
+import { Transaction, RecurringTransaction } from '../types';
+import { discountFields, emptyDraft as emptyDiscountDraft, validateDraft as validateDiscount, type EarlyDiscountDraft } from '../utils/earlyDiscount';
+import { earlyDiscountText } from '../utils/earlyDiscountTexts';
 import { createSchemas, TransactionFormData } from '../schemas';
 import { CategoryType, CategoryName, getCategoriesByType, getCategoryNameFromDisplay, AccountType, TransactionType } from '../lib/enums';
 import { getAvailableBalance } from '../utils/accountBalance';
@@ -84,6 +86,8 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
   const [recurringNextDueDate, setRecurringNextDueDate] = useState<Date>(new Date());
   // Reference month of the recurrence: months between an occurrence's date and the month it refers to (null = same month)
   const [recurringCompetenceOffset, setRecurringCompetenceOffset] = useState<number | null>(null);
+  // Early-payment discount of the recurrence (expenses only; blank = none)
+  const [recurringDiscount, setRecurringDiscount] = useState<EarlyDiscountDraft>(emptyDiscountDraft());
   // Reference month (competencia) of this transaction: off = the month of its date
   const [refEnabled, setRefEnabled] = useState(false);
   const [refMonth, setRefMonth] = useState('');
@@ -628,6 +632,7 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
           setRecurringFrequency('monthly');
           setRecurringStartDate(defaultDate);
           setRecurringEndDate(undefined);
+          setRecurringDiscount(emptyDiscountDraft());
           setRecurringNextDueDate(calculateNextDueDate(defaultDate, 'monthly'));
           setIsSplit(false);
           setSplits([]);
@@ -728,8 +733,15 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
           onClose();
         }
       } else if (isRecurring) {
+        // Early-payment discount: the same rules as the server, checked before anything is sent
+        const discountCheck = validateDiscount(data.type === TransactionType.EXPENSE ? recurringDiscount : emptyDiscountDraft(), data.amount);
+        if (!discountCheck.ok) {
+          showError(earlyDiscountText(t, discountCheck.key));
+          return;
+        }
         // Criar transação recorrente
         await addRecurringTransaction({
+          ...(discountFields(discountCheck, 'create') as Partial<RecurringTransaction>),
           ...transactionData,
           category: transactionData.category || '', // Garantir que category seja string
           frequency: recurringFrequency,
@@ -1005,6 +1017,7 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
                   onNextDueDateChange={(date) => setRecurringNextDueDate(date)}
                   competenceOffsetMonths={recurringCompetenceOffset}
                   onCompetenceOffsetChange={setRecurringCompetenceOffset}
+                  earlyDiscount={transactionType === TransactionType.EXPENSE ? { draft: recurringDiscount, onChange: setRecurringDiscount, amount: Number(transactionAmount) || 0 } : undefined}
                   disabled={readOnly}
                 />
               </>

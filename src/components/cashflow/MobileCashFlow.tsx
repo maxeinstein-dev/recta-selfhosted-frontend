@@ -20,6 +20,7 @@ import {
 } from '../../utils/cashFlow';
 import { cashFlowWarningFacts, cashFlowWarningLines, dayHeadingLabel } from '../../utils/cashFlowMobile';
 import type { CashFlowTextKey } from '../../utils/cashFlowTexts';
+import { EarlyDiscountNotice, PayNowButton, type usePayNow } from './EarlyDiscountBits';
 
 export interface MobileCashFlowProps {
   /** Still waiting for the household or the projection. */
@@ -43,6 +44,8 @@ export interface MobileCashFlowProps {
   accounts: Array<{ id: string; name: string }>;
   /** The bills checklist, shown at the end of the screen until the Início takes it (lote R5). */
   footer: ReactNode;
+  /** The "Pagar agora" of an event with an early-payment discount (one call at a time). */
+  pay: ReturnType<typeof usePayNow>;
   tx: (key: CashFlowTextKey, vars?: Record<string, string | number>) => string;
 }
 
@@ -83,6 +86,7 @@ export default function MobileCashFlow({
   onSelectAccount,
   accounts,
   footer,
+  pay,
   tx,
 }: MobileCashFlowProps) {
   const facts = useMemo(() => cashFlowWarningFacts(points), [points]);
@@ -188,7 +192,7 @@ export default function MobileCashFlow({
                 </header>
                 <ul className="mt-2 divide-y divide-rc-line">
                   {group.events.map((event) => (
-                    <EventRow key={`${event.source}:${event.sourceId}:${event.date}:${event.amount}:${event.description}`} event={event} currency={currency} tx={tx} />
+                    <EventRow key={`${event.source}:${event.sourceId}:${event.date}:${event.amount}:${event.description}`} event={event} currency={currency} today={data.period.from} pay={pay} tx={tx} />
                   ))}
                 </ul>
               </section>
@@ -270,7 +274,7 @@ export default function MobileCashFlow({
 }
 
 /** One event: description, source and badges, signed amount. Wraps on a narrow screen; no table. */
-function EventRow({ event, currency, tx }: { event: CashFlowEvent; currency: string; tx: MobileCashFlowProps['tx'] }) {
+function EventRow({ event, currency, today, pay, tx }: { event: CashFlowEvent; currency: string; today: string; pay: MobileCashFlowProps['pay']; tx: MobileCashFlowProps['tx'] }) {
   const overdue = overdueDetail(event);
   const tone = eventTone(event.amount);
   return (
@@ -290,6 +294,10 @@ function EventRow({ event, currency, tx }: { event: CashFlowEvent; currency: str
               {overdue ? ` · ${tx('cashFlowOverdueFrom', { date: overdue.date })}` : ''}
             </span>
           )}
+        </div>
+        <EarlyDiscountNotice quote={event.earlyDiscount} today={today} currency={currency} variant="rc" />
+        <div>
+          <PayNowButton discount={event.earlyDiscount} name={event.description || tx('cashFlowNoDescription')} pay={pay} variant="rc" />
         </div>
       </div>
       <p

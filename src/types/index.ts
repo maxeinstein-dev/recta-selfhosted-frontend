@@ -86,6 +86,12 @@ export interface RecurringTransaction {
   lastOccurrenceDate?: string | null;
   /** Months between an occurrence's date and the month it refers to (1 = the following month); null/absent = same month. */
   competenceOffsetMonths?: number | null;
+  /** Early-payment discount: limit day of the month (1-31), kind and value (reais or %); the three together or none. */
+  earlyDiscountDay?: number | null;
+  earlyDiscountType?: 'FIXED' | 'PERCENT' | null;
+  earlyDiscountValue?: number | null;
+  /** The discount of the next occurrence while it can still be had (list only); null/absent otherwise. */
+  earlyDiscount?: { limitDate: string; fullAmount: number; discountedAmount: number; savings: number } | null;
   /** How the amount of the next occurrence is forecast; absent (an older server) or 'LAST' = the last value. */
   forecastStrategy?: ForecastStrategy;
   /** CONSERVATIVE: how many confirmed values to look at; null = the default of the kind (6 income, 3 expense). */

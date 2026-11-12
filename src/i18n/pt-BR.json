@@ -351,6 +351,8 @@
   "spent": "Gasto",
   "budgetOwnShare": "Sua parte",
   "budgetOwnShareOfLimit": "do limite",
+  "budgetRealizedFailed": "Não foi possível carregar o gasto dos orçamentos. Os valores não são mostrados até a resposta chegar.",
+  "budgetRealizedRetry": "Tentar de novo",
   "remaining": "Restante",
   "exceeded": "Excedido",
   "general": "Geral (Todas as categorias)",

@@ -94,6 +94,9 @@ export function useBudgetSummary(params: BudgetSummaryParams) {
       const response = await apiClient.get<BudgetSummary>('/budgets/summary', params);
       return response.data!;
     },
+    // The screens show these numbers as they are: never an old answer after a transaction changed.
+    staleTime: 0,
+    refetchOnMount: 'always',
     enabled: isAuthenticated && !!params.householdId && (!!params.month || (!!params.startDate && !!params.endDate)), // Only fetch when authenticated and all params are available
   });
 }

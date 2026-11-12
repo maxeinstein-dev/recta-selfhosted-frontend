@@ -12,6 +12,8 @@ interface BudgetItemProps {
     status: 'exceeded' | 'warning' | 'ok';
     /** Own share of the spending, only when other people owe part of it. */
     ownSpent?: number;
+    /** The API has not answered the realized amount of this budget. */
+    pending?: boolean;
   };
   baseCurrency: string;
   onEdit: (budget: Budget) => void;
@@ -48,7 +50,7 @@ export const BudgetItem = ({
                   {t.spent}
                 </div>
                 <div className="text-base font-light text-gray-900 dark:text-white">
-                  {formatCurrency(budget.spent, baseCurrency)}
+                  {budget.pending ? '—' : formatCurrency(budget.spent, baseCurrency)}
                 </div>
               </div>
             </div>
@@ -58,6 +60,7 @@ export const BudgetItem = ({
                 {budget.amount > 0 && <> ({ownSharePercentage(budget.ownSpent, budget.amount).toFixed(1)}% {t.budgetOwnShareOfLimit})</>}
               </p>
             )}
+            {!budget.pending && (
             <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-gray-500 dark:text-gray-300">
@@ -82,6 +85,7 @@ export const BudgetItem = ({
                 {budget.percentage.toFixed(1)}% {t.used}
               </div>
             </div>
+            )}
           </div>
         </div>
         <BudgetActionsMenu

@@ -323,6 +323,8 @@
   "spent": "Spent",
   "budgetOwnShare": "Your share",
   "budgetOwnShareOfLimit": "of the limit",
+  "budgetRealizedFailed": "The spending of the budgets could not be loaded. The amounts are not shown until the answer arrives.",
+  "budgetRealizedRetry": "Try again",
   "remaining": "Remaining",
   "exceeded": "Exceeded",
   "general": "General (All categories)",

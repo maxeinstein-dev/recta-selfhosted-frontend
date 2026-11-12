@@ -38,16 +38,48 @@ export function ownShareByBudget(rows: readonly OwnShareSummaryRow[] | undefined
   return out;
 }
 
+export type BudgetRealizedStatus = 'ok' | 'warning' | 'exceeded';
+
+export interface BudgetRealized {
+  /** Realized amount of the month, as the API computed it. */
+  spent: number;
+  /** Own share, only for an expense budget where other people owe part of the spending. Never above `spent`. */
+  ownSpent?: number;
+  /** Limit minus spent (negative when exceeded). */
+  remaining: number;
+  /** Spent over the limit, in percent (0 without a limit). */
+  percentage: number;
+  status: BudgetRealizedStatus;
+}
+
+/** Budget id -> its row of GET /budgets/summary. */
+export function summaryRowsByBudget(rows: readonly OwnShareSummaryRow[] | undefined): Map<string, OwnShareSummaryRow> {
+  return new Map((rows ?? []).map((row): [string, OwnShareSummaryRow] => [row.budgetId, row]));
+}
+
 /**
- * Budget id -> realized amount the API computed over every transaction of the month. The screens only hold the latest
- * page of transactions in memory, so their own sum misses the rest of the month: when the API answers, its number wins.
+ * The numbers a budget shows, all from ONE source: its row of GET /budgets/summary. The screens never sum transactions
+ * themselves (they only hold the latest page of them in memory, and the API is where the rules of the month, of the
+ * type and of the shares live). No row, or an invalid amount, gives null: the screen then shows that the amount is not
+ * available instead of a number of its own.
+ *
+ * Sums are made in whole cents. The status follows the spending over the limit: 100% or more is exceeded, 80% or more
+ * a warning.
  */
-export function serverSpendingByBudget(rows: readonly OwnShareSummaryRow[] | undefined): Map<string, number> {
-  const out = new Map<string, number>();
-  for (const row of rows ?? []) {
-    if (typeof row.spending === 'number' && Number.isFinite(row.spending)) out.set(row.budgetId, row.spending);
-  }
-  return out;
+export function budgetRealized(limit: number, row: OwnShareSummaryRow | undefined, isExpense: boolean): BudgetRealized | null {
+  if (!row || typeof row.spending !== 'number' || !Number.isFinite(row.spending) || !Number.isFinite(limit)) return null;
+  const spentCents = Math.max(0, cents(row.spending));
+  const limitCents = cents(limit);
+  const percentage = limitCents > 0 ? (spentCents / limitCents) * 100 : 0;
+  const status: BudgetRealizedStatus = percentage >= 100 ? 'exceeded' : percentage >= 80 ? 'warning' : 'ok';
+  const own = isExpense ? ownShareByBudget([row]).get(row.budgetId) : undefined;
+  return {
+    spent: spentCents / 100,
+    ...(own ? { ownSpent: Math.min(own.ownSpent, spentCents / 100) } : {}),
+    remaining: (limitCents - spentCents) / 100,
+    percentage,
+    status,
+  };
 }
 
 /** Own share as a percentage of the limit (0 when there is no limit). */

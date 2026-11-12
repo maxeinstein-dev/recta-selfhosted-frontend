@@ -8,20 +8,18 @@ import ConfirmModal from '../components/ConfirmModal';
 import { BudgetModal } from '../components/BudgetModal';
 import { Budget } from '../types';
 import { startOfMonth } from 'date-fns';
-import { getTransactionsByMonth, getTransactionsByCategory, getTotalExpense, getTotalIncome } from '../utils/calculations';
 import { PageHeader } from '../components/PageHeader';
 import { PageButton } from '../components/PageButton';
 import { BudgetsSkeleton } from '../components/PageSkeletons';
 import { DatePicker } from '../components/DatePicker';
 import { TransactionType } from '../lib/enums';
 import { BudgetList } from '../components/budgets';
-import { isGeneralBudget } from '../utils/categories';
 import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
 import { useBudgetSummary } from '../hooks/api/useBudgets';
-import { ownShareByBudget, serverSpendingByBudget, summaryMonthOf } from '../utils/budgetOwnShare';
+import { budgetRealized, summaryMonthOf, summaryRowsByBudget } from '../utils/budgetOwnShare';
 
 const Budgets = () => {
-  const { budgets, transactions, deleteBudget, loading } = useTransactions();
+  const { budgets, deleteBudget, loading } = useTransactions();
   const { baseCurrency } = useCurrency();
   const { t } = useI18n();
   const { registerHandler, unregisterHandler } = useCommandMenu();
@@ -57,11 +55,10 @@ const Budgets = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Own share (what is left after what other people owe): from the API, only shown where there is a division.
+  // Realized amount and own share: one source, GET /budgets/summary. Nothing is summed on this page.
   const { householdId } = useDefaultHousehold();
   const summary = useBudgetSummary({ householdId: householdId ?? '', month: summaryMonthOf(selectedMonth) });
-  const ownShares = useMemo(() => ownShareByBudget(summary.data?.budgets), [summary.data]);
-  const serverSpending = useMemo(() => serverSpendingByBudget(summary.data?.budgets), [summary.data]);
+  const summaryRows = useMemo(() => summaryRowsByBudget(summary.data?.budgets), [summary.data]);
 
   const monthBudgets = useMemo(() => {
     if (!budgets || budgets.length === 0) {
@@ -78,55 +75,21 @@ const Budgets = () => {
     return filtered;
   }, [budgets, selectedMonth]);
 
-  const monthTransactions = useMemo(
-    () => getTransactionsByMonth(transactions, selectedMonth),
-    [transactions, selectedMonth]
-  );
-
-  const categoryData = useMemo(
-    () => getTransactionsByCategory(monthTransactions),
-    [monthTransactions]
-  );
-
   const budgetStatus = useMemo(() => {
     return monthBudgets.map(budget => {
-      let spent = 0;
-
-      // Treat the "GENERAL" pseudo-category as the "total spending/income of
-      // the month" budget. Detection uses categoryName, since `category` holds
-      // the localized display name (e.g. "Geral (Todas as categorias)").
-      if (isGeneralBudget(budget)) {
-        if (budget.type === TransactionType.EXPENSE) {
-          spent = getTotalExpense(monthTransactions);
-        } else {
-          spent = getTotalIncome(monthTransactions);
-        }
-      } else {
-        const categoryTransactions = categoryData.find(c => c.name === budget.category);
-        spent = budget.type === TransactionType.EXPENSE
-          ? (categoryTransactions?.despesa || 0)
-          : (categoryTransactions?.receita || 0);
-      }
-
-      // The API sums the whole month; the list in memory is only the latest page.
-      spent = serverSpending.get(budget.id ?? '') ?? spent;
-
-      const percentage = budget.amount > 0 ? (spent / budget.amount) * 100 : 0;
-      const remaining = budget.amount - spent;
-
-      const status: 'ok' | 'warning' | 'exceeded' =
-        percentage >= 100 ? 'exceeded' : percentage >= 80 ? 'warning' : 'ok';
-
+      const realized = budgetRealized(budget.amount, summaryRows.get(budget.id ?? ''), budget.type === TransactionType.EXPENSE);
       return {
         ...budget,
-        spent,
-        remaining,
-        percentage,
-        status,
-        ownSpent: budget.type === TransactionType.EXPENSE ? ownShares.get(budget.id ?? '')?.ownSpent : undefined,
+        spent: realized?.spent ?? 0,
+        remaining: realized?.remaining ?? budget.amount,
+        percentage: realized?.percentage ?? 0,
+        status: realized?.status ?? ('ok' as const),
+        ownSpent: realized?.ownSpent,
+        // No answer of the API for this budget (loading or failed): the item shows that instead of a number.
+        pending: realized === null,
       };
     });
-  }, [monthBudgets, categoryData, monthTransactions, ownShares, serverSpending]);
+  }, [monthBudgets, summaryRows]);
 
   const handleDelete = (id: string) => {
     setConfirmModal({ isOpen: true, budgetId: id });
@@ -180,6 +143,8 @@ const Budgets = () => {
 
       <BudgetList
         budgets={budgetStatus}
+        realizedFailed={summary.isError}
+        onRetryRealized={() => void summary.refetch()}
         baseCurrency={baseCurrency}
         onEdit={(budget) => {
           setEditingBudget(budget);

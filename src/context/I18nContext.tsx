@@ -540,6 +540,8 @@ export interface Translations {
   spent: string;
   budgetOwnShare: string;
   budgetOwnShareOfLimit: string;
+  budgetRealizedFailed: string;
+  budgetRealizedRetry: string;
   remaining: string;
   exceeded: string;
   general: string;

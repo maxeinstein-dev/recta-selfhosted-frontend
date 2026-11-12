@@ -6,13 +6,10 @@ import { formatCurrency } from '../../utils/format';
 import { startOfMonth } from 'date-fns';
 import { TransactionType, getCategoryDisplayName, CustomCategoryInfo } from '../../lib/enums';
 import { Target, AlertCircle, CheckCircle2 } from 'lucide-react';
-import { getTransactionsByCategory, getTotalIncome, getTotalExpense } from '../../utils/calculations';
-import { getTransactionsByMonth } from '../../utils/calculations';
-import { isGeneralBudget } from '../../utils/categories';
 import { useCategories } from '../../hooks/api/useCategories';
 import { useDefaultHousehold } from '../../hooks/useDefaultHousehold';
 import { useBudgetSummary } from '../../hooks/api/useBudgets';
-import { ownShareByBudget, serverSpendingByBudget, summaryMonthOf } from '../../utils/budgetOwnShare';
+import { budgetRealized, summaryMonthOf, summaryRowsByBudget } from '../../utils/budgetOwnShare';
 
 interface BudgetVsRealizedWidgetProps {
   selectedMonth: Date;
@@ -20,7 +17,7 @@ interface BudgetVsRealizedWidgetProps {
 }
 
 export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: BudgetVsRealizedWidgetProps) => {
-  const { budgets, transactions } = useTransactions();
+  const { budgets } = useTransactions();
   const { baseCurrency } = useCurrency();
   const { t } = useI18n();
   const { householdId } = useDefaultHousehold();
@@ -40,8 +37,8 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
   };
 
   const summary = useBudgetSummary({ householdId: householdId ?? '', month: summaryMonthOf(selectedMonth) });
-  const ownShares = useMemo(() => ownShareByBudget(summary.data?.budgets), [summary.data]);
-  const serverSpending = useMemo(() => serverSpendingByBudget(summary.data?.budgets), [summary.data]);
+  // Realized amount and own share: one source, GET /budgets/summary. Nothing is summed here.
+  const summaryRows = useMemo(() => summaryRowsByBudget(summary.data?.budgets), [summary.data]);
 
   const budgetData = useMemo(() => {
     const monthBudgets = budgets.filter((b) => {
@@ -52,44 +49,22 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
 
     if (monthBudgets.length === 0) return [];
 
-    const monthTransactions = getTransactionsByMonth(transactions, selectedMonth);
-    const categoryData = getTransactionsByCategory(monthTransactions);
-
     return monthBudgets.map((budget) => {
-      let spent = 0;
-
-      if (isGeneralBudget(budget)) {
-        if (budget.type === TransactionType.EXPENSE) {
-          spent = getTotalExpense(monthTransactions);
-        } else {
-          spent = getTotalIncome(monthTransactions);
-        }
-      } else {
-        const categoryTransactions = categoryData.find(
-          (c) => c.name === budget.category
-        );
-        spent =
-          budget.type === TransactionType.EXPENSE
-            ? categoryTransactions?.despesa || 0
-            : categoryTransactions?.receita || 0;
-      }
-
-      // The API sums the whole month; the list in memory is only the latest page.
-      spent = serverSpending.get(budget.id ?? '') ?? spent;
-
-      // Calcular porcentagem, limitando a exibição para valores muito altos
-      const rawPercentage = budget.amount > 0 ? (spent / budget.amount) * 100 : 0;
+      const realized = budgetRealized(budget.amount, summaryRows.get(budget.id ?? ''), budget.type === TransactionType.EXPENSE);
+      const spent = realized?.spent ?? 0;
+      const ownSpent = realized?.ownSpent;
+      const rawPercentage = realized?.percentage ?? 0;
       // Limitar a porcentagem exibida a 1000% para evitar números extremos
       const percentage = Math.min(rawPercentage, 1000);
-      const remaining = budget.amount - spent;
-      const status: 'exceeded' | 'warning' | 'ok' =
-        rawPercentage >= 100 ? 'exceeded' : rawPercentage >= 80 ? 'warning' : 'ok';
+      const remaining = realized?.remaining ?? budget.amount;
+      const status: 'exceeded' | 'warning' | 'ok' = realized?.status ?? 'ok';
 
       return {
         category: budget.category,
         budget: budget.amount,
         spent,
-        ownSpent: budget.type === TransactionType.EXPENSE ? ownShares.get(budget.id ?? '')?.ownSpent : undefined,
+        ownSpent,
+        pending: realized === null,
         remaining,
         percentage,
         rawPercentage,
@@ -105,7 +80,7 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
       // Se mesmo status, ordenar por porcentagem (maior primeiro)
       return b.percentage - a.percentage;
     });
-  }, [budgets, selectedMonth, transactions, ownShares, serverSpending]);
+  }, [budgets, selectedMonth, summaryRows]);
 
   if (budgetData.length === 0) {
     return (
@@ -181,7 +156,7 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
                   </span>
                 </div>
                 <span className={`text-sm font-light tracking-tight ${colors.text} ${blurNumbers ? 'demo-blur' : ''}`}>
-                  {blurNumbers ? '•••' : budget.rawPercentage > 1000 ? '1000%+' : `${budget.percentage.toFixed(1)}%`}
+                  {blurNumbers ? '•••' : budget.pending ? '—' : budget.rawPercentage > 1000 ? '1000%+' : `${budget.percentage.toFixed(1)}%`}
                 </span>
               </div>
               
@@ -203,7 +178,7 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
                   <div>
                     <span className="text-gray-500 dark:text-gray-400">{t.spent}: </span>
                     <span className={`font-light tracking-tight ${budget.status === 'exceeded' ? 'text-red-600 dark:text-red-400' : 'text-gray-900 dark:text-gray-100'} ${blurNumbers ? 'demo-blur' : ''}`}>
-                      {blurNumbers ? '••••' : formatCurrency(budget.spent, baseCurrency)}
+                      {blurNumbers ? '••••' : budget.pending ? '—' : formatCurrency(budget.spent, baseCurrency)}
                     </span>
                   </div>
                   {budget.ownSpent !== undefined && (
@@ -215,7 +190,7 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
                     </div>
                   )}
                 </div>
-                {budget.remaining !== 0 && (
+                {!budget.pending && budget.remaining !== 0 && (
                   <div>
                     <span className={`font-medium ${budget.remaining > 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'} ${blurNumbers ? 'demo-blur' : ''}`}>
                       {budget.remaining > 0 ? '+' : ''}

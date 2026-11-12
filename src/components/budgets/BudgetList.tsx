@@ -10,7 +10,12 @@ interface BudgetListProps {
     status: 'exceeded' | 'warning' | 'ok';
     /** Own share of the spending, only when other people owe part of it. */
     ownSpent?: number;
+    /** The API has not answered the realized amount of this budget. */
+    pending?: boolean;
   }>;
+  /** The realized amounts could not be loaded. */
+  realizedFailed?: boolean;
+  onRetryRealized?: () => void;
   baseCurrency: string;
   onEdit: (budget: Budget) => void;
   onDelete: (id: string) => void;
@@ -23,12 +28,24 @@ export const BudgetList = ({
   onEdit,
   onDelete,
   t,
+  realizedFailed = false,
+  onRetryRealized,
 }: BudgetListProps) => {
   const exceededCount = budgets.filter(b => b.status === 'exceeded').length;
   const warningCount = budgets.filter(b => b.status === 'warning').length;
 
   return (
     <>
+      {realizedFailed && (
+        <div role="alert" className="mb-6 border-l-4 border-red-400 dark:border-red-500 bg-red-50/50 dark:bg-red-900/10 p-4 flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm font-light text-red-700 dark:text-red-300">{t.budgetRealizedFailed}</p>
+          {onRetryRealized && (
+            <button type="button" onClick={onRetryRealized} className="min-h-[44px] px-3 text-sm text-red-700 dark:text-red-300 underline">
+              {t.budgetRealizedRetry}
+            </button>
+          )}
+        </div>
+      )}
       {/* Alertas */}
       {exceededCount > 0 || warningCount > 0 ? (
         <div className="mb-6 border-l-4 border-yellow-400 dark:border-yellow-500 bg-yellow-50/50 dark:bg-yellow-900/10 p-4">

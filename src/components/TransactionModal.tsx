@@ -6,6 +6,7 @@ import { useTransactions } from '../context/TransactionsContext';
 import { useCurrencyMask } from '../hooks/useCurrencyMask';
 import { useToastContext } from '../context/ToastContext';
 import { useI18n } from '../context/I18nContext';
+import { useBackLayer } from '../hooks/useBackLayer';
 import { useCurrency } from '../context/CurrencyContext';
 import { formatCurrency } from '../utils/format';
 import { amountChanged, followLastHint, recurrenceUpdatedMessage } from '../utils/recurringFollow';
@@ -60,6 +61,8 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
   const { addTransaction, updateTransaction, createInstallments, addRecurringTransaction, createTransfer, transactions: knownTransactions, recurringTransactions } = useTransactions();
   const { success, error: showError } = useToastContext();
   const { t } = useI18n();
+  // Mobile only (below 768 px): the Android back button closes this modal before it leaves the screen.
+  useBackLayer(true, onClose);
   const { baseCurrency } = useCurrency();
   const currencyMask = useCurrencyMask();
   const { transactionSchema } = createSchemas(t);

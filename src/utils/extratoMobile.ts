@@ -144,3 +144,13 @@ export function rowActions(f: RowFacts): RowAction[] {
 export function captureLineMeta(typeLabel: string, accountName: string | null, when: string): string {
   return [typeLabel, accountName, when].filter((part): part is string => !!part).join(' · ');
 }
+
+/**
+ * The sign in front of a capture's amount: "+" for income, "−" for expense. A capture with no type yet (a transfer
+ * between the user's own accounts) gets no sign, because it is neither income nor expense.
+ */
+export function captureAmountSign(type: string | null | undefined): '+' | '−' | '' {
+  if (type === 'INCOME') return '+';
+  if (type === 'EXPENSE') return '−';
+  return '';
+}

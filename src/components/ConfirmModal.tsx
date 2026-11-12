@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useI18n } from '../context/I18nContext';
+import { useBackLayer } from '../hooks/useBackLayer';
 import { AlertTriangle, X } from 'lucide-react';
 
 interface ConfirmModalProps {
@@ -27,6 +28,7 @@ const ConfirmModal = ({
   isLoading = false,
 }: ConfirmModalProps) => {
   const { t } = useI18n();
+  useBackLayer(isOpen, onClose);
 
   // Handler para fechar com ESC e prevenir scroll do body
   useEffect(() => {

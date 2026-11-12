@@ -8,6 +8,8 @@ import { captureText } from '../../utils/captureTexts';
 import TransactionModal, { type TransactionModalPrefill } from '../TransactionModal';
 import AddTransactionSheet from './AddTransactionSheet';
 import MonthSelector from './MonthSelector';
+import { useBackLayer } from '../../hooks/useBackLayer';
+import { shellNavigation } from '../../utils/backLayers';
 import {
   MORE_ITEMS,
   SHELL_TABS,
@@ -101,6 +103,8 @@ const MobileShell = ({
   const showMonth = usesMonthSelector(screen);
   const title = headerTitleFor(pathname) ?? (screen ? screenLabel(t, screen) : 'Recta');
   const dict = t as unknown as Dict;
+  // The Android back button closes the "Mais" sheet before it leaves the screen (see utils/backLayers.ts).
+  useBackLayer(moreOpen, () => setMoreOpen(false));
 
   // Esc closes the "Mais" sheet; its close button takes the focus when the sheet opens.
   useEffect(() => {
@@ -160,7 +164,12 @@ const MobileShell = ({
               to={tab.path}
               aria-label={name}
               aria-current={active ? 'page' : undefined}
-              onClick={closeMore}
+              replace={moreOpen}
+              onClick={(e) => {
+                // The tab you are on adds no entry; with the sheet open, the navigation replaces the sheet's entry.
+                if (shellNavigation(pathname, tab.path, moreOpen) === 'stay') e.preventDefault();
+                closeMore();
+              }}
               className={`relative flex min-h-[58px] min-w-0 flex-col items-center justify-center gap-0.5 text-[11px] font-medium ${
                 active ? 'font-semibold text-rc-accentInk' : 'text-rc-ink3'
               }`}
@@ -240,7 +249,11 @@ const MobileShell = ({
                   <li key={item.screen}>
                     <Link
                       to={item.path}
-                      onClick={closeMore}
+                      replace
+                      onClick={(e) => {
+                        if (shellNavigation(pathname, item.path, true) === 'stay') e.preventDefault();
+                        closeMore();
+                      }}
                       aria-current={current ? 'page' : undefined}
                       className={`flex min-h-[52px] items-center rounded-xl px-3 text-[15px] ${
                         current ? 'bg-rc-accentSoft font-semibold text-rc-accentInk' : 'text-rc-ink'

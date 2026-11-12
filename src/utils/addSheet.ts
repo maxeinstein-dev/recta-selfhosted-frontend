@@ -162,3 +162,23 @@ export function toTransferPrefill(state: AddSheetState, now: Date) {
 export function sheetAccounts<T extends { type: string }>(accounts: readonly T[]): T[] {
   return accounts.filter((account) => account.type !== 'INVESTMENT');
 }
+
+/** The state of the account row: the accounts in hand, still loading, or the search ended with none. */
+export type AccountsRowState = 'loading' | 'empty' | 'ready';
+
+export function accountsRowState(loading: boolean, count: number): AccountsRowState {
+  if (count > 0) return 'ready';
+  return loading ? 'loading' : 'empty';
+}
+
+/** The text the row shows in place of the pills; null when the pills are there. */
+export function accountsRowMessage(state: AccountsRowState): string | null {
+  if (state === 'loading') return 'Carregando contas…';
+  if (state === 'empty') return 'Nenhuma conta disponível.';
+  return null;
+}
+
+/** "Lançar" before the accounts arrive asks to wait (the form would say the account is required). */
+export function accountsNotReadyError(state: AccountsRowState, accountId: string): string | null {
+  return state === 'loading' && !accountId ? 'Aguarde as contas carregarem.' : null;
+}

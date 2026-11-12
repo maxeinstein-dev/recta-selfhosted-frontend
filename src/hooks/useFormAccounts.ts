@@ -26,11 +26,11 @@ export function useFormAccounts() {
   }, [allHouseholds, currentHousehold]);
 
   // Use available accounts endpoint when in shared household, regular accounts otherwise
-  const { data: availableAccountsData } = useAvailableAccounts(
+  const { data: availableAccountsData, isPending: availablePending } = useAvailableAccounts(
     householdId || '',
     false
   );
-  const { data: regularAccountsData } = useAccounts(
+  const { data: regularAccountsData, isPending: regularPending } = useAccounts(
     { householdId: householdId || '' }
   );
 
@@ -47,5 +47,8 @@ export function useFormAccounts() {
     return contextAccounts || [];
   }, [isSharedHousehold, availableAccountsData, regularAccountsData, contextAccounts]);
 
-  return { householdId, household: currentHousehold, isSharedHousehold, accounts };
+  // True while the list the form would use has not arrived yet (a disabled query, with no household, counts as pending).
+  const accountsLoading = isSharedHousehold ? availablePending : regularPending;
+
+  return { householdId, household: currentHousehold, isSharedHousehold, accounts, accountsLoading };
 }

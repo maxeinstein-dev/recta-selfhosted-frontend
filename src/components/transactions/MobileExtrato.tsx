@@ -147,7 +147,7 @@ const MobileExtrato = ({
         days.map((day) => (
           <section key={day.dayKey} aria-label={day.label}>
             <div className="mt-4 flex items-baseline justify-between gap-2 px-0.5 text-[13px] text-rc-ink2">
-              <b className="font-semibold capitalize text-rc-ink">{day.label}</b>
+              <b className="font-semibold text-rc-ink">{day.label}</b>
               <span className={`font-semibold tabular-nums ${day.totalPositive ? 'text-rc-green' : ''}`}>{day.totalText}</span>
             </div>
             <ul className="mt-1 rounded-2xl bg-rc-card px-2">

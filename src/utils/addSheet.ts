@@ -91,6 +91,22 @@ export interface AddSheetState {
   category: string;
   accountId: string;
   date: Date;
+  /** The situation the user tapped (true = paid or received); null while untouched, so the date decides. */
+  paidChoice?: boolean | null;
+}
+
+/**
+ * Whether the lançamento starts paid: the user's tap wins; without a tap the date decides
+ * (today or earlier paid, a later date pending).
+ */
+export function situationPaid(date: Date, now: Date, choice: boolean | null | undefined): boolean {
+  if (choice === true || choice === false) return choice;
+  return paidForDate(date, now);
+}
+
+/** The two situation pills of the sheet, in the words of the type. */
+export function situationLabels(type: 'EXPENSE' | 'INCOME'): { paid: string; pending: string } {
+  return type === 'INCOME' ? { paid: 'Recebido', pending: 'A receber' } : { paid: 'Pago', pending: 'Pendente' };
 }
 
 /** The message the sheet shows when "Lançar" has no amount; null when the amount is fine. */
@@ -106,7 +122,7 @@ export function toTransactionInput(state: AddSheetState, now: Date) {
     type: state.type,
     category: state.category,
     date: state.date,
-    paid: paidForDate(state.date, now),
+    paid: situationPaid(state.date, now, state.paidChoice),
     accountId: state.accountId,
     installments: 1,
     fromAccountId: '',
@@ -123,7 +139,7 @@ export function toFullFormPrefill(state: AddSheetState, now: Date) {
     category: state.category,
     accountId: state.accountId,
     date: state.date,
-    paid: paidForDate(state.date, now),
+    paid: situationPaid(state.date, now, state.paidChoice),
   };
 }
 
@@ -138,7 +154,7 @@ export function toTransferPrefill(state: AddSheetState, now: Date) {
     fromAccountId: '',
     toAccountId: '',
     date: state.date,
-    paid: paidForDate(state.date, now),
+    paid: situationPaid(state.date, now, state.paidChoice),
   };
 }
 

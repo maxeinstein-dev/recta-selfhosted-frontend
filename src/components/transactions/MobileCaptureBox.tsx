@@ -5,7 +5,7 @@ import { useToastContext } from '../../context/ToastContext';
 import { useCaptures, useCapturesCount, useConfirmCapture, useDismissCapture } from '../../hooks/api/useCaptures';
 import { appLabel, buildConfirmBody, draftFromSuggestion, formatCaptureDateTime, localDayKey, type CaptureItem } from '../../utils/captureInbox';
 import { captureText } from '../../utils/captureTexts';
-import { captureLineMeta, captureVisibleCount } from '../../utils/extratoMobile';
+import { captureAmountSign, captureLineMeta, captureVisibleCount } from '../../utils/extratoMobile';
 import { formatCurrency } from '../../utils/format';
 
 const TOUCH = 'min-h-[44px]';
@@ -123,7 +123,7 @@ const MobileCaptureBox = ({ householdId, accounts, canEdit }: MobileCaptureBoxPr
         {shown.map((item) => {
           const desc = item.suggestion.description || item.title || appLabel(item.package);
           const amount = item.suggestion.amount;
-          const isIncome = item.suggestion.type === 'INCOME';
+          const sign = captureAmountSign(item.suggestion.type);
           const typeLabel = item.suggestion.type === 'INCOME'
             ? tx('captureFormIncome')
             : item.suggestion.type === 'EXPENSE'
@@ -135,8 +135,8 @@ const MobileCaptureBox = ({ householdId, accounts, canEdit }: MobileCaptureBoxPr
             <li key={item.id} className="border-t border-rc-line py-2.5 first:border-t-0 last:pb-0">
               <div className="flex min-w-0 items-baseline gap-2">
                 <p className="min-w-0 flex-1 truncate font-medium">{desc}</p>
-                <p className={`whitespace-nowrap font-semibold tabular-nums ${isIncome && amount !== null ? 'text-rc-green' : ''}`}>
-                  {amount === null ? '—' : `${isIncome ? '+' : '−'}${formatCurrency(amount)}`}
+                <p className={`whitespace-nowrap font-semibold tabular-nums ${sign === '+' && amount !== null ? 'text-rc-green' : ''}`}>
+                  {amount === null ? '—' : `${sign}${formatCurrency(amount)}`}
                 </p>
               </div>
               <p className="truncate text-[12.5px] text-rc-ink3">

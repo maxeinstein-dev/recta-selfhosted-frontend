@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { CheckCircle, Clock, Edit, Eye, Trash2, Users, X } from 'lucide-react';
 import type { RowAction } from '../../utils/extratoMobile';
+import { useBackLayer } from '../../hooks/useBackLayer';
 
 const TOUCH = 'min-h-[44px]';
 
@@ -45,6 +46,7 @@ const MobileRowActions = ({ title, actions, confirmLabel, onAction, onClose }: M
   // The page passes a new onClose on every render: keep the latest one, and let the listener and the focus happen once.
   const closeLatest = useRef(onClose);
   closeLatest.current = onClose;
+  useBackLayer(true, onClose);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {

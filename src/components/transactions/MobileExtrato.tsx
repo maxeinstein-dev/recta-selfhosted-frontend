@@ -3,6 +3,7 @@ import { ChevronDown, Download, Search, Upload } from 'lucide-react';
 import type { Transaction } from '../../types';
 import { SHORT_FILTERS, type ShortFilter } from '../../utils/extratoMobile';
 import { TransactionFilters, type TransactionFiltersProps } from './TransactionFilters';
+import { useBackLayer } from '../../hooks/useBackLayer';
 
 const TOUCH = 'min-h-[44px]';
 
@@ -68,6 +69,7 @@ const MobileExtrato = ({
   filters,
 }: MobileExtratoProps) => {
   const [moreOpen, setMoreOpen] = useState(false);
+  useBackLayer(moreOpen, () => setMoreOpen(false));
   const empty = !loading && days.length === 0;
 
   return (

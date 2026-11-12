@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { X } from 'lucide-react';
 import { useI18n } from '../../context/I18nContext';
+import { useBackLayer } from '../../hooks/useBackLayer';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useToastContext } from '../../context/ToastContext';
 import { useTransactions } from '../../context/TransactionsContext';
@@ -53,6 +54,7 @@ const pillClass = (selected: boolean) =>
 
 const AddTransactionSheet = ({ onClose, onOpenFullForm }: AddTransactionSheetProps) => {
   const { t } = useI18n();
+  useBackLayer(true, onClose);
   const { getCurrencyInfo } = useCurrency();
   const { success, error: showError } = useToastContext();
   const { addTransaction } = useTransactions();

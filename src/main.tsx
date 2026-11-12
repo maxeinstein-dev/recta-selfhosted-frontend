@@ -5,6 +5,8 @@ import App from './App.tsx'
 import './index.css'
 import { isLocalHostname } from './utils/localHost'
 import { isNativeApp } from './native/captureReader'
+import { installNativeBack } from './native/nativeBack'
+import { getOpenLayers } from './hooks/useBackLayer'
 
 // Helper para verificar se está em localhost
 const isLocalhost = (): boolean => {
@@ -193,6 +195,9 @@ export function AppWrapper() {
     </Sentry.ErrorBoundary>
   );
 }
+
+// The Android back button asks the page what to do (see native/nativeBack.ts and MainActivity).
+if (isNativeApp()) installNativeBack(getOpenLayers)
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

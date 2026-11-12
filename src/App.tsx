@@ -49,12 +49,12 @@ interface PrivateRouteProps {
 
 const PrivateRoute = ({ children }: PrivateRouteProps) => {
   const { currentUser } = useAuth();
-  return currentUser ? <>{children}</> : <Navigate to="/login" />;
+  return currentUser ? <>{children}</> : <Navigate to="/login" replace />;
 };
 
 const PublicRoute = ({ children }: PrivateRouteProps) => {
   const { currentUser } = useAuth();
-  return !currentUser ? <>{children}</> : <Navigate to="/app" />;
+  return !currentUser ? <>{children}</> : <Navigate to="/app" replace />;
 };
 
 // Loading fallback component

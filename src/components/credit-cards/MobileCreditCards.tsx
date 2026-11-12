@@ -36,6 +36,7 @@ import { TransactionType } from '../../lib/enums';
 import { TransactionActionsMenu } from '../TransactionActionsMenu';
 import { CreditCardStatementPanel } from './CreditCardStatementPanel';
 import { CreditCardsSummary } from '../CreditCardsSummary';
+import { useBackLayer } from '../../hooks/useBackLayer';
 
 /** Limit figures of one card, from the same calculation the desktop page uses. */
 export interface CardLimitFigures {
@@ -125,6 +126,9 @@ export default function MobileCreditCards(props: MobileCreditCardsProps) {
   const [index, setIndex] = useState(0);
   const [moreOpen, setMoreOpen] = useState(false);
   const [purchasesOpen, setPurchasesOpen] = useState(false);
+  // The Android back button closes the three-dot menu and "Ver compras" before it leaves the screen (below 768 px).
+  useBackLayer(moreOpen, () => setMoreOpen(false));
+  useBackLayer(purchasesOpen, () => setPurchasesOpen(false));
   const scrollerRef = useRef<HTMLDivElement>(null);
   const screen = cardsScreenState({ loading, error: false, cardCount: cards.length });
 

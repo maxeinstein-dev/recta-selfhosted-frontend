@@ -49,7 +49,8 @@ export function dayLabel(dayKey: string, todayKey: string): string {
   if (dayKey === previousDayKey(todayKey)) return 'Ontem';
   const [y, m, d] = dayKey.split('-').map(Number);
   const weekday = WEEKDAYS_PT[new Date(y, m - 1, d).getDay()];
-  return `${weekday}, ${d} ${MONTHS_SHORT_PT[m - 1]}`;
+  // Only the first letter is capital (the header does not use CSS capitalize, which would also capitalize "nov")
+  return `${weekday.charAt(0).toUpperCase()}${weekday.slice(1)}, ${d} ${MONTHS_SHORT_PT[m - 1]}`;
 }
 
 /** The effect of a transaction on the day's total: income adds, expense takes away, transfers and allocations are 0. */
@@ -106,4 +107,40 @@ export function matchesShortFilter(row: { type: string; onCard: boolean }, filte
 export function captureVisibleCount(total: number, open: boolean): { visible: number; rest: number } {
   const visible = open ? total : Math.min(1, total);
   return { visible, rest: total - visible };
+}
+
+/** The actions of a row, in the order of the desktop menu (TransactionActionsMenu). */
+export type RowAction = 'view' | 'confirm' | 'markAsPaid' | 'markAsPending' | 'edit' | 'split' | 'delete';
+
+export interface RowFacts {
+  /** `paid` as the row has it: only `false` means pending. */
+  paid: boolean | undefined;
+  /** A read-only row (the desktop hides everything but "Ver detalhes"). */
+  readOnly: boolean;
+  /** The page can confirm this row now: it may be confirmed (pending income or expense) and the user may write. */
+  canConfirm: boolean;
+  /** The page can split this row now: an expense, not an invoice payment, with a dividing permission. */
+  canSplit: boolean;
+}
+
+/**
+ * Which actions a row offers. Same conditions as the desktop menu: "Confirmar" replaces "Marcar como pago" for a
+ * pending row (paymentMenuActions), "Marcar como pendente" is for paid rows, and the write actions need !readOnly.
+ */
+export function rowActions(f: RowFacts): RowAction[] {
+  const actions: RowAction[] = ['view'];
+  if (f.readOnly) return actions;
+  const isPaid = f.paid !== false;
+  if (f.canConfirm && !isPaid) actions.push('confirm');
+  if (!isPaid && !f.canConfirm) actions.push('markAsPaid');
+  if (isPaid) actions.push('markAsPending');
+  actions.push('edit');
+  if (f.canSplit) actions.push('split');
+  actions.push('delete');
+  return actions;
+}
+
+/** The second line of a capture in the box: its type, its account and when it happened, with empty parts left out. */
+export function captureLineMeta(typeLabel: string, accountName: string | null, when: string): string {
+  return [typeLabel, accountName, when].filter((part): part is string => !!part).join(' · ');
 }

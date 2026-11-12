@@ -37,6 +37,9 @@ import { monthBounds, dayKeyOf, dayLabel, groupByDay, signedAmount, matchesShort
 import MobileCaptureBox from '../components/transactions/MobileCaptureBox';
 import MobileExtrato, { type ExtratoDayView } from '../components/transactions/MobileExtrato';
 import { AccountType } from '../lib/enums';
+import MobileRowActions from '../components/transactions/MobileRowActions';
+import { rowActions, type RowAction } from '../utils/extratoMobile';
+import { confirmCopy, isConfirmable } from '../utils/confirmReceipt';
 
 // Helper function to get icon component for category (supports enum or CUSTOM:uuid)
 const getCategoryIcon = (categoryName: string | undefined, customCategories?: { id: string; name: string; icon?: string | null }[]) => {
@@ -80,6 +83,8 @@ const Transactions = () => {
   const isMobileShell = useIsMobileShell();
   const { monthKey } = useSelectedMonth();
   const [cardOnly, setCardOnly] = useState<boolean>(false);
+  // The row whose actions sheet is open (mobile only).
+  const [rowMenu, setRowMenu] = useState<Transaction | null>(null);
   
   // Inicializar filtro de tipo a partir dos query params
   const getInitialTypeFilter = () => {
@@ -829,10 +834,53 @@ const Transactions = () => {
         };
       }),
     }));
+    // The same actions of the desktop row menu, each wired to the handler the desktop uses.
+    const runRowAction = (action: RowAction, tx: Transaction): void => {
+      switch (action) {
+        case 'view':
+          setViewingTransaction(tx);
+          setEditingTransaction(null);
+          setIsModalOpen(true);
+          return;
+        case 'confirm':
+          confirmReceipt.request(tx);
+          return;
+        case 'markAsPaid':
+          if (tx.id) void handleMarkAsPaid(tx.id, true);
+          return;
+        case 'markAsPending':
+          if (tx.id) void handleMarkAsPaid(tx.id, false);
+          return;
+        case 'edit':
+          handleEdit(tx);
+          return;
+        case 'split':
+          setSharingTransaction(tx);
+          return;
+        case 'delete':
+          if (tx.id) handleDelete(tx.id);
+          return;
+      }
+    };
+    const rowFacts = (tx: Transaction) => ({
+      paid: tx.paid,
+      readOnly: false,
+      canConfirm: canSplitShares && isConfirmable({ id: tx.id, type: tx.type, paid: tx.paid }),
+      canSplit: canSplitShares && tx.type === TransactionType.EXPENSE && !tx.attachmentUrl?.startsWith('invoice_pay:') && !!tx.id,
+    });
     return (
       <>
+        {rowMenu && (
+          <MobileRowActions
+            title={formatTransactionDescription(rowMenu)}
+            confirmLabel={confirmCopy(rowMenu.type).action}
+            actions={rowActions(rowFacts(rowMenu))}
+            onAction={(action) => runRowAction(action, rowMenu)}
+            onClose={() => setRowMenu(null)}
+          />
+        )}
         <MobileExtrato
-          captureBox={<MobileCaptureBox householdId={householdId ?? undefined} canEdit={canSplitShares} />}
+          captureBox={<MobileCaptureBox householdId={householdId ?? undefined} accounts={accounts} canEdit={canSplitShares} />}
           dueBox={!loading && canSplitShares ? <DueToConfirmPanel householdId={householdId ?? undefined} onConfirm={confirmReceipt.request} /> : null}
           searchInput={searchInput}
           onSearchChange={setSearchInput}
@@ -843,7 +891,7 @@ const Transactions = () => {
           hasMore={transactionsData?.pagination?.hasMore || false}
           isLoadingMore={loadMoreMutation.isPending}
           onLoadMore={handleLoadMore}
-          onOpen={handleEdit}
+          onOpen={setRowMenu}
           onExport={exportToCSV}
           onImport={() => setImportOpen(true)}
           filters={sharedFilterProps}

@@ -5,13 +5,15 @@ import { useToastContext } from '../../context/ToastContext';
 import { useCaptures, useCapturesCount, useConfirmCapture, useDismissCapture } from '../../hooks/api/useCaptures';
 import { appLabel, buildConfirmBody, draftFromSuggestion, formatCaptureDateTime, localDayKey, type CaptureItem } from '../../utils/captureInbox';
 import { captureText } from '../../utils/captureTexts';
-import { captureVisibleCount } from '../../utils/extratoMobile';
+import { captureLineMeta, captureVisibleCount } from '../../utils/extratoMobile';
 import { formatCurrency } from '../../utils/format';
 
 const TOUCH = 'min-h-[44px]';
 
 interface MobileCaptureBoxProps {
   householdId?: string;
+  /** The household's accounts, to name the suggested one as /app/captures does. */
+  accounts: Array<{ id?: string; name: string }>;
   /** Same rule as the captures page: only people who may write see the actions enabled. */
   canEdit: boolean;
 }
@@ -20,7 +22,7 @@ interface MobileCaptureBoxProps {
  * The capture box on top of the mobile Extrato. It uses the same hooks and the same confirm rule as /app/captures: a
  * complete suggestion posts in one tap, an incomplete one opens CaptureConfirmModal. Hidden when nothing waits.
  */
-const MobileCaptureBox = ({ householdId, canEdit }: MobileCaptureBoxProps) => {
+const MobileCaptureBox = ({ householdId, accounts, canEdit }: MobileCaptureBoxProps) => {
   const { t } = useI18n();
   const tx = (key: Parameters<typeof captureText>[1]) => captureText(t, key);
   const { success, error: showError } = useToastContext();
@@ -99,17 +101,24 @@ const MobileCaptureBox = ({ householdId, canEdit }: MobileCaptureBoxProps) => {
         {shown.map((item) => {
           const desc = item.suggestion.description || item.title || appLabel(item.package);
           const amount = item.suggestion.amount;
+          const isIncome = item.suggestion.type === 'INCOME';
+          const typeLabel = item.suggestion.type === 'INCOME'
+            ? tx('captureFormIncome')
+            : item.suggestion.type === 'EXPENSE'
+              ? tx('captureFormExpense')
+              : '';
+          const accountName = accounts.find((a) => a.id === item.suggestion.accountId)?.name ?? null;
           const busy = (confirm.isPending && confirm.variables?.id === item.id) || (dismiss.isPending && dismiss.variables?.id === item.id);
           return (
             <li key={item.id} className="border-t border-rc-line py-2.5 first:border-t-0">
               <div className="flex min-w-0 items-baseline gap-2">
                 <p className="min-w-0 flex-1 truncate font-medium">{desc}</p>
-                <p className="whitespace-nowrap font-semibold tabular-nums">
-                  {amount === null ? '—' : formatCurrency(amount)}
+                <p className={`whitespace-nowrap font-semibold tabular-nums ${isIncome && amount !== null ? 'text-rc-green' : ''}`}>
+                  {amount === null ? '—' : `${isIncome ? '+' : '−'}${formatCurrency(amount)}`}
                 </p>
               </div>
               <p className="truncate text-[12.5px] text-rc-ink3">
-                {appLabel(item.package)} · {formatCaptureDateTime(item.postedAt)}
+                {captureLineMeta(typeLabel, accountName, formatCaptureDateTime(item.postedAt))}
               </p>
               <div className="mt-2 flex gap-2">
                 <button

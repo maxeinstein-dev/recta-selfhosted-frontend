@@ -21,6 +21,8 @@ import {
   rememberRecent,
   sheetAccounts,
   sheetCreateError,
+  situationLabels,
+  situationPaid,
   toFullFormPrefill,
   toTransactionInput,
   toTransferPrefill,
@@ -66,6 +68,7 @@ const AddTransactionSheet = ({ onClose, onOpenFullForm }: AddTransactionSheetPro
     category: '',
     accountId: '',
     date: openedAt,
+    paidChoice: null,
   });
   const [amountText, setAmountText] = useState(() => formatAmountInput(0, currency.decimalPlaces, currency.locale));
   const [dateChip, setDateChip] = useState<'today' | 'yesterday' | 'other'>('today');
@@ -208,6 +211,8 @@ const AddTransactionSheet = ({ onClose, onOpenFullForm }: AddTransactionSheetPro
   };
 
   const typeLabel = state.type === 'INCOME' ? 'Recebido em' : 'Pago com';
+  const situation = situationLabels(state.type);
+  const situationNow = situationPaid(state.date, new Date(), state.paidChoice);
 
   return (
     <div className="fixed inset-0 z-50 flex items-end">
@@ -370,6 +375,12 @@ const AddTransactionSheet = ({ onClose, onOpenFullForm }: AddTransactionSheetPro
             />
           </div>
         )}
+
+        <div className="mt-4 text-[13px] font-medium text-rc-ink3">Situação</div>
+        <div role="group" aria-label="Situação" className="-mx-4 mt-1 flex gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:none]">
+          <button type="button" aria-pressed={situationNow} onClick={() => setState((prev) => ({ ...prev, paidChoice: true }))} className={pillClass(situationNow)}>{situation.paid}</button>
+          <button type="button" aria-pressed={!situationNow} onClick={() => setState((prev) => ({ ...prev, paidChoice: false }))} className={pillClass(!situationNow)}>{situation.pending}</button>
+        </div>
 
         <button
           type="button"

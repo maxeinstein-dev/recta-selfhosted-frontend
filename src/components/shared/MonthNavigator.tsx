@@ -50,19 +50,21 @@ export const MonthNavigator = ({
     <div className={`flex items-center justify-between ${className}`}>
       <button
         onClick={handlePrevMonth}
-        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+        type="button"
+        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
         aria-label="Mês anterior"
       >
         <ChevronLeft className="h-5 w-5" />
       </button>
       
-      <span className="text-lg font-medium px-4">
+      <span className="text-lg font-medium px-2 capitalize text-center" aria-live="polite">
         {formattedMonth}
       </span>
       
       <button
         onClick={handleNextMonth}
-        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
+        type="button"
+        className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center hover:bg-gray-100 dark:hover:bg-gray-800 rounded-lg transition-colors"
         aria-label="Próximo mês"
       >
         <ChevronRight className="h-5 w-5" />

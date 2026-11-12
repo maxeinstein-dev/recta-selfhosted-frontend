@@ -85,7 +85,7 @@ export interface CashFlowDayGroup {
 }
 
 export const CASH_FLOW_PERIODS = [30, 60, 90] as const;
-export const DEFAULT_CASH_FLOW_DAYS = 90;
+export const DEFAULT_CASH_FLOW_DAYS = 30;
 
 /** Money units to whole cents (the API's values have at most two decimals; Math.round absorbs the float noise). */
 export const toCents = (amount: number): number => Math.round(amount * 100);

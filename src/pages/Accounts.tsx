@@ -12,7 +12,6 @@ import { useHouseholdMembers } from "../hooks/api/useHouseholds";
 import {
   Plus,
   Wallet,
-  Calendar,
   Info,
   X,
   Circle,
@@ -52,15 +51,6 @@ import { AccountsSkeleton } from "../components/PageSkeletons";
 import { getAccountBalance } from "../utils/accountBalance";
 import TransactionModal from "../components/TransactionModal";
 import ConfirmModal from "../components/ConfirmModal";
-import { format } from "date-fns";
-import { ptBR as ptBRLocale } from "date-fns/locale/pt-BR";
-import { enUS as enUSLocale } from "date-fns/locale/en-US";
-import { es as esLocale } from "date-fns/locale/es";
-import { fr as frLocale } from "date-fns/locale/fr";
-import { ru as ruLocale } from "date-fns/locale/ru";
-import { ja as jaLocale } from "date-fns/locale/ja";
-import { zhCN as zhCNLocale } from "date-fns/locale/zh-CN";
-import { arSA as arSALocale } from "date-fns/locale/ar-SA";
 import { CategoryName, getCategoryDisplayName, TransactionType, getCategoryIconName } from "../lib/enums";
 import { EmptyState } from "../components/EmptyState";
 import type React from "react";
@@ -126,26 +116,6 @@ const Accounts = () => {
   const adjustAccount = adjustAccountId ? allAccounts?.find((a) => a.id === adjustAccountId) : undefined;
   const [isHelpModalOpen, setIsHelpModalOpen] = useState<boolean>(false);
 
-  const currentLocale = useMemo(() => {
-    switch (locale) {
-      case "pt-BR":
-        return ptBRLocale;
-      case "es-ES":
-        return esLocale;
-      case "fr-FR":
-        return frLocale;
-      case "ru-RU":
-        return ruLocale;
-      case "ja-JP":
-        return jaLocale;
-      case "zh-CN":
-        return zhCNLocale;
-      case "ar-SA":
-        return arSALocale;
-      default:
-        return enUSLocale;
-    }
-  }, [locale]);
 
   // Selecionar a primeira conta se nenhuma estiver selecionada
   useEffect(() => {
@@ -766,16 +736,7 @@ const Accounts = () => {
             <div className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-lg overflow-hidden">
               <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
-                  <div className="flex flex-col">
-                    <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-                      <Calendar className="h-5 w-5" />
-                      <span className="font-light capitalize text-lg">
-                        {format(selectedMonth, "MMMM yyyy", {
-                          locale: currentLocale,
-                        })}
-                      </span>
-                    </div>
-                  </div>
+                  {/* The month is shown once: the navigator is the title */}
                   <MonthNavigator
                     selectedMonth={selectedMonth}
                     onMonthChange={handleMonthChange}

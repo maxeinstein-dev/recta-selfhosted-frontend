@@ -21,6 +21,9 @@ import {
   rememberRecent,
   sheetAccounts,
   sheetCreateError,
+  accountsNotReadyError,
+  accountsRowMessage,
+  accountsRowState,
   situationLabels,
   situationPaid,
   toFullFormPrefill,
@@ -54,7 +57,7 @@ const AddTransactionSheet = ({ onClose, onOpenFullForm }: AddTransactionSheetPro
   const { success, error: showError } = useToastContext();
   const { addTransaction } = useTransactions();
   const { householdId } = useDefaultHousehold();
-  const { accounts } = useFormAccounts();
+  const { accounts, accountsLoading } = useFormAccounts();
   const { data: authUser } = useAuthUser();
   const currency = getCurrencyInfo();
   const [openedAt] = useState(() => new Date());
@@ -173,6 +176,11 @@ const AddTransactionSheet = ({ onClose, onOpenFullForm }: AddTransactionSheetPro
       amountRef.current?.focus();
       return;
     }
+    const notReady = accountsNotReadyError(rowState, state.accountId);
+    if (notReady) {
+      setError(notReady);
+      return;
+    }
     const now = new Date();
     const input = toTransactionInput(state, now);
     const refusal = simpleTransactionError(
@@ -212,6 +220,7 @@ const AddTransactionSheet = ({ onClose, onOpenFullForm }: AddTransactionSheetPro
 
   const typeLabel = state.type === 'INCOME' ? 'Recebido em' : 'Pago com';
   const situation = situationLabels(state.type);
+  const rowState = accountsRowState(accountsLoading, orderedAccounts.length);
   const situationNow = situationPaid(state.date, new Date(), state.paidChoice);
 
   return (
@@ -345,19 +354,23 @@ const AddTransactionSheet = ({ onClose, onOpenFullForm }: AddTransactionSheetPro
         )}
 
         <div className="mt-4 text-[13px] font-medium text-rc-ink3">{typeLabel}</div>
-        <div role="group" aria-label={typeLabel} className="-mx-4 mt-1 flex gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:none]">
-          {orderedAccounts.map((account) => (
-            <button
-              key={account.id}
-              type="button"
-              aria-pressed={state.accountId === account.id}
-              onClick={() => setState((prev) => ({ ...prev, accountId: account.id ?? '' }))}
-              className={pillClass(state.accountId === account.id)}
-            >
-              {accountOptionLabel(account, labels, authUser?.id)}
-            </button>
-          ))}
-        </div>
+        {rowState === 'ready' ? (
+  <div role="group" aria-label={typeLabel} className="-mx-4 mt-1 flex gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:none]">
+            {orderedAccounts.map((account) => (
+              <button
+                key={account.id}
+                type="button"
+                aria-pressed={state.accountId === account.id}
+                onClick={() => setState((prev) => ({ ...prev, accountId: account.id ?? '' }))}
+                className={pillClass(state.accountId === account.id)}
+              >
+                {accountOptionLabel(account, labels, authUser?.id)}
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p role="status" className="mt-1 min-h-[44px] text-[14px] text-rc-ink3">{accountsRowMessage(rowState)}</p>
+        )}
 
         <div className="mt-4 text-[13px] font-medium text-rc-ink3">Data</div>
         <div role="group" aria-label="Data" className="-mx-4 mt-1 flex gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:none]">

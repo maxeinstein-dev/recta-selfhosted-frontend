@@ -259,21 +259,36 @@ const AddTransactionSheet = ({ onClose, onOpenFullForm }: AddTransactionSheetPro
         <label className="mt-4 flex items-baseline gap-2">
           <span className="text-2xl font-semibold text-rc-ink3">{currencySymbol}</span>
           <span className="sr-only">Valor</span>
-          <input
-            ref={amountRef}
-            autoFocus
-            type="text"
-            inputMode="numeric"
-            autoComplete="off"
-            value={amountText}
-            onChange={onAmountChange}
-            onFocus={(e) => keepCaretAtEnd(e.currentTarget)}
-            onClick={(e) => keepCaretAtEnd(e.currentTarget)}
-            onKeyUp={(e: ReactKeyboardEvent<HTMLInputElement>) => keepCaretAtEnd(e.currentTarget)}
-            onSelect={(e) => keepCaretAtEnd(e.currentTarget)}
-            className="h-14 min-w-0 flex-1 border-0 bg-transparent p-0 text-[46px] font-bold tabular-nums tracking-tight text-rc-ink outline-none"
-            aria-label="Valor"
-          />
+          {/* No box: the global input rules (attribute selectors) would paint one, so the field's look is set inline. */}
+          <span className="flex min-w-0 flex-1 flex-col">
+            <input
+              ref={amountRef}
+              autoFocus
+              type="text"
+              inputMode="numeric"
+              autoComplete="off"
+              value={amountText}
+              onChange={onAmountChange}
+              onFocus={(e) => keepCaretAtEnd(e.currentTarget)}
+              onClick={(e) => keepCaretAtEnd(e.currentTarget)}
+              onKeyUp={(e: ReactKeyboardEvent<HTMLInputElement>) => keepCaretAtEnd(e.currentTarget)}
+              onSelect={(e) => keepCaretAtEnd(e.currentTarget)}
+              className="peer h-14 w-full min-w-0 p-0 tabular-nums tracking-tight text-rc-ink"
+              style={{
+                background: 'transparent',
+                border: 0,
+                borderRadius: 0,
+                boxShadow: 'none',
+                outline: 'none',
+                fontSize: 46,
+                fontWeight: 700,
+                letterSpacing: '-0.03em',
+              }}
+              aria-label="Valor"
+            />
+            {/* The sign of focus: a thin line under the number, only for keyboard focus. */}
+            <span aria-hidden="true" className="block h-0.5 rounded-full bg-transparent peer-focus-visible:bg-rc-accent" />
+          </span>
         </label>
 
         <input

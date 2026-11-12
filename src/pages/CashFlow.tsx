@@ -4,6 +4,7 @@ import { PageHeader } from '../components/PageHeader';
 import CashFlowChart from '../components/cashflow/CashFlowChart';
 import MobileCashFlow from '../components/cashflow/MobileCashFlow';
 import BillsChecklist from '../components/bills/BillsChecklist';
+import { EarlyDiscountNotice, PayNowButton, usePayNow } from '../components/cashflow/EarlyDiscountBits';
 import { useI18n } from '../context/I18nContext';
 import { useCurrency } from '../context/CurrencyContext';
 import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
@@ -61,6 +62,8 @@ const CashFlow = () => {
   const [accountId, setAccountId] = useState<string>('');
   // Below 768 px the Fluxo tab of the mobile shell (lote R4); the desktop layout is unchanged.
   const isMobileShell = useIsMobileShell();
+  // One "Pagar agora" at a time across the events of the screen
+  const pay = usePayNow();
 
   const accounts = useAccounts({ householdId: householdId ?? '' });
   const cashList = useMemo(() => cashAccounts(accounts.data?.accounts ?? []), [accounts.data]);
@@ -98,6 +101,7 @@ const CashFlow = () => {
         accounts={cashList.map((account) => ({ id: account.id, name: account.name }))}
         footer={<BillsChecklist householdId={householdId ?? undefined} accountId={accountId || undefined} />}
         tx={tx}
+        pay={pay}
       />
     );
   }
@@ -199,7 +203,7 @@ const CashFlow = () => {
                 </header>
                 <ul className="divide-y divide-gray-100 dark:divide-gray-800">
                   {group.events.map((event) => (
-                    <EventRow key={`${event.source}:${event.sourceId}:${event.date}:${event.amount}:${event.description}`} event={event} currency={currency} tx={tx} />
+                    <EventRow key={`${event.source}:${event.sourceId}:${event.date}:${event.amount}:${event.description}`} event={event} currency={currency} today={data.period.from} pay={pay} tx={tx} />
                   ))}
                 </ul>
                 <p className="text-right text-xs font-light text-gray-500 dark:text-gray-400">
@@ -283,7 +287,7 @@ const CashFlow = () => {
 };
 
 /** One event: description, source and badges, signed amount. Wraps on a narrow screen; no table. */
-function EventRow({ event, currency, tx }: { event: CashFlowEvent; currency: string; tx: (key: CashFlowTextKey, vars?: Record<string, string | number>) => string }) {
+function EventRow({ event, currency, today, pay, tx }: { event: CashFlowEvent; currency: string; today: string; pay: ReturnType<typeof usePayNow>; tx: (key: CashFlowTextKey, vars?: Record<string, string | number>) => string }) {
   const overdue = overdueDetail(event);
   const tone = eventTone(event.amount);
   return (
@@ -303,6 +307,10 @@ function EventRow({ event, currency, tx }: { event: CashFlowEvent; currency: str
               {overdue ? ` · ${tx('cashFlowOverdueFrom', { date: overdue.date })}` : ''}
             </span>
           )}
+        </div>
+        <EarlyDiscountNotice quote={event.earlyDiscount} today={today} currency={currency} />
+        <div>
+          <PayNowButton discount={event.earlyDiscount} name={event.description || tx('cashFlowNoDescription')} pay={pay} />
         </div>
       </div>
       <p

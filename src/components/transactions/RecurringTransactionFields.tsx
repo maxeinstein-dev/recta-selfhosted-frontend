@@ -2,6 +2,8 @@ import { useI18n } from '../../context/I18nContext';
 import { DatePicker } from '../DatePicker';
 import SelectCombobox from '../SelectCombobox';
 import { ReferenceOffsetField } from './ReferenceMonthField';
+import { EarlyDiscountField } from './EarlyDiscountField';
+import type { EarlyDiscountDraft } from '../../utils/earlyDiscount';
 import { addDays, addWeeks, addMonths, addYears } from 'date-fns';
 
 interface RecurringTransactionFieldsProps {
@@ -17,6 +19,8 @@ interface RecurringTransactionFieldsProps {
   /** Months between an occurrence's date and the month it refers to (null/absent = same month). */
   competenceOffsetMonths?: number | null;
   onCompetenceOffsetChange?: (offset: number | null) => void;
+  /** Early-payment discount (expenses only): the draft, its change handler and the amount it is checked against. */
+  earlyDiscount?: { draft: EarlyDiscountDraft; onChange: (draft: EarlyDiscountDraft) => void; amount: number; showErrors?: boolean };
   disabled?: boolean;
 }
 
@@ -49,6 +53,7 @@ export const RecurringTransactionFields = ({
   onNextDueDateChange,
   competenceOffsetMonths = null,
   onCompetenceOffsetChange,
+  earlyDiscount,
   disabled = false,
 }: RecurringTransactionFieldsProps) => {
   const { t } = useI18n();
@@ -136,6 +141,10 @@ export const RecurringTransactionFields = ({
           {t.optional}
         </p>
       </div>
+
+      {earlyDiscount && (
+        <EarlyDiscountField draft={earlyDiscount.draft} onChange={earlyDiscount.onChange} amount={earlyDiscount.amount} showErrors={earlyDiscount.showErrors} disabled={disabled} />
+      )}
 
       {onCompetenceOffsetChange && (
         <ReferenceOffsetField value={competenceOffsetMonths} onChange={onCompetenceOffsetChange} disabled={disabled} />

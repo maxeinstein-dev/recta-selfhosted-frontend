@@ -1,7 +1,7 @@
 import { useCallback } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { CategoryType } from '../../lib/enums';
-import { BILLS_PERIOD_DAYS, monthEnd, monthStart } from '../../utils/billsChecklist';
+import { BILLS_PERIOD_DAYS, monthEnd, paidWindowStart } from '../../utils/billsChecklist';
 import { useCashFlow } from './useCashFlow';
 import { useExecuteRecurringTransaction, useRecurringTransactions } from './useRecurringTransactions';
 import { useTransactions, useUpdateTransaction } from './useTransactions';
@@ -28,7 +28,8 @@ export function usePaidMonthExpenses({ householdId, accountId, today }: BillsPar
   return useTransactions({
     householdId: today ? householdId : undefined,
     accountId,
-    startDate: today ? localDate(monthStart(today)) : undefined,
+    // 31 days before the month: a bill paid ahead for it is dated earlier (the counter reads the reference month)
+    startDate: today ? localDate(paidWindowStart(today)) : undefined,
     endDate: today ? localDate(monthEnd(today)) : undefined,
     type: CategoryType.EXPENSE,
     paid: true,

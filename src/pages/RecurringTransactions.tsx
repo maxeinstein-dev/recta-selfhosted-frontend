@@ -27,6 +27,9 @@ import { RecurringTransactionsSkeleton } from '../components/PageSkeletons';
 import { CategoryType, getCategoriesByType, getCategoryNameFromDisplay, AccountType, TransactionType, CategoryName, RecurrenceFrequency } from '../lib/enums';
 import { DatePicker } from '../components/DatePicker';
 import { ReferenceOffsetField, RecurringAliasesField, DueToConfirmPanel } from '../components/transactions';
+import { EarlyDiscountField } from '../components/transactions/EarlyDiscountField';
+import { discountFields, draftFromRecurrence as discountDraftFrom, emptyDraft as emptyDiscountDraft, validateDraft as validateDiscount, type EarlyDiscountDraft } from '../utils/earlyDiscount';
+import { earlyDiscountText } from '../utils/earlyDiscountTexts';
 import { ForecastStrategyField } from '../components/transactions/ForecastStrategyField';
 import { useConfirmReceipt } from '../hooks/useConfirmReceipt';
 import { offsetToSend, recurrenceChip } from '../utils/referenceMonth';
@@ -67,6 +70,7 @@ const RecurringTransactions = () => {
   const confirmReceipt = useConfirmReceipt();
   const [competenceOffset, setCompetenceOffset] = useState<number | null>(null);
   const [aliases, setAliases] = useState<string[]>([]);
+  const [discountDraft, setDiscountDraft] = useState<EarlyDiscountDraft>(emptyDiscountDraft());
   const [forecastDraft, setForecastDraft] = useState<ForecastDraft>(emptyForecastDraft());
 
   // Verificar se o usuário já viu o modal de ajuda
@@ -154,6 +158,7 @@ const RecurringTransactions = () => {
       });
       setCompetenceOffset(editingRecurring.competenceOffsetMonths ?? null);
       setAliases(editingRecurring.aliases ?? []);
+      setDiscountDraft(discountDraftFrom(editingRecurring));
       setForecastDraft(draftFromRecurrence(editingRecurring));
       currencyMask.setValue(editingRecurring.amount || 0);
       setValue('amount', editingRecurring.amount || 0);
@@ -173,6 +178,7 @@ const RecurringTransactions = () => {
       });
       setCompetenceOffset(null);
       setAliases([]);
+      setDiscountDraft(emptyDiscountDraft());
       setForecastDraft(emptyForecastDraft());
       currencyMask.setValue('');
       setValue('amount', 0);
@@ -230,6 +236,13 @@ const RecurringTransactions = () => {
       showError(Object.values(forecastCheck.errors)[0] ?? t.error);
       return;
     }
+    // Early-payment discount (expenses only): the same rules as the server, checked before sending
+    const isExpense = data.type === TransactionType.EXPENSE;
+    const discountCheck = validateDiscount(isExpense ? discountDraft : emptyDiscountDraft(), data.amount);
+    if (!discountCheck.ok) {
+      showError(earlyDiscountText(t, discountCheck.key));
+      return;
+    }
     try {
       const recurringData: Omit<RecurringTransaction, 'id' | 'userId'> = {
         description: data.description,
@@ -249,6 +262,7 @@ const RecurringTransactions = () => {
         competenceOffsetMonths: offsetToSend(competenceOffset),
         aliases,
         ...forecastPayload(forecastDraft),
+        ...(discountFields(discountCheck, editingRecurring?.id ? 'update' : 'create') as Partial<RecurringTransaction>),
       };
 
       if (editingRecurring?.id) {
@@ -399,6 +413,14 @@ const RecurringTransactions = () => {
                       {recurrenceChip(recurring.competenceOffsetMonths) && (
                         <span data-testid="recurrence-chip" className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-light border border-blue-300 dark:border-blue-700 text-blue-600 dark:text-blue-400">
                           {recurrenceChip(recurring.competenceOffsetMonths)}
+                        </span>
+                      )}
+                      {recurring.earlyDiscountDay != null && recurring.earlyDiscountValue != null && (
+                        <span
+                          data-testid="early-discount-chip"
+                          className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-light border border-emerald-300 dark:border-emerald-700 text-emerald-700 dark:text-emerald-400"
+                        >
+                          {earlyDiscountText(t, 'recurrenceDiscountChip', { day: recurring.earlyDiscountDay })}
                         </span>
                       )}
                       {recurring.forecastStrategy && recurring.forecastStrategy !== 'LAST' && (
@@ -768,6 +790,10 @@ const RecurringTransactions = () => {
                   </div>
                 }
               />
+
+              {watch('type') === TransactionType.EXPENSE && (
+                <EarlyDiscountField draft={discountDraft} onChange={setDiscountDraft} amount={Number(watch('amount')) || 0} showErrors={submitCount > 0} />
+              )}
 
               <ReferenceOffsetField value={competenceOffset} onChange={setCompetenceOffset} />
 

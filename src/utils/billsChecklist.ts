@@ -8,6 +8,8 @@
  * Days are 'YYYY-MM-DD' strings and are only compared as text, so no time zone shifts them.
  */
 import { isDayKey, toCents, type CashFlowEvent } from './cashFlow';
+import { effectiveMonthOf } from './referenceMonth';
+import { canPayNow, type CashFlowEarlyDiscount } from './earlyDiscount';
 
 /** The cash flow period the checklist asks for: 30 days always reach the end of the current month. */
 export const BILLS_PERIOD_DAYS = 30;
@@ -39,6 +41,8 @@ export interface Bill {
   estimated: boolean;
   accountId: string;
   invoiceMonth: string | null;
+  /** Early-payment discount still valid for this occurrence (the amount above is already the discounted one); null otherwise. */
+  earlyDiscount: CashFlowEarlyDiscount | null;
 }
 
 /** Last day of the month of `day`, 'YYYY-MM-DD'. */
@@ -97,6 +101,7 @@ export function buildBills(events: readonly CashFlowEvent[], today: string, hidd
       estimated: event.certainty === 'estimated',
       accountId: event.accountId,
       invoiceMonth: event.invoiceMonth,
+      earlyDiscount: event.earlyDiscount ?? null,
     });
   }
   return bills.sort(compareBills);
@@ -161,6 +166,8 @@ export interface RecurrenceInfo {
   frequency: string;
   /** ISO date or 'YYYY-MM-DD' of the next occurrence the recurrence will generate. */
   nextRunAt: string;
+  /** Months between an occurrence's date and its reference month; null = same month. */
+  competenceOffsetMonths?: number | null;
 }
 
 export type BillAction =
@@ -168,6 +175,8 @@ export type BillAction =
   | { type: 'pay'; confirm: boolean }
   /** Not-yet-generated occurrence: generate it once and pay it (generate first, then confirm, when `confirm`). */
   | { type: 'execute'; confirm: boolean }
+  /** Recurrence occurrence with a discount that the API says can be paid now: pay it ahead through pay-next (never generated first). */
+  | { type: 'payNext'; recurringId: string }
   /** Card invoice: never paid here; go to the card's payment flow. */
   | { type: 'invoice' }
   /** No control: `later` for a recurrence that is not the next one (or not monthly), `unknown` for an unknown source. */
@@ -178,10 +187,11 @@ export type BillAction =
  * the recurrence is monthly (the route has a once-per-month guard only for those) and the bill's day is the recurrence's
  * next run (the route always generates the next run). Any other recurrence line waits for its date.
  */
-export function billAction(bill: Pick<Bill, 'kind' | 'sourceId' | 'dueDate' | 'estimated'>, recurrences?: ReadonlyMap<string, RecurrenceInfo>): BillAction {
+export function billAction(bill: Pick<Bill, 'kind' | 'sourceId' | 'dueDate' | 'estimated'> & { earlyDiscount?: CashFlowEarlyDiscount | null }, recurrences?: ReadonlyMap<string, RecurrenceInfo>): BillAction {
   if (bill.kind === 'pending') return { type: 'pay', confirm: bill.estimated };
   if (bill.kind === 'invoice') return { type: 'invoice' };
   if (bill.kind === 'recurrence') {
+    if (canPayNow(bill.earlyDiscount)) return { type: 'payNext', recurringId: bill.earlyDiscount!.recurringId };
     const info = recurrences?.get(bill.sourceId);
     if (info && info.frequency === 'MONTHLY' && info.nextRunAt.slice(0, 10) === bill.dueDate) {
       return { type: 'execute', confirm: bill.estimated };
@@ -199,21 +209,42 @@ export interface PaidCandidate {
   recurringTransactionId?: string | null;
   /** ISO date or 'YYYY-MM-DD'. */
   date: string;
+  /** 'YYYY-MM' the row refers to; null/absent = the month of its date. */
+  competenceMonth?: string | null;
 }
 
 /**
- * The paid half of the counter: expenses of the month that are already paid and came from a recurrence (the same set the
- * pending bills belong to), plus the transactions this screen just paid. Counted by id, so nothing is counted twice.
+ * The paid half of the counter: expenses already paid that came from a recurrence (the same set the pending bills belong
+ * to) and refer to the month of `from`, plus the transactions this screen just paid. "Refer to" is the effective month
+ * (the reference month when set, else the month of the date), not the date alone: a bill paid ahead on 28/11 for December
+ * is December's, so it is not counted in November (where it would show as a second paid bill) and is counted in
+ * December. `from`/`to` are the first and last day of the period (one month). Counted by id, so nothing is counted twice.
  */
-export function paidIds(transactions: readonly PaidCandidate[], from: string, to: string, markedIds: ReadonlySet<string> = new Set()): Set<string> {
+export function paidIds(transactions: readonly PaidCandidate[], from: string, to: string, markedIds: ReadonlySet<string> = new Set(), recurrences?: ReadonlyMap<string, RecurrenceInfo>): Set<string> {
   const ids = new Set<string>(markedIds);
+  const first = from.slice(0, 7);
+  const last = to.slice(0, 7);
   for (const t of transactions) {
     if (t.type !== 'EXPENSE' || t.paid !== true || !t.recurringTransactionId) continue;
-    const day = String(t.date).slice(0, 10);
-    if (day < from || day > to) continue;
+    // The reference month moves a row to another month only when its recurrence has no offset (paid ahead through
+    // pay-next). With an offset the reference month is always the next one(s) and the bills total counts by the date;
+    // an unknown recurrence counts by the date too.
+    const info = recurrences?.get(t.recurringTransactionId);
+    const movable = !!info && !info.competenceOffsetMonths;
+    const month = movable ? effectiveMonthOf({ date: t.date, competenceMonth: t.competenceMonth }) : String(t.date).slice(0, 7);
+    if (month < first || month > last) continue;
     ids.add(t.id);
   }
   return ids;
+}
+
+/**
+ * First day the paid-expenses query must cover for the month of `day`: 31 days before the month starts, because a bill
+ * paid ahead (the server accepts up to 31 days) is dated before the month it refers to.
+ */
+export function paidWindowStart(day: string): string {
+  const d = new Date(Date.UTC(Number(day.slice(0, 4)), Number(day.slice(5, 7)) - 1, 1) - 31 * 86_400_000);
+  return `${String(d.getUTCFullYear()).padStart(4, '0')}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`;
 }
 
 export interface BillsProgress {
@@ -244,10 +275,10 @@ export function recurrenceMap(raw: unknown): Map<string, RecurrenceInfo> {
   const list = Array.isArray(raw) ? raw : Array.isArray((raw as { data?: unknown } | null | undefined)?.data) ? (raw as { data: unknown[] }).data : [];
   const map = new Map<string, RecurrenceInfo>();
   for (const item of list) {
-    const r = item as { id?: unknown; frequency?: unknown; nextRunAt?: unknown; isActive?: unknown } | null;
+    const r = item as { id?: unknown; frequency?: unknown; nextRunAt?: unknown; isActive?: unknown; competenceOffsetMonths?: unknown } | null;
     if (!r || typeof r.id !== 'string' || typeof r.frequency !== 'string' || typeof r.nextRunAt !== 'string') continue;
     if (r.isActive === false) continue;
-    map.set(r.id, { frequency: r.frequency, nextRunAt: r.nextRunAt });
+    map.set(r.id, { frequency: r.frequency, nextRunAt: r.nextRunAt, competenceOffsetMonths: typeof r.competenceOffsetMonths === 'number' ? r.competenceOffsetMonths : null });
   }
   return map;
 }

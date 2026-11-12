@@ -7,6 +7,7 @@
  * Money: the API answers in money units; every sum here is done in whole cents so a float never drifts.
  */
 import type { CashFlowTextKey } from './cashFlowTexts';
+import type { CashFlowEarlyDiscount } from './earlyDiscount';
 
 /** 'payroll': 13th, vacation and birthday FGTS withdrawal forecast by a CLT employment (an entry, never a bill). */
 export type CashFlowSource = 'pending' | 'recurrence' | 'payroll' | 'invoice';
@@ -26,6 +27,8 @@ export interface CashFlowEvent {
   sourceId: string;
   accountId: string;
   invoiceMonth: string | null;
+  /** Recurrence with an early-payment discount still valid: `amount` is already the discounted one. */
+  earlyDiscount?: CashFlowEarlyDiscount;
 }
 
 export interface CashFlowDay {

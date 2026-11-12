@@ -306,6 +306,10 @@ const convertRecurringTransactionFromBackend = (r: BackendRecurringTransaction, 
     isActive: r.isActive ?? true,
     followLastAmount: r.followLastAmount === true,
     competenceOffsetMonths: r.competenceOffsetMonths ?? null,
+    earlyDiscountDay: r.earlyDiscountDay ?? null,
+    earlyDiscountType: r.earlyDiscountType ?? null,
+    earlyDiscountValue: r.earlyDiscountValue != null ? Number(r.earlyDiscountValue) : null,
+    earlyDiscount: r.earlyDiscount ?? null,
     forecastStrategy: normalizeStrategy(r.forecastStrategy),
     forecastWindow: r.forecastWindow ?? null,
     dailyRate: r.dailyRate != null ? Number(r.dailyRate) : null,
@@ -695,6 +699,11 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
       isActive: recurring.isActive,
       ...(recurring.followLastAmount !== undefined && { followLastAmount: recurring.followLastAmount }),
       ...(recurring.competenceOffsetMonths != null && { competenceOffsetMonths: recurring.competenceOffsetMonths }),
+      ...(recurring.earlyDiscountDay != null && recurring.earlyDiscountType != null && recurring.earlyDiscountValue != null && {
+        earlyDiscountDay: recurring.earlyDiscountDay,
+        earlyDiscountType: recurring.earlyDiscountType,
+        earlyDiscountValue: recurring.earlyDiscountValue,
+      }),
       ...(recurring.aliases !== undefined && { aliases: recurring.aliases }),
       ...(recurring.forecastStrategy !== undefined && {
         forecastStrategy: recurring.forecastStrategy,
@@ -725,6 +734,10 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
     if (recurring.followLastAmount !== undefined) updateData.followLastAmount = recurring.followLastAmount;
     // Reference offset: a number sets it, null clears it (same month), absent leaves it alone.
     if (recurring.competenceOffsetMonths !== undefined) updateData.competenceOffsetMonths = recurring.competenceOffsetMonths;
+    // Early-payment discount: the three together; null clears it, absent leaves it alone.
+    if (recurring.earlyDiscountDay !== undefined) updateData.earlyDiscountDay = recurring.earlyDiscountDay;
+    if (recurring.earlyDiscountType !== undefined) updateData.earlyDiscountType = recurring.earlyDiscountType;
+    if (recurring.earlyDiscountValue !== undefined) updateData.earlyDiscountValue = recurring.earlyDiscountValue;
     // Aliases: sent whole when the form has them (an empty list clears), absent leaves the stored ones alone.
     if (recurring.aliases !== undefined) updateData.aliases = recurring.aliases;
     // Forecast strategy: sent whole (the form always has all of it), absent leaves the stored one alone.

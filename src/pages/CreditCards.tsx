@@ -658,6 +658,7 @@ const CreditCards = () => {
             variant="secondary"
             icon={ClipboardCheck}
             aria-label="Revisar lançamentos sem comprovante"
+            mobileLabel="Revisar"
           >
             Revisar sem comprovante
           </PageButton>

@@ -108,14 +108,14 @@ export const CreditCardStatementPanel = ({ view, monthName, baseCurrency, classN
             aria-controls={listId}
             className="w-full min-h-[44px] flex items-center justify-between gap-3 text-left"
           >
-            <span className="flex items-center gap-2 text-sm font-medium text-gray-900 dark:text-white">
-              <CalendarClock className="h-4 w-4 text-gray-400" aria-hidden="true" />
-              {tr('cardStmtForecast')}
-              <span className="font-light text-gray-500 dark:text-gray-400">
+            <span className="flex min-w-0 flex-1 flex-wrap items-center gap-x-2 gap-y-0.5 text-sm font-medium text-gray-900 dark:text-white">
+              <CalendarClock className="h-4 w-4 shrink-0 text-gray-400" aria-hidden="true" />
+              <span className="whitespace-nowrap">{tr('cardStmtForecast')}</span>
+              <span className="whitespace-nowrap font-light text-gray-500 dark:text-gray-400">
                 ({forecast.items.length} {forecast.items.length === 1 ? tr('cardStmtRecurrenceOne') : tr('cardStmtRecurrenceMany')})
               </span>
             </span>
-            <span className="flex items-center gap-2 text-sm tabular-nums text-gray-900 dark:text-white">
+            <span className="flex shrink-0 items-center gap-2 whitespace-nowrap text-sm tabular-nums text-gray-900 dark:text-white">
               {money(forecast.total)}
               {forecastOpen ? <ChevronUp className="h-4 w-4" aria-hidden="true" /> : <ChevronDown className="h-4 w-4" aria-hidden="true" />}
             </span>

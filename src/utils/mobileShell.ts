@@ -101,9 +101,9 @@ export function moreItemForPath(pathname: string): MoreItem | null {
 }
 
 /**
- * Screens whose header shows the month selector. The Extrato declares it from lote R1; the other lotes add theirs.
+ * Screens whose header shows the month selector. The Extrato declares it from lote R1 and the Cartões from lote R3; the other lotes add theirs.
  */
-export const MONTH_SELECTOR_SCREENS: ReadonlySet<ScreenId> = new Set<ScreenId>(['transactions']);
+export const MONTH_SELECTOR_SCREENS: ReadonlySet<ScreenId> = new Set<ScreenId>(['transactions', 'creditCards']);
 
 export function usesMonthSelector(screen: ScreenId | null): boolean {
   return screen !== null && MONTH_SELECTOR_SCREENS.has(screen);

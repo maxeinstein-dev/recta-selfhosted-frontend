@@ -63,6 +63,10 @@ import {
   useUndoCreditCardPayment 
 } from "../hooks/api/useTransactions";
 import { useDefaultHousehold } from "../hooks/useDefaultHousehold";
+import { useIsMobileShell } from "../hooks/useIsMobileShell";
+import { useSelectedMonth } from "../context/SelectedMonthContext";
+import MobileCreditCards from "../components/credit-cards/MobileCreditCards";
+import { monthStartOf } from "../utils/cardsMobile";
 
 const CreditCards = () => {
   const {
@@ -88,12 +92,19 @@ const CreditCards = () => {
     null
   );
   const [selectedMonth, setSelectedMonth] = useState(new Date());
+  // Mobile shell (below 768 px): the month of the header chooses the invoice; the desktop keeps its own navigator.
+  const isMobileShell = useIsMobileShell();
+  const { monthKey: headerMonthKey } = useSelectedMonth();
+  useEffect(() => {
+    if (!isMobileShell) return;
+    setSelectedMonth(monthStartOf(headerMonthKey));
+  }, [isMobileShell, headerMonthKey]);
   
   // Format month for API: "YYYY-MM"
   const selectedMonthKey = format(selectedMonth, "yyyy-MM");
   
   // Get invoice data from backend with pagination
-  const { data: invoiceResponse, isLoading: invoiceLoading } = useCreditCardInvoice({
+  const { data: invoiceResponse, isLoading: invoiceLoading, isError: invoiceError, refetch: refetchInvoice } = useCreditCardInvoice({
     accountId: selectedAccountId,
     month: selectedMonthKey,
     householdId,
@@ -384,11 +395,10 @@ const CreditCards = () => {
     return invoices;
   }, [creditCards, transactions, selectedMonth]);
 
-  const cardDetails = useMemo(() => {
-    if (!selectedAccountId) return null;
-
+  // Limit figures of one card (the same calculation for every card, so the carousel and the statement agree).
+  const limitsOf = useCallback((accountId: string) => {
     // Buscar conta atualizada diretamente do array de accounts
-    const currentAccount = accounts.find(acc => acc.id === selectedAccountId);
+    const currentAccount = accounts.find(acc => acc.id === accountId);
     if (!currentAccount) return null;
 
     // Para cartões de crédito, o limite usado deve considerar:
@@ -399,7 +409,7 @@ const CreditCards = () => {
       // Adicionar transações não pagas deste cartão
       // Excluir transações de pagamento de fatura (elas têm attachmentUrl e são da conta bancária)
       const unpaidTransactions = transactions.filter((trans) => {
-        if (!trans.accountId || trans.accountId !== selectedAccountId) return false;
+        if (!trans.accountId || trans.accountId !== accountId) return false;
         if (trans.type === TransactionType.TRANSFER || trans.type === TransactionType.ALLOCATION) return false;
         if (trans.attachmentUrl) return false; // Excluir pagamentos de fatura
         return trans.paid === false;
@@ -431,7 +441,9 @@ const CreditCards = () => {
       available,
       usagePercent,
     };
-  }, [selectedAccountId, accounts, transactions]);
+  }, [accounts, transactions]);
+
+  const cardDetails = useMemo(() => (selectedAccountId ? limitsOf(selectedAccountId) : null), [selectedAccountId, limitsOf]);
 
   const handleMonthChange = (month: Date) => setSelectedMonth(month);
 
@@ -614,6 +626,293 @@ const CreditCards = () => {
       showError(message);
     }
   };
+
+  const dialogs = (
+    <>
+  {/* Modal de Pagamento de Fatura */}
+  {isPayModalOpen && createPortal(
+    <div className="fixed inset-0 z-[60] overflow-y-auto">
+      <div
+        className="fixed inset-0 bg-black/40 transition-opacity"
+        onClick={() => setIsPayModalOpen(false)}
+        aria-hidden="true"
+      />
+      <div className="flex min-h-full items-center justify-center p-4">
+        <div className="relative w-full sm:w-96 max-w-md p-6 border rounded-lg bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800">
+          <h3 className="text-xl font-light tracking-tight text-gray-900 dark:text-white mb-4 pb-4 border-b border-gray-100 dark:border-gray-800">
+            {t.payInvoice}
+          </h3>
+          <p className="text-sm font-light text-gray-600 dark:text-gray-400 mb-6">
+            {t.payInvoiceDescription}{" "}
+            <span className="font-light text-gray-900 dark:text-white">
+              {formatCurrency(invoiceStats.total, baseCurrency)}
+            </span>
+            .
+          </p>
+
+          <div className="space-y-4">
+            <div>
+              <label className="block text-sm font-light text-gray-500 dark:text-gray-400 mb-2">
+                {t.paymentAccount}
+              </label>
+              <SelectCombobox
+                value={paymentSourceAccountId}
+                onValueChange={(value) => setPaymentAccountSourceId(value)}
+                options={[
+                  { value: '', label: t.selectAccount },
+                  ...accounts
+                    .filter((acc) => acc.type !== AccountType.CREDIT && acc.type !== "CREDIT")
+                    .map((acc) => ({
+                      value: acc.id || '',
+                      label: acc.name
+                    }))
+                ]}
+                placeholder={t.selectAccount}
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-light text-gray-500 dark:text-gray-400 mb-2">
+                {t.amount}
+              </label>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={
+                    paymentAmount > 0
+                      ? formatCurrency(paymentAmount, baseCurrency)
+                          .replace(/[^\d,.-]/g, "")
+                          .trim()
+                      : ""
+                  }
+                  onChange={(e) => {
+                    const val = e.target.value.replace(/\D/g, "");
+                    setPaymentAmount(Number(val) / 100);
+                  }}
+                  placeholder={formatCurrency(
+                    invoiceStats.total,
+                    baseCurrency
+                  )}
+                  className="block w-full px-3 py-2.5 border border-gray-200 dark:border-gray-800 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:border-primary-500 dark:focus:border-primary-500 sm:text-sm font-light tracking-tight"
+                />
+              </div>
+              <p className="mt-1 text-[10px] font-light text-gray-400 dark:text-gray-500">
+                {t.paymentAmountHint}
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-3 pt-6 border-t border-gray-100 dark:border-gray-800">
+              <button
+                onClick={handlePayInvoice}
+                disabled={!paymentSourceAccountId || paymentAmount <= 0}
+                className="w-full px-4 py-2.5 text-sm font-light tracking-tight text-white bg-primary-600 dark:bg-primary-500 border border-primary-600 dark:border-primary-500 rounded-md hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed order-1"
+              >
+                {t.confirmInvoicePayment}
+              </button>
+              <button
+                onClick={() => setIsPayModalOpen(false)}
+                className="w-full px-4 py-2.5 border border-gray-200 dark:border-gray-800 rounded-md text-sm font-light tracking-tight text-gray-900 dark:text-white bg-white dark:bg-gray-900 hover:opacity-70 transition-opacity order-2"
+              >
+                {t.cancel}
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )}
+
+  {/* Modal de Desfazer Pagamento */}
+  {isUndoModalOpen && createPortal(
+    <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
+      <div className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-lg w-full max-w-md p-6">
+        <div className="flex items-center gap-3 text-red-500 mb-6 pb-6 border-b border-gray-100 dark:border-gray-800">
+          <AlertCircle className="h-6 w-6" />
+          <h3 className="text-xl font-light tracking-tight text-gray-900 dark:text-white">{t.undoInvoicePayment}</h3>
+        </div>
+        <p className="text-sm font-light text-gray-600 dark:text-gray-400 mb-8">
+          {t.undoInvoicePaymentDescription}
+        </p>
+
+        <div className="flex flex-col gap-3">
+          <button
+            onClick={handleUndoPayment}
+            className="w-full px-4 py-2.5 text-sm font-light tracking-tight text-white bg-red-500 dark:bg-red-500 border border-red-500 dark:border-red-500 rounded-md hover:opacity-80 transition-opacity order-1"
+          >
+            {t.undoInvoicePayment}
+          </button>
+          <button
+            onClick={() => setIsUndoModalOpen(false)}
+            className="w-full px-4 py-2.5 border border-gray-200 dark:border-gray-800 rounded-md text-sm font-light tracking-tight text-gray-900 dark:text-white bg-white dark:bg-gray-900 hover:opacity-70 transition-opacity order-2"
+          >
+            {t.cancel}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  )}
+
+  {/* Modal de Transação */}
+  {isTransactionModalOpen && selectedAccountId && (
+    <TransactionModal
+      transaction={editingTransaction || viewingTransaction}
+      defaultAccountId={selectedAccountId}
+      defaultPaid={false}
+      onClose={() => {
+        setIsTransactionModalOpen(false);
+        setEditingTransaction(null);
+        setViewingTransaction(null);
+      }}
+      readOnly={!!viewingTransaction}
+    />
+  )}
+
+  {/* Importar (faturas OFX, extratos, planilha): o cartão selecionado vem preselecionado */}
+  {isImportOpen && (
+    <ImportHubDialog
+      open={isImportOpen}
+      onClose={() => setIsImportOpen(false)}
+      householdId={householdId ?? undefined}
+      defaultAccountId={selectedAccountId || null}
+    />
+  )}
+
+  {/* Linhas da planilha do cartão sem par no OFX: manter, mover ou excluir */}
+  {isReviewOpen && selectedAccountId && (
+    <CardOfxReviewDialog
+      open={isReviewOpen}
+      onClose={() => setIsReviewOpen(false)}
+      householdId={householdId ?? undefined}
+      accountId={selectedAccountId}
+    />
+  )}
+
+  {/* Dividir uma compra da fatura com pessoas */}
+  {sharingTransaction?.id && (
+    <DivideTransactionDialog
+      open
+      onClose={() => setSharingTransaction(null)}
+      householdId={householdId ?? undefined}
+      transaction={{ id: sharingTransaction.id, description: sharingTransaction.description, amount: sharingTransaction.amount }}
+    />
+  )}
+
+  {/* Modal de Cartão de Crédito */}
+  {isAccountModalOpen && (
+    <CreditCardModal
+      account={editingAccount}
+      onClose={() => {
+        setIsAccountModalOpen(false);
+        setEditingAccount(null);
+      }}
+    />
+  )}
+
+  {/* Modal de Confirmação de Exclusão */}
+  <ConfirmModal
+    isOpen={confirmDeleteModal.isOpen}
+    onClose={() =>
+      setConfirmDeleteModal({ isOpen: false, transactionId: null })
+    }
+    onConfirm={handleConfirmDelete}
+    title={t.delete}
+    message={
+      t.confirmDeleteTransaction ||
+      "Tem certeza que deseja excluir esta transação?"
+    }
+    variant="danger"
+  />
+
+  {/* Modal de Confirmação de Exclusão de Conta */}
+  <ConfirmModal
+    isOpen={confirmDeleteAccountModal.isOpen}
+    onClose={() =>
+      setConfirmDeleteAccountModal({ isOpen: false, accountId: null })
+    }
+    onConfirm={handleConfirmDeleteAccount}
+    title={t.delete}
+    message={
+      t.confirmDeleteAccount || "Tem certeza que deseja excluir esta conta?"
+    }
+    variant="danger"
+  />
+
+  {/* Modal de Exclusão de Parcelas */}
+  <InstallmentDeleteModal
+    isOpen={installmentDeleteModal.isOpen}
+    onClose={() =>
+      setInstallmentDeleteModal({ isOpen: false, transaction: null })
+    }
+    onDeleteOnly={handleDeleteOnlyThis}
+    onDeleteAll={handleDeleteSubsequent}
+  />
+    </>
+  );
+
+  if (isMobileShell) {
+    const purchases = invoiceTransactions;
+    const payerId = invoiceStats.paymentTransactions?.[0]?.accountId;
+    return (
+      <>
+        <MobileCreditCards
+          loading={loading}
+          invoiceError={!!invoiceError && !invoiceData}
+          onRetryInvoice={() => { void refetchInvoice(); }}
+          cards={creditCards}
+          selectedAccount={selectedAccount}
+          onSelectCard={(id) => setSelectedAccountId(id)}
+          limitsOf={limitsOf}
+          effectiveClosing={effectiveClosing ?? null}
+          statementView={statementView}
+          invoiceLoading={invoiceLoading}
+          invoiceTotal={invoiceStats.total}
+          isPaid={invoiceStats.isPaid}
+          paidWithName={payerId ? accounts.find((a) => a.id === payerId)?.name ?? null : null}
+          monthName={format(selectedMonth, "MMMM", { locale: currentLocale })}
+          purchases={purchases}
+          purchasesCount={Number(invoicePagination?.total ?? purchases.length)}
+          hasMorePurchases={!!invoicePagination?.hasMore}
+          loadingMorePurchases={loadMoreInvoiceMutation.isPending}
+          onLoadMorePurchases={async () => {
+            if (invoicePagination?.nextCursor && selectedAccountId) {
+              await loadMoreInvoiceMutation.mutateAsync({
+                accountId: selectedAccountId,
+                month: selectedMonthKey,
+                householdId,
+                limit: 25,
+                cursor: invoicePagination.nextCursor,
+              });
+            }
+          }}
+          onPay={handlePayInvoiceClick}
+          onUndoPayment={() => setIsUndoModalOpen(true)}
+          onEditTransaction={handleEditTransaction}
+          onDeleteTransaction={(item) => handleDeleteClick({ stopPropagation: () => {} } as React.MouseEvent, item)}
+          onMarkAsPaid={handleMarkAsPaid}
+          onViewTransaction={(item) => {
+            setViewingTransaction(item);
+            setEditingTransaction(null);
+            setIsTransactionModalOpen(true);
+          }}
+          onSplitShares={canSplitShares ? setSharingTransaction : undefined}
+          onNewCard={() => {
+            setEditingAccount(null);
+            setIsAccountModalOpen(true);
+          }}
+          onEditCard={handleEditAccount}
+          onDeleteCard={(account) => handleDeleteAccountClick(account.id!)}
+          onNewPurchase={handleNewTransaction}
+          onImport={() => setIsImportOpen(true)}
+          onReview={canSplitShares && selectedAccountId ? () => setIsReviewOpen(true) : undefined}
+          householdId={householdId ?? undefined}
+          baseCurrency={baseCurrency}
+        />
+        {dialogs}
+      </>
+    );
+  }
 
   if (loading) return <AccountsSkeleton />;
 
@@ -1120,225 +1419,7 @@ const CreditCards = () => {
         </div>
       ) : null}
 
-      {/* Modal de Pagamento de Fatura */}
-      {isPayModalOpen && createPortal(
-        <div className="fixed inset-0 z-[60] overflow-y-auto">
-          <div
-            className="fixed inset-0 bg-black/40 transition-opacity"
-            onClick={() => setIsPayModalOpen(false)}
-            aria-hidden="true"
-          />
-          <div className="flex min-h-full items-center justify-center p-4">
-            <div className="relative w-full sm:w-96 max-w-md p-6 border rounded-lg bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800">
-              <h3 className="text-xl font-light tracking-tight text-gray-900 dark:text-white mb-4 pb-4 border-b border-gray-100 dark:border-gray-800">
-                {t.payInvoice}
-              </h3>
-              <p className="text-sm font-light text-gray-600 dark:text-gray-400 mb-6">
-                {t.payInvoiceDescription}{" "}
-                <span className="font-light text-gray-900 dark:text-white">
-                  {formatCurrency(invoiceStats.total, baseCurrency)}
-                </span>
-                .
-              </p>
-
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-sm font-light text-gray-500 dark:text-gray-400 mb-2">
-                    {t.paymentAccount}
-                  </label>
-                  <SelectCombobox
-                    value={paymentSourceAccountId}
-                    onValueChange={(value) => setPaymentAccountSourceId(value)}
-                    options={[
-                      { value: '', label: t.selectAccount },
-                      ...accounts
-                        .filter((acc) => acc.type !== AccountType.CREDIT && acc.type !== "CREDIT")
-                        .map((acc) => ({
-                          value: acc.id || '',
-                          label: acc.name
-                        }))
-                    ]}
-                    placeholder={t.selectAccount}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-sm font-light text-gray-500 dark:text-gray-400 mb-2">
-                    {t.amount}
-                  </label>
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={
-                        paymentAmount > 0
-                          ? formatCurrency(paymentAmount, baseCurrency)
-                              .replace(/[^\d,.-]/g, "")
-                              .trim()
-                          : ""
-                      }
-                      onChange={(e) => {
-                        const val = e.target.value.replace(/\D/g, "");
-                        setPaymentAmount(Number(val) / 100);
-                      }}
-                      placeholder={formatCurrency(
-                        invoiceStats.total,
-                        baseCurrency
-                      )}
-                      className="block w-full px-3 py-2.5 border border-gray-200 dark:border-gray-800 rounded-md bg-white dark:bg-gray-900 text-gray-900 dark:text-white focus:outline-none focus:border-primary-500 dark:focus:border-primary-500 sm:text-sm font-light tracking-tight"
-                    />
-                  </div>
-                  <p className="mt-1 text-[10px] font-light text-gray-400 dark:text-gray-500">
-                    {t.paymentAmountHint}
-                  </p>
-                </div>
-
-                <div className="flex flex-col gap-3 pt-6 border-t border-gray-100 dark:border-gray-800">
-                  <button
-                    onClick={handlePayInvoice}
-                    disabled={!paymentSourceAccountId || paymentAmount <= 0}
-                    className="w-full px-4 py-2.5 text-sm font-light tracking-tight text-white bg-primary-600 dark:bg-primary-500 border border-primary-600 dark:border-primary-500 rounded-md hover:opacity-80 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed order-1"
-                  >
-                    {t.confirmInvoicePayment}
-                  </button>
-                  <button
-                    onClick={() => setIsPayModalOpen(false)}
-                    className="w-full px-4 py-2.5 border border-gray-200 dark:border-gray-800 rounded-md text-sm font-light tracking-tight text-gray-900 dark:text-white bg-white dark:bg-gray-900 hover:opacity-70 transition-opacity order-2"
-                  >
-                    {t.cancel}
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Modal de Desfazer Pagamento */}
-      {isUndoModalOpen && createPortal(
-        <div className="fixed inset-0 bg-black/40 z-50 flex items-center justify-center p-4">
-          <div className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-lg w-full max-w-md p-6">
-            <div className="flex items-center gap-3 text-red-500 mb-6 pb-6 border-b border-gray-100 dark:border-gray-800">
-              <AlertCircle className="h-6 w-6" />
-              <h3 className="text-xl font-light tracking-tight text-gray-900 dark:text-white">{t.undoInvoicePayment}</h3>
-            </div>
-            <p className="text-sm font-light text-gray-600 dark:text-gray-400 mb-8">
-              {t.undoInvoicePaymentDescription}
-            </p>
-
-            <div className="flex flex-col gap-3">
-              <button
-                onClick={handleUndoPayment}
-                className="w-full px-4 py-2.5 text-sm font-light tracking-tight text-white bg-red-500 dark:bg-red-500 border border-red-500 dark:border-red-500 rounded-md hover:opacity-80 transition-opacity order-1"
-              >
-                {t.undoInvoicePayment}
-              </button>
-              <button
-                onClick={() => setIsUndoModalOpen(false)}
-                className="w-full px-4 py-2.5 border border-gray-200 dark:border-gray-800 rounded-md text-sm font-light tracking-tight text-gray-900 dark:text-white bg-white dark:bg-gray-900 hover:opacity-70 transition-opacity order-2"
-              >
-                {t.cancel}
-              </button>
-            </div>
-          </div>
-        </div>,
-        document.body
-      )}
-
-      {/* Modal de Transação */}
-      {isTransactionModalOpen && selectedAccountId && (
-        <TransactionModal
-          transaction={editingTransaction || viewingTransaction}
-          defaultAccountId={selectedAccountId}
-          defaultPaid={false}
-          onClose={() => {
-            setIsTransactionModalOpen(false);
-            setEditingTransaction(null);
-            setViewingTransaction(null);
-          }}
-          readOnly={!!viewingTransaction}
-        />
-      )}
-
-      {/* Importar (faturas OFX, extratos, planilha): o cartão selecionado vem preselecionado */}
-      {isImportOpen && (
-        <ImportHubDialog
-          open={isImportOpen}
-          onClose={() => setIsImportOpen(false)}
-          householdId={householdId ?? undefined}
-          defaultAccountId={selectedAccountId || null}
-        />
-      )}
-
-      {/* Linhas da planilha do cartão sem par no OFX: manter, mover ou excluir */}
-      {isReviewOpen && selectedAccountId && (
-        <CardOfxReviewDialog
-          open={isReviewOpen}
-          onClose={() => setIsReviewOpen(false)}
-          householdId={householdId ?? undefined}
-          accountId={selectedAccountId}
-        />
-      )}
-
-      {/* Dividir uma compra da fatura com pessoas */}
-      {sharingTransaction?.id && (
-        <DivideTransactionDialog
-          open
-          onClose={() => setSharingTransaction(null)}
-          householdId={householdId ?? undefined}
-          transaction={{ id: sharingTransaction.id, description: sharingTransaction.description, amount: sharingTransaction.amount }}
-        />
-      )}
-
-      {/* Modal de Cartão de Crédito */}
-      {isAccountModalOpen && (
-        <CreditCardModal
-          account={editingAccount}
-          onClose={() => {
-            setIsAccountModalOpen(false);
-            setEditingAccount(null);
-          }}
-        />
-      )}
-
-      {/* Modal de Confirmação de Exclusão */}
-      <ConfirmModal
-        isOpen={confirmDeleteModal.isOpen}
-        onClose={() =>
-          setConfirmDeleteModal({ isOpen: false, transactionId: null })
-        }
-        onConfirm={handleConfirmDelete}
-        title={t.delete}
-        message={
-          t.confirmDeleteTransaction ||
-          "Tem certeza que deseja excluir esta transação?"
-        }
-        variant="danger"
-      />
-
-      {/* Modal de Confirmação de Exclusão de Conta */}
-      <ConfirmModal
-        isOpen={confirmDeleteAccountModal.isOpen}
-        onClose={() =>
-          setConfirmDeleteAccountModal({ isOpen: false, accountId: null })
-        }
-        onConfirm={handleConfirmDeleteAccount}
-        title={t.delete}
-        message={
-          t.confirmDeleteAccount || "Tem certeza que deseja excluir esta conta?"
-        }
-        variant="danger"
-      />
-
-      {/* Modal de Exclusão de Parcelas */}
-      <InstallmentDeleteModal
-        isOpen={installmentDeleteModal.isOpen}
-        onClose={() =>
-          setInstallmentDeleteModal({ isOpen: false, transaction: null })
-        }
-        onDeleteOnly={handleDeleteOnlyThis}
-        onDeleteAll={handleDeleteSubsequent}
-      />
+      {dialogs}
     </div>
   );
 };

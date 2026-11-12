@@ -1,3 +1,4 @@
+import { measureForSave } from '../utils/budgetOwnShare';
 import { createContext, useContext, useMemo, useCallback, useEffect, ReactNode } from 'react';
 import { useAuth } from './AuthContext';
 import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
@@ -270,6 +271,7 @@ const convertBudgetFromBackend = (b: BackendBudget, translations?: Record<string
     amount: Number(b.monthlyLimit),
     month: parsedMonth,
     type: convertTypeFromBackend(b.type),
+    measure: b.measure === 'OWN_SHARE' ? 'OWN_SHARE' : 'WHOLE',
   };
 };
 
@@ -621,6 +623,7 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
       monthlyLimit: budget.amount,
       month: formatDateForAPI(monthStart),
       type: convertTypeToBackend(budget.type),
+      measure: measureForSave(budget.measure, budget.type === TransactionType.EXPENSE),
     });
 
     analyticsHelpers.logBudgetCreated(budget.type, budget.category);
@@ -640,6 +643,10 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
     }
     if (budget.type) {
       updateData.type = convertTypeToBackend(budget.type);
+    }
+    // The mode goes with the type it is valid for: an income budget is always measured by the full amount
+    if (budget.measure !== undefined || budget.type) {
+      updateData.measure = budget.type ? measureForSave(budget.measure, budget.type === TransactionType.EXPENSE) : budget.measure;
     }
 
     await updateBudget.mutateAsync({ id, ...updateData });

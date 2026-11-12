@@ -64,6 +64,7 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
         budget: budget.amount,
         spent,
         ownSpent,
+        measure: budget.measure,
         pending: realized === null,
         remaining,
         percentage,
@@ -183,7 +184,7 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
                   </div>
                   {budget.ownSpent !== undefined && (
                     <div>
-                      <span className="text-gray-500 dark:text-gray-400">{t.budgetOwnShare}: </span>
+                      <span className="text-gray-500 dark:text-gray-400">{budget.measure === 'OWN_SHARE' ? t.budgetOwnShareMeasured : t.budgetOwnShare}: </span>
                       <span className={`font-light tracking-tight text-gray-900 dark:text-gray-100 ${blurNumbers ? 'demo-blur' : ''}`}>
                         {blurNumbers ? '••••' : formatCurrency(budget.ownSpent, baseCurrency)}
                       </span>

@@ -62,6 +62,8 @@ export interface Budget {
   amount: number;
   month: Date;
   type: TransactionType;
+  /** How the budget is measured: the full spending (WHOLE, kept together) or the own share (OWN_SHARE, kept separately). */
+  measure?: 'WHOLE' | 'OWN_SHARE';
 }
 
 export interface RecurringTransaction {

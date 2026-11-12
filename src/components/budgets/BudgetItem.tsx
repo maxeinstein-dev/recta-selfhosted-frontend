@@ -3,6 +3,7 @@ import { formatCurrency } from '../../utils/format';
 import { BudgetActionsMenu } from '../BudgetActionsMenu';
 import { isGeneralBudget } from '../../utils/categories';
 import { ownSharePercentage } from '../../utils/budgetOwnShare';
+import { TransactionType } from '../../lib/enums';
 
 interface BudgetItemProps {
   budget: Budget & {
@@ -35,6 +36,11 @@ export const BudgetItem = ({
           <h3 className="text-lg font-light tracking-tight text-gray-900 dark:text-white mb-4">
             {isGeneralBudget(budget) ? t.general : budget.category}
           </h3>
+          {budget.type === TransactionType.EXPENSE && (
+            <p className="-mt-3 mb-4 text-xs font-light text-gray-500 dark:text-gray-400">
+              {budget.measure === 'OWN_SHARE' ? t.budgetMeasuredOwn : t.budgetMeasuredWhole}
+            </p>
+          )}
           <div className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div>

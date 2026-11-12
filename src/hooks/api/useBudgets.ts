@@ -10,6 +10,7 @@ export interface Budget {
   monthlyLimit: number;
   month: string;
   type: CategoryType;
+  measure?: 'WHOLE' | 'OWN_SHARE';
   createdAt: string;
   updatedAt: string;
 }
@@ -23,6 +24,9 @@ export interface BudgetSummary {
     spending: number;
     /** Spending minus what other people owe on those expenses (absent on an older API). */
     ownSpent?: number;
+    /** How the budget is measured, and the amount the limit is compared with. */
+    measure?: 'WHOLE' | 'OWN_SHARE';
+    measured?: number;
     remaining: number;
     percentage: number;
     isOverBudget: boolean;
@@ -114,6 +118,7 @@ export function useCreateBudget() {
       monthlyLimit: number;
       month: string;
       type: CategoryType;
+      measure?: 'WHOLE' | 'OWN_SHARE';
     }) => {
       const response = await apiClient.post<Budget>('/budgets', data);
       return response.data!;

@@ -1,4 +1,4 @@
-import { useMemo, useState, useEffect } from "react";
+import { useCallback, useMemo, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { useTransactions } from "../context/TransactionsContext";
@@ -47,10 +47,11 @@ import { PageButton } from "../components/PageButton";
 import ConfirmModal from "../components/ConfirmModal";
 import InstallmentDeleteModal from "../components/InstallmentDeleteModal";
 import ImportHubDialog from "../components/ImportHubDialog";
+import { invoiceRowCategoryLabel } from "../utils/categoryLabel";
 import CardOfxReviewDialog from "../components/CardOfxReviewDialog";
 import DivideTransactionDialog from "../components/people/DivideTransactionDialog";
 import { canWritePeople } from "../utils/people";
-import { AccountType, CategoryName, getCategoryDisplayName, TransactionType } from "../lib/enums";
+import { AccountType, TransactionType } from "../lib/enums";
 import { CreditCardsSummary } from "../components/CreditCardsSummary";
 import { TransactionActionsMenu } from "../components/TransactionActionsMenu";
 import SelectCombobox from "../components/SelectCombobox";
@@ -71,6 +72,7 @@ const CreditCards = () => {
     deleteTransaction,
     deleteAccount,
     updateTransaction,
+    customCategories,
   } = useTransactions();
   const { t, locale } = useI18n();
   const { baseCurrency } = useCurrency();
@@ -188,6 +190,14 @@ const CreditCards = () => {
 
 
   // Helper function to convert backend transaction to frontend format
+  // The category label of an invoice row: the translated system name or the name of the custom category. Kept apart
+  // from the converter below, whose parameter is also called `t` (it used to pass the row itself as the translations
+  // and no custom categories, so a custom category showed as its raw id).
+  const invoiceCategoryLabel = useCallback(
+    (categoryName: string | undefined): string => invoiceRowCategoryLabel(categoryName, t as unknown as Record<string, string>, customCategories),
+    [t, customCategories],
+  );
+
   const convertTransaction = useMemo(() => {
     return (t: { id: string; description: string; amount: number | string; categoryName?: string; type?: string; date: string | Date; paid: boolean; accountId?: string; recurringTransactionId?: string; attachmentUrl?: string; installmentId?: string; installmentNumber?: number; totalInstallments?: number }): Transaction | null => {
       // Use type from backend first, fallback to categoryName inference
@@ -218,7 +228,7 @@ const CreditCards = () => {
         description: t.description,
         amount: typeof t.amount === 'string' ? parseFloat(t.amount) : Number(t.amount),
         type: transactionType,
-        category: t.categoryName ? getCategoryDisplayName(t.categoryName as CategoryName, t as Record<string, string>) : '',
+        category: invoiceCategoryLabel(t.categoryName),
         date: parsedDate,
         paid: t.paid,
         accountId: t.accountId,
@@ -230,7 +240,7 @@ const CreditCards = () => {
         competenceMonth: (t as { competenceMonth?: string | null }).competenceMonth ?? null,
       };
     };
-  }, []);
+  }, [invoiceCategoryLabel]);
 
   // Use invoice transactions from backend
   // Convert backend format to frontend format
@@ -648,6 +658,7 @@ const CreditCards = () => {
             variant="secondary"
             icon={ClipboardCheck}
             aria-label="Revisar lançamentos sem comprovante"
+            mobileLabel="Revisar"
           >
             Revisar sem comprovante
           </PageButton>
@@ -870,27 +881,20 @@ const CreditCards = () => {
             <div className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-lg overflow-hidden">
               <div className="p-6 border-b border-gray-100 dark:border-gray-800 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-4">
+                  {/* The month is shown once: the navigator is the title */}
                   <div className="flex flex-col">
-                    <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400">
-                      <Calendar className="h-5 w-5" />
-                      <span className="font-light capitalize text-lg">
-                        {format(selectedMonth, "MMMM yyyy", {
-                          locale: currentLocale,
-                        })}
-                      </span>
-                    </div>
+                    <MonthNavigator
+                      selectedMonth={selectedMonth}
+                      onMonthChange={handleMonthChange}
+                      locale={locale}
+                    />
                     {effectiveClosing && (
-                      <span className="text-xs text-primary-600 dark:text-primary-400 font-light mt-1">
+                      <span className="text-xs text-primary-600 dark:text-primary-400 font-light mt-1 px-2">
                         {t.bestDayToBuy}:{" "}
                         {effectiveClosing}
                       </span>
                     )}
                   </div>
-                  <MonthNavigator
-                    selectedMonth={selectedMonth}
-                    onMonthChange={handleMonthChange}
-                    locale={locale}
-                  />
                 </div>
 
                 <div className="text-right">

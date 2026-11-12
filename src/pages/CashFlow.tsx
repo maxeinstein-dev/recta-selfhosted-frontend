@@ -132,7 +132,6 @@ const CashFlow = () => {
             points={points}
             lowest={lowest}
             currency={currency}
-            zeroLabel={tx('cashFlowZeroLine')}
             label={tx('cashFlowChartLabel', {
               amount: lowest ? formatCurrency(lowest.amount, currency) : '-',
               date: lowest ? shortDate(lowest.date) : '',

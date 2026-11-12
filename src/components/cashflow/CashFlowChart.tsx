@@ -8,7 +8,6 @@ interface CashFlowChartProps {
   currency: string;
   /** Text for screen readers: the chart is one image for them. */
   label: string;
-  zeroLabel: string;
 }
 
 /** Short money for the axis (1,2 mil), the full one in the tooltip. */
@@ -19,7 +18,7 @@ const compact = (value: number): string =>
  * The balance day by day. The zero line is dashed red, the lowest day has a dot. Built on recharts, like the other
  * charts of the dashboard; the axis keeps few ticks so it reads at 360 px.
  */
-export default function CashFlowChart({ points, lowest, currency, label, zeroLabel }: CashFlowChartProps) {
+export default function CashFlowChart({ points, lowest, currency, label }: CashFlowChartProps) {
   const data = points.map((p) => ({ date: p.date, balance: p.balance }));
   return (
     <div role="img" aria-label={label} className="h-56 w-full">
@@ -41,7 +40,8 @@ export default function CashFlowChart({ points, lowest, currency, label, zeroLab
             tickLine={false}
             axisLine={false}
           />
-          <ReferenceLine y={0} stroke="#dc2626" strokeDasharray="4 4" label={{ value: zeroLabel, position: 'insideTopLeft', fontSize: 10, fill: '#dc2626' }} />
+          {/* No text on the zero line: the axis already prints "0" at it, and a label there sat on top of the axis text */}
+          <ReferenceLine y={0} stroke="#dc2626" strokeDasharray="4 4" />
           <Tooltip
             formatter={(value) => formatCurrency(Number(value), currency)}
             labelFormatter={(d) => longDate(String(d))}

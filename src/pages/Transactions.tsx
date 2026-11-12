@@ -31,6 +31,15 @@ import { DueToConfirmPanel, TransactionFilters, TransactionList } from '../compo
 import { useConfirmReceipt } from '../hooks/useConfirmReceipt';
 import { useToastContext } from '../context/ToastContext';
 import { updateFailureMessage } from '../utils/transactionConflict';
+import { useIsMobileShell } from '../hooks/useIsMobileShell';
+import { useSelectedMonth } from '../context/SelectedMonthContext';
+import { monthBounds, dayKeyOf, dayLabel, groupByDay, signedAmount, matchesShortFilter, type ShortFilter } from '../utils/extratoMobile';
+import MobileCaptureBox from '../components/transactions/MobileCaptureBox';
+import MobileExtrato, { type ExtratoDayView } from '../components/transactions/MobileExtrato';
+import { AccountType } from '../lib/enums';
+import MobileRowActions from '../components/transactions/MobileRowActions';
+import { rowActions, type RowAction } from '../utils/extratoMobile';
+import { confirmCopy, isConfirmable } from '../utils/confirmReceipt';
 
 // Helper function to get icon component for category (supports enum or CUSTOM:uuid)
 const getCategoryIcon = (categoryName: string | undefined, customCategories?: { id: string; name: string; icon?: string | null }[]) => {
@@ -70,6 +79,12 @@ const Transactions = () => {
   const [tempDateRange, setTempDateRange] = useState<DateRange>({ startDate: null, endDate: null }); // Temporary date range (while user is selecting)
   // cursor não é mais necessário no estado - é gerenciado pelo React Query cache
   const [activeTab, setActiveTab] = useState<'transactions' | 'scheduled'>('transactions');
+  // Mobile shell (below 768 px): the Extrato uses the header's month when no period is set, and the "No cartão" pill.
+  const isMobileShell = useIsMobileShell();
+  const { monthKey } = useSelectedMonth();
+  const [cardOnly, setCardOnly] = useState<boolean>(false);
+  // The row whose actions sheet is open (mobile only).
+  const [rowMenu, setRowMenu] = useState<Transaction | null>(null);
   
   // Inicializar filtro de tipo a partir dos query params
   const getInitialTypeFilter = () => {
@@ -117,10 +132,19 @@ const Transactions = () => {
       // Transações: usa o intervalo do usuário ou, se vazio, só até hoje (evita futuras em primeiro)
       if (dateRange.startDate) params.startDate = dateRange.startDate;
       if (dateRange.endDate) params.endDate = dateRange.endDate;
-      if (!dateRange.startDate && !dateRange.endDate) params.endDate = today;
+      if (!dateRange.startDate && !dateRange.endDate) {
+        if (isMobileShell) {
+          // Mobile: the month chosen in the header is the period (the same start and end the period filter sends).
+          const bounds = monthBounds(monthKey);
+          params.startDate = bounds.startDate;
+          params.endDate = bounds.endDate;
+        } else {
+          params.endDate = today;
+        }
+      }
     }
     return params;
-  }, [householdId, dateRange, searchTerm, typeFilter, categoryFilter, activeTab]);
+  }, [householdId, dateRange, searchTerm, typeFilter, categoryFilter, activeTab, isMobileShell, monthKey]);
   
   // Fetch transactions with pagination
   const { data: transactionsData, isLoading: transactionsLoading } = useTransactions(transactionsQuery);
@@ -688,6 +712,195 @@ const Transactions = () => {
     setIsModalOpen(true);
   };
 
+  const dialogs = (
+    <>
+      {isModalOpen && (
+        <TransactionModal
+          transaction={editingTransaction || viewingTransaction}
+          onClose={() => {
+            setIsModalOpen(false);
+            setEditingTransaction(null);
+            setViewingTransaction(null);
+          }}
+          defaultAccountId={null}
+          readOnly={!!viewingTransaction}
+        />
+      )}
+
+      <ConfirmModal
+        isOpen={confirmModal.isOpen}
+        onClose={() => setConfirmModal({ isOpen: false, transactionId: null })}
+        onConfirm={handleConfirmDelete}
+        title={t.delete}
+        message={`${t.delete} ${t.transaction?.toLowerCase() || t.transactions.toLowerCase()}?`}
+        variant="danger"
+      />
+
+      {isImportOpen && (
+        <ImportHubDialog
+          open={isImportOpen}
+          onClose={() => setImportOpen(false)}
+          householdId={householdId ?? undefined}
+        />
+      )}
+      {confirmReceipt.dialog}
+      {sharingTransaction?.id && (
+        <DivideTransactionDialog
+          open
+          onClose={() => setSharingTransaction(null)}
+          householdId={householdId ?? undefined}
+          transaction={{ id: sharingTransaction.id, description: sharingTransaction.description, amount: sharingTransaction.amount }}
+        />
+      )}
+    </>
+  );
+
+  // Props of the filters both layouts share. The search bar differs: desktop has its own, the mobile Extrato has its own.
+  const sharedFilterProps = {
+    dateRange,
+    tempDateRange,
+    onDateRangeChange: setTempDateRange,
+    onDateRangeApply: (range: DateRange) => {
+      setDateRange(range);
+      setTempDateRange(range);
+    },
+    typeFilter,
+    onTypeFilterChange: handleTypeFilterChange,
+    categoryFilter,
+    onCategoryFilterChange: (value: string) => {
+      if (!value || value === t.all) setCategoryFilter('todas');
+      else setCategoryFilter(value);
+    },
+    paidFilter,
+    onPaidFilterChange: setPaidFilter,
+    activeTab,
+    householdId: householdId ?? undefined,
+    t: t as unknown as Record<string, string>,
+    locale,
+    onClearFilters: () => {
+      setSearchInput('');
+      setSearchTerm('');
+      handleTypeFilterChange('todos');
+      setCategoryFilter('todas');
+      setPaidFilter('todos');
+      setDateRange({ startDate: null, endDate: null });
+      setCardOnly(false);
+    },
+    hasActiveFilters: !!(searchInput || typeFilter !== 'todos' || categoryFilter !== 'todas' || paidFilter !== 'todos' || dateRange.startDate || dateRange.endDate),
+    disabled: loading,
+  };
+
+  if (isMobileShell) {
+    const isCard = (tx: Transaction): boolean => accounts.find((a) => a.id === tx.accountId)?.type === AccountType.CREDIT;
+    const shortFilter: ShortFilter = cardOnly
+      ? 'cartao'
+      : typeFilter === TransactionType.EXPENSE
+        ? 'despesas'
+        : typeFilter === TransactionType.INCOME
+          ? 'receitas'
+          : 'todos';
+    const changeShortFilter = (filter: ShortFilter): void => {
+      if (filter === 'cartao') {
+        setCardOnly(true);
+        handleTypeFilterChange('todos');
+        return;
+      }
+      setCardOnly(false);
+      handleTypeFilterChange(filter === 'despesas' ? TransactionType.EXPENSE : filter === 'receitas' ? TransactionType.INCOME : 'todos');
+    };
+    const totalText = (n: number): string => `${n > 0 ? '+' : n < 0 ? '−' : ''}${formatCurrency(Math.abs(n), baseCurrency)}`;
+    const todayKey = dayKeyOf(new Date());
+    const rows = (filteredTransactions as unknown as Array<Transaction | null>).filter(
+      (tx): tx is Transaction => tx !== null && matchesShortFilter({ type: tx.type, onCard: isCard(tx) }, cardOnly ? 'cartao' : 'todos'),
+    );
+    const days: ExtratoDayView[] = groupByDay(
+      rows.map((tx) => ({ id: tx.id ?? '', dayKey: dayKeyOf(tx.date), amount: signedAmount(tx.type, tx.amount), tx })),
+    ).map((group) => ({
+      dayKey: group.dayKey,
+      label: dayLabel(group.dayKey, todayKey),
+      totalText: totalText(group.total),
+      totalPositive: group.total > 0,
+      rows: group.items.map(({ tx }) => {
+        const accountName = accounts.find((a) => a.id === tx.accountId)?.name;
+        const sign = tx.type === TransactionType.INCOME ? '+' : tx.type === TransactionType.EXPENSE ? '−' : '';
+        return {
+          id: tx.id ?? '',
+          name: formatTransactionDescription(tx),
+          meta: [tx.category, accountName].filter(Boolean).join(' · '),
+          icon: getCategoryIcon(tx.categoryName, customCategories),
+          amountText: `${sign}${formatCurrency(Math.abs(tx.amount || 0), baseCurrency)}`,
+          positive: tx.type === TransactionType.INCOME,
+          transaction: tx,
+        };
+      }),
+    }));
+    // The same actions of the desktop row menu, each wired to the handler the desktop uses.
+    const runRowAction = (action: RowAction, tx: Transaction): void => {
+      switch (action) {
+        case 'view':
+          setViewingTransaction(tx);
+          setEditingTransaction(null);
+          setIsModalOpen(true);
+          return;
+        case 'confirm':
+          confirmReceipt.request(tx);
+          return;
+        case 'markAsPaid':
+          if (tx.id) void handleMarkAsPaid(tx.id, true);
+          return;
+        case 'markAsPending':
+          if (tx.id) void handleMarkAsPaid(tx.id, false);
+          return;
+        case 'edit':
+          handleEdit(tx);
+          return;
+        case 'split':
+          setSharingTransaction(tx);
+          return;
+        case 'delete':
+          if (tx.id) handleDelete(tx.id);
+          return;
+      }
+    };
+    const rowFacts = (tx: Transaction) => ({
+      paid: tx.paid,
+      readOnly: false,
+      canConfirm: canSplitShares && isConfirmable({ id: tx.id, type: tx.type, paid: tx.paid }),
+      canSplit: canSplitShares && tx.type === TransactionType.EXPENSE && !tx.attachmentUrl?.startsWith('invoice_pay:') && !!tx.id,
+    });
+    return (
+      <>
+        {rowMenu && (
+          <MobileRowActions
+            title={formatTransactionDescription(rowMenu)}
+            confirmLabel={confirmCopy(rowMenu.type).action}
+            actions={rowActions(rowFacts(rowMenu))}
+            onAction={(action) => runRowAction(action, rowMenu)}
+            onClose={() => setRowMenu(null)}
+          />
+        )}
+        <MobileExtrato
+          captureBox={<MobileCaptureBox householdId={householdId ?? undefined} accounts={accounts} canEdit={canSplitShares} />}
+          dueBox={!loading && canSplitShares ? <DueToConfirmPanel householdId={householdId ?? undefined} onConfirm={confirmReceipt.request} /> : null}
+          searchInput={searchInput}
+          onSearchChange={setSearchInput}
+          shortFilter={shortFilter}
+          onShortFilterChange={changeShortFilter}
+          days={days}
+          loading={loading}
+          hasMore={transactionsData?.pagination?.hasMore || false}
+          isLoadingMore={loadMoreMutation.isPending}
+          onLoadMore={handleLoadMore}
+          onOpen={setRowMenu}
+          onExport={exportToCSV}
+          onImport={() => setImportOpen(true)}
+          filters={sharedFilterProps}
+        />
+        {dialogs}
+      </>
+    );
+  }
+
   return (
     <div className="px-4 sm:px-6 lg:px-8 dashboard-fade-in">
       <div className="mb-12 flex flex-col sm:flex-row sm:justify-between sm:items-center gap-4">
@@ -794,39 +1007,7 @@ const Transactions = () => {
       <TransactionFilters
         searchInput={searchInput}
         onSearchChange={setSearchInput}
-        dateRange={dateRange}
-        tempDateRange={tempDateRange}
-        onDateRangeChange={setTempDateRange}
-        onDateRangeApply={(range) => {
-          setDateRange(range);
-          setTempDateRange(range);
-          // Reset cache quando date range muda - o React Query vai fazer nova query
-        }}
-        typeFilter={typeFilter}
-        onTypeFilterChange={handleTypeFilterChange}
-        categoryFilter={categoryFilter}
-        onCategoryFilterChange={(value) => {
-          if (!value || value === t.all) setCategoryFilter('todas');
-          else setCategoryFilter(value);
-          // O filtro de categoria agora é feito no backend - React Query fará refetch automaticamente
-        }}
-        paidFilter={paidFilter}
-        onPaidFilterChange={setPaidFilter}
-        activeTab={activeTab}
-        householdId={householdId ?? undefined}
-        t={t}
-        locale={locale}
-        onClearFilters={() => {
-          setSearchInput('');
-          setSearchTerm('');
-          handleTypeFilterChange('todos');
-          setCategoryFilter('todas');
-          setPaidFilter('todos');
-          setDateRange({ startDate: null, endDate: null });
-          // Reset cache quando filtros são limpos - o React Query vai fazer nova query
-        }}
-        hasActiveFilters={!!(searchInput || typeFilter !== 'todos' || categoryFilter !== 'todas' || paidFilter !== 'todos' || dateRange.startDate || dateRange.endDate)}
-        disabled={loading}
+        {...sharedFilterProps}
       />
 
       {/* Lista de transações */}
@@ -881,44 +1062,7 @@ const Transactions = () => {
         />
       )}
 
-      {isModalOpen && (
-        <TransactionModal
-          transaction={editingTransaction || viewingTransaction}
-          onClose={() => {
-            setIsModalOpen(false);
-            setEditingTransaction(null);
-            setViewingTransaction(null);
-          }}
-          defaultAccountId={null}
-          readOnly={!!viewingTransaction}
-        />
-      )}
-
-      <ConfirmModal
-        isOpen={confirmModal.isOpen}
-        onClose={() => setConfirmModal({ isOpen: false, transactionId: null })}
-        onConfirm={handleConfirmDelete}
-        title={t.delete}
-        message={`${t.delete} ${t.transaction?.toLowerCase() || t.transactions.toLowerCase()}?`}
-        variant="danger"
-      />
-
-      {isImportOpen && (
-        <ImportHubDialog
-          open={isImportOpen}
-          onClose={() => setImportOpen(false)}
-          householdId={householdId ?? undefined}
-        />
-      )}
-      {confirmReceipt.dialog}
-      {sharingTransaction?.id && (
-        <DivideTransactionDialog
-          open
-          onClose={() => setSharingTransaction(null)}
-          householdId={householdId ?? undefined}
-          transaction={{ id: sharingTransaction.id, description: sharingTransaction.description, amount: sharingTransaction.amount }}
-        />
-      )}
+      {dialogs}
     </div>
   );
 };

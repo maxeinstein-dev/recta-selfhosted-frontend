@@ -5,7 +5,8 @@ import { useI18n } from '../../context/I18nContext';
 import { cashFlowText } from '../../utils/cashFlowTexts';
 import { incomeText } from '../../utils/incomeTexts';
 import { captureText } from '../../utils/captureTexts';
-import TransactionModal from '../TransactionModal';
+import TransactionModal, { type TransactionModalPrefill } from '../TransactionModal';
+import AddTransactionSheet from './AddTransactionSheet';
 import MonthSelector from './MonthSelector';
 import {
   MORE_ITEMS,
@@ -90,6 +91,8 @@ const MobileShell = ({
   const { pathname } = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const [addOpen, setAddOpen] = useState(false);
+  // The full form opened from the add sheet, with the values typed there.
+  const [fullForm, setFullForm] = useState<{ prefill: TransactionModalPrefill } | null>(null);
   const moreCloseRef = useRef<HTMLButtonElement>(null);
 
   const screen = screenForPath(pathname);
@@ -188,7 +191,22 @@ const MobileShell = ({
       </button>
 
       {addOpen && (
-        <TransactionModal transaction={null} onClose={() => setAddOpen(false)} defaultAccountId={null} />
+        <AddTransactionSheet
+          onClose={() => setAddOpen(false)}
+          onOpenFullForm={(prefill) => {
+            setAddOpen(false);
+            setFullForm({ prefill });
+          }}
+        />
+      )}
+
+      {fullForm && (
+        <TransactionModal
+          transaction={null}
+          onClose={() => setFullForm(null)}
+          defaultAccountId={null}
+          prefill={fullForm.prefill}
+        />
       )}
 
       {moreOpen && (

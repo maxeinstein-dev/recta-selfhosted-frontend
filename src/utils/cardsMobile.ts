@@ -225,3 +225,82 @@ export function shadeHex(hex: string, share: number): string {
   const channel = (offset: number) => Math.round(parseInt(hex.slice(offset, offset + 2), 16) * (1 - k));
   return '#' + [1, 3, 5].map((o) => channel(o).toString(16).padStart(2, '0')).join('');
 }
+
+// ---- fatura que abre ao entrar em Cartões --------------------------------------------------------------
+// Convenção do código: a fatura leva o nome do mês em que FECHA (cartão que fecha dia 2: a "de dezembro" fecha 02/12).
+// Ela fica fechada a partir do dia de fechamento (no próprio dia, a compra já vai para a seguinte, como a "melhor data
+// de compra" da tela mostra). A aberta é a que ainda recebe compras. Sem dia de fechamento, vale o mês do calendário.
+
+/** Whether an invoice is settled, owes something (closed and not paid), or the answer did not come. */
+export type InvoiceMemo = 'settled' | 'unpaid' | 'unknown';
+
+const MONTH_KEY_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+
+/** 'YYYY-MM' moved by `delta` months (negative goes back). */
+export function addMonthKey(key: string, delta: number): string {
+  const year = Number(key.slice(0, 4));
+  const month0 = Number(key.slice(5, 7)) - 1 + delta;
+  const shifted = new Date(Date.UTC(year, month0, 1));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, '0')}`;
+}
+
+/**
+ * The invoice still receiving purchases on `today` ('YYYY-MM-DD'). Its name is the month it closes in. A closing day
+ * past the end of the month (31 in February) closes on the last day.
+ */
+export function openInvoiceMonthKey(today: string, closingDay: number | null): string {
+  const monthKey = today.slice(0, 7);
+  if (!closingDay || closingDay < 1) return monthKey;
+  const year = Number(monthKey.slice(0, 4));
+  const month = Number(monthKey.slice(5, 7));
+  const lastDay = new Date(Date.UTC(year, month, 0)).getUTCDate();
+  const closesOn = Math.min(closingDay, lastDay);
+  const day = Number(today.slice(8, 10));
+  return day >= closesOn ? addMonthKey(monthKey, 1) : monthKey;
+}
+
+export interface OpeningInvoiceInput {
+  /** Today as 'YYYY-MM-DD' (local). */
+  today: string;
+  /** Effective closing day of the card, or null (calendar month). */
+  closingDay: number | null;
+  /** The state of an earlier invoice. Asked only for the two months before the open one. */
+  statusOf: (monthKey: string) => InvoiceMemo;
+  /** The `month` of the URL (?month=), when the link brought one. It wins over the rule. */
+  urlMonth?: string | null;
+}
+
+export interface OpeningInvoice {
+  monthKey: string;
+  /** 'url': the link chose it; 'closed-unpaid': an earlier closed invoice still owes; 'open': the invoice that receives purchases. */
+  reason: 'url' | 'open' | 'closed-unpaid';
+}
+
+/**
+ * Which invoice the Cartões screen opens: the URL's month if there is one; else the oldest of the two closed invoices
+ * before the open one that is not paid; else the open invoice. Closed and paid invoices are not reopened.
+ */
+export function openingInvoiceMonth(input: OpeningInvoiceInput): OpeningInvoice {
+  if (input.urlMonth && MONTH_KEY_RE.test(input.urlMonth)) return { monthKey: input.urlMonth, reason: 'url' };
+  const open = openInvoiceMonthKey(input.today, input.closingDay);
+  for (const key of [addMonthKey(open, -2), addMonthKey(open, -1)]) {
+    if (input.statusOf(key) === 'unpaid') return { monthKey: key, reason: 'closed-unpaid' };
+  }
+  return { monthKey: open, reason: 'open' };
+}
+
+export interface InvoiceMemoInput {
+  state?: string | null;
+  isPaid?: boolean | null;
+  debtTotal?: number | null;
+  total?: number | null;
+}
+
+/** Reads one invoice answer of the backend: settled, unpaid (closed with something owed), or unknown. */
+export function invoiceMemo(dto: InvoiceMemoInput | null | undefined): InvoiceMemo {
+  if (!dto) return 'unknown';
+  if (dto.state === 'paid' || dto.isPaid === true) return 'settled';
+  if (dto.state === 'open') return 'unknown';
+  const owed = Number(dto.debtTotal ?? dto.total ?? 0);
+  return Number.isFinite(owed) && owed > 0.005 ? 'unpaid' : 'settled';
+}

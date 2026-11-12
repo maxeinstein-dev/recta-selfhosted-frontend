@@ -14,11 +14,12 @@ import { Transaction } from '../types';
 import { createSchemas, TransactionFormData } from '../schemas';
 import { CategoryType, CategoryName, getCategoriesByType, getCategoryNameFromDisplay, AccountType, TransactionType } from '../lib/enums';
 import { getAvailableBalance } from '../utils/accountBalance';
-import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
-import { useAvailableAccounts, useAccounts, type Account as AccountWithPersonal } from '../hooks/api/useAccounts';
+import { simpleTransactionError } from '../utils/simpleTransactionRules';
+import { type Account as AccountWithPersonal } from '../hooks/api/useAccounts';
+import { useFormAccounts } from '../hooks/useFormAccounts';
 import { useAuth } from '../context/AuthContext';
 import { useAuthUser } from '../hooks/api/useAuth';
-import { useHouseholds, useHouseholdMembers, type HouseholdMember } from '../hooks/api/useHouseholds';
+import { useHouseholdMembers, type HouseholdMember } from '../hooks/api/useHouseholds';
 import {
   TransactionModalHeader,
   TransactionTypeSelector,
@@ -32,60 +33,39 @@ import {
   AccountField,
 } from './transactions';
 
+/** Values the new-lançamento form opens with (the mobile add sheet hands its typed values over). */
+export interface TransactionModalPrefill {
+  type?: 'INCOME' | 'EXPENSE' | 'TRANSFER';
+  amount?: number;
+  description?: string;
+  category?: string;
+  accountId?: string;
+  date?: Date;
+  paid?: boolean;
+  fromAccountId?: string;
+  toAccountId?: string;
+}
+
 interface TransactionModalProps {
   transaction: Transaction | null;
   onClose: () => void;
   defaultAccountId?: string | null;
   defaultPaid?: boolean;
   readOnly?: boolean;
+  /** Opens a new lançamento with these values. */
+  prefill?: TransactionModalPrefill;
 }
 
-const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid, readOnly = false }: TransactionModalProps) => {
-  const { addTransaction, updateTransaction, createInstallments, accounts: contextAccounts, addRecurringTransaction, createTransfer, transactions: knownTransactions, recurringTransactions } = useTransactions();
+const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid, readOnly = false, prefill }: TransactionModalProps) => {
+  const { addTransaction, updateTransaction, createInstallments, addRecurringTransaction, createTransfer, transactions: knownTransactions, recurringTransactions } = useTransactions();
   const { success, error: showError } = useToastContext();
   const { t } = useI18n();
   const { baseCurrency } = useCurrency();
   const currencyMask = useCurrencyMask();
   const { transactionSchema } = createSchemas(t);
-  const { householdId, household: currentHousehold } = useDefaultHousehold();
+  const { householdId, isSharedHousehold, accounts } = useFormAccounts();
   const { currentUser } = useAuth();
   const { data: authUser } = useAuthUser();
-
-  // Check if we're in a shared household (not personal)
-  // A shared household is any household that is not the oldest one (personal is oldest)
-  const { data: allHouseholds } = useHouseholds();
-  const isSharedHousehold = useMemo(() => {
-    if (!allHouseholds || allHouseholds.length === 0 || !currentHousehold) return false;
-    // Personal household is the oldest (first by createdAt)
-    const sortedHouseholds = [...allHouseholds].sort((a, b) => 
-      new Date(a.createdAt || a.joinedAt || 0).getTime() - new Date(b.createdAt || b.joinedAt || 0).getTime()
-    );
-    const personalHousehold = sortedHouseholds[0];
-    return personalHousehold?.id !== currentHousehold.id;
-  }, [allHouseholds, currentHousehold]);
-
-  // Use available accounts endpoint when in shared household, regular accounts otherwise
-  const { data: availableAccountsData } = useAvailableAccounts(
-    householdId || '',
-    false
-  );
-  const { data: regularAccountsData } = useAccounts(
-    { householdId: householdId || '' }
-  );
-
-  // Determine which accounts to use
-  // In shared household, use available accounts (includes personal if allowed)
-  // In personal household, use regular accounts
-  const accounts = useMemo(() => {
-    if (isSharedHousehold && availableAccountsData?.accounts) {
-      return availableAccountsData.accounts;
-    }
-    if (!isSharedHousehold && regularAccountsData?.accounts) {
-      return regularAccountsData.accounts;
-    }
-    // Fallback to context accounts
-    return contextAccounts || [];
-  }, [isSharedHousehold, availableAccountsData, regularAccountsData, contextAccounts]);
 
   // Note: isAccountsLoading is available if needed in the future
   // const isAccountsLoading = isSharedHousehold ? availableAccountsLoading : regularAccountsLoading;
@@ -413,26 +393,26 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
       const defaultType = isCreditCardContext ? TransactionType.EXPENSE : TransactionType.EXPENSE;
       
       reset({
-        description: '',
-        amount: 0,
-        type: defaultType,
-        category: '',
-        date: defaultDate,
-        paid: isPaidDefault,
-        accountId: selectedAccountId,
+        description: prefill?.description ?? '',
+        amount: prefill?.amount ?? 0,
+        type: (prefill?.type as TransactionType | undefined) ?? defaultType,
+        category: prefill?.category ?? '',
+        date: prefill?.date ?? defaultDate,
+        paid: prefill?.paid ?? isPaidDefault,
+        accountId: prefill?.accountId || selectedAccountId,
         installments: 1,
-        fromAccountId: '',
-        toAccountId: '',
+        fromAccountId: prefill?.fromAccountId ?? '',
+        toAccountId: prefill?.toAccountId ?? '',
       });
-      currencyMask.setValue('');
-      setValue('amount', 0);
+      currencyMask.setValue(prefill?.amount ? prefill.amount : '');
+      setValue('amount', prefill?.amount ?? 0);
       // Garantir que a conta seja definida mesmo se não houver defaultAccountId
-      if (selectedAccountId && !defaultAccountId) {
+      if (selectedAccountId && !defaultAccountId && !prefill?.accountId) {
         setValue('accountId', selectedAccountId);
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [transaction?.id, defaultAccountId, defaultPaid, reset, setValue, availableAccounts]);
+  }, [transaction?.id, defaultAccountId, defaultPaid, reset, setValue, availableAccounts, prefill]);
 
   // Dividir automaticamente quando isSplit é ativado pela primeira vez ou quando o número de membros muda
   // Não recalcular quando o valor muda para não sobrescrever edições manuais
@@ -697,19 +677,9 @@ const TransactionModal = ({ transaction, onClose, defaultAccountId, defaultPaid,
         }
       } else {
         // Validar saldo disponível para despesas pagas (quando não é split)
-        if (data.type === TransactionType.EXPENSE && data.paid && data.accountId) {
-          const account = accounts.find(a => a.id === data.accountId);
-          if (account) {
-            // Não validar saldo para cartões de crédito (eles têm limite, não saldo)
-            const isCreditCard = account.type === AccountType.CREDIT;
-            if (!isCreditCard) {
-              const availableBalance = getAvailableBalance(account);
-              if (data.amount > availableBalance) {
-                showError(t.insufficientAvailableBalance);
-                return;
-              }
-            }
-          }
+        if (simpleTransactionError({ type: data.type, amount: data.amount, paid: data.paid, accountId: data.accountId }, accounts) === 'insufficientBalance') {
+          showError(t.insufficientAvailableBalance);
+          return;
         }
       }
 

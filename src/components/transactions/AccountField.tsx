@@ -1,9 +1,9 @@
 import { Controller, Control, FieldErrors, UseFormWatch } from 'react-hook-form';
 import { AlertCircle } from 'lucide-react';
 import { useI18n } from '../../context/I18nContext';
-import { AccountType } from '../../lib/enums';
 import { TransactionFormData } from '../../schemas';
 import SelectCombobox from '../SelectCombobox';
+import { accountOptionLabel } from '../../utils/accountOptionLabel';
 import type { Account as AccountWithPersonal } from '../../hooks/api/useAccounts';
 
 interface AccountFieldProps {
@@ -61,32 +61,9 @@ export const AccountField = ({
             options={[
               { value: '', label: t.selectAccount },
               ...availableAccounts.map((account: AccountWithPersonal) => {
-                const isCredit = account.type === AccountType.CREDIT;
-                const isCash = account.type === AccountType.CASH;
-                const isPersonal = account.isPersonal === true;
-                const accountOwnerId = account.accountOwnerId;
-                const isOtherMemberAccount = isPersonal && accountOwnerId && accountOwnerId !== authUser?.id;
-                
-                let accountTypeLabel = '';
-                if (isCredit) {
-                  accountTypeLabel = t.creditCard;
-                } else if (isCash) {
-                  accountTypeLabel = t.cash;
-                }
-                
-                let label = accountTypeLabel ? `${accountTypeLabel} - ${account.name}` : account.name;
-                
-                if (isPersonal) {
-                  if (isOtherMemberAccount) {
-                    label = `${label} ${t.otherMemberPersonalAccount}`;
-                  } else {
-                    label = `${label} ${t.myPersonalAccount}`;
-                  }
-                }
-                
                 return {
                   value: account.id || '',
-                  label
+                  label: accountOptionLabel(account, { creditCard: t.creditCard, cash: t.cash, myPersonalAccount: t.myPersonalAccount, otherMemberPersonalAccount: t.otherMemberPersonalAccount }, authUser?.id),
                 };
               })
             ]}

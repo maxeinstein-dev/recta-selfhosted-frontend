@@ -74,7 +74,8 @@ const MobileExtrato = ({
     <div className="space-y-0">
       <h1 className="text-2xl font-light tracking-tight text-rc-ink">Extrato</h1>
 
-      {dueBox}
+      {/* The 44 px rule reaches the buttons of the panels the Extrato embeds (they are sized for the desktop). */}
+      <div className="[&_button]:min-h-[44px]">{dueBox}</div>
       {captureBox}
 
       <label className={`mt-3 flex min-h-[48px] items-center gap-2 rounded-2xl border border-rc-line bg-rc-card px-3 text-rc-ink3`}>
@@ -121,7 +122,9 @@ const MobileExtrato = ({
 
       {moreOpen && (
         <div id="extrato-mais-filtros" className="mt-3 space-y-3 rounded-2xl border border-rc-line bg-rc-card p-3">
-          <TransactionFilters {...filters} searchInput={searchInput} onSearchChange={onSearchChange} inSheet />
+          <div className="[&_button]:min-h-[44px] [&_input]:min-h-[44px]">
+            <TransactionFilters {...filters} searchInput={searchInput} onSearchChange={onSearchChange} inSheet />
+          </div>
           <div className="flex gap-2">
             <button type="button" onClick={onExport} className={`${TOUCH} flex flex-1 items-center justify-center gap-2 rounded-xl border border-rc-line text-sm font-medium text-rc-ink`}>
               <Download className="h-4 w-4" aria-hidden="true" />

@@ -546,6 +546,7 @@ export interface Translations {
   budgetEnd: string;
   confirmEndBudget: string;
   budgetEnded: string;
+  budgetEndConfirm: string;
   budgetMeasureLabel: string;
   budgetMeasureWhole: string;
   budgetMeasureOwn: string;

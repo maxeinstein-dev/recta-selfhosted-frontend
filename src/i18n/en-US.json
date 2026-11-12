@@ -329,6 +329,7 @@
   "budgetEnd": "End budget",
   "confirmEndBudget": "This budget comes from an earlier month. It stops from {month} on; earlier months keep it.",
   "budgetEnded": "Budget ended",
+  "budgetEndConfirm": "End",
   "budgetMeasureLabel": "How to measure this budget",
   "budgetMeasureWhole": "Together: the full spending counts",
   "budgetMeasureOwn": "Separate: only your share counts",

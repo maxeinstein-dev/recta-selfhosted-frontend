@@ -357,6 +357,7 @@
   "budgetEnd": "Encerrar orçamento",
   "confirmEndBudget": "Este orçamento vem de um mês anterior. Ele deixa de valer a partir de {month}; os meses anteriores continuam com ele.",
   "budgetEnded": "Orçamento encerrado",
+  "budgetEndConfirm": "Encerrar",
   "budgetMeasureLabel": "Como medir este orçamento",
   "budgetMeasureWhole": "Em conjunto: conta o gasto inteiro",
   "budgetMeasureOwn": "Separado: conta só a sua parte",

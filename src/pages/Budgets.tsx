@@ -179,6 +179,7 @@ const Budgets = () => {
         onConfirm={handleConfirmDelete}
         title={removal?.kind === 'end' ? t.budgetEnd : t.delete}
         message={removal?.kind === 'end' ? t.confirmEndBudget.replace('{month}', monthLabel(selectedKey)) : t.confirmDeleteBudget}
+        confirmText={removal?.kind === 'end' ? t.budgetEndConfirm : undefined}
         variant="danger"
       />
     </div>

@@ -407,3 +407,67 @@ input[type="month"] {
   bottom: 88px !important;
   z-index: 40 !important;
 }
+
+/* Abaixo de 768 px o botão do devtools vai para o canto inferior esquerdo, acima da barra de abas, para não cobrir o "+". */
+@media (max-width: 767.98px) {
+  .tsqd-open-btn-container {
+    left: 16px !important;
+    right: auto !important;
+    bottom: calc(58px + env(safe-area-inset-bottom, 0px) + 12px) !important;
+  }
+}
+
+/* ---------- Tokens da casca móvel (redesenho para celular, lote R0) ----------
+   Valores do protótipo specs/prototipos/redesign-celular. Claro em :root; escuro na classe .dark,
+   que o ThemeContext põe em <html>. Usados pelas classes rc-* do tailwind.config.js. */
+:root {
+  --rc-bg: #f2f4f9;
+  --rc-card: #ffffff;
+  --rc-card2: #f5f7fb;
+  --rc-line: #e4e8f0;
+  --rc-ink: #0e1524;
+  --rc-ink2: #566074;
+  --rc-ink3: #6b7487;
+  --rc-accent: #2457e6;
+  --rc-accent-ink: #1f4ed6;
+  --rc-on-accent: #ffffff;
+  --rc-on-red: #ffffff;
+  --rc-accent-soft: #e7edff;
+  --rc-green: #0c7a3e;
+  --rc-green-soft: #e2f5ea;
+  --rc-red: #c8243f;
+  --rc-red-soft: #fde8ec;
+  --rc-amber: #8a5200;
+  --rc-amber-soft: #fff1cf;
+  --rc-pink: #e23b6a;
+  --rc-pink-ink: #c2255a;
+  --rc-r-sm: 14px;
+  --rc-r-md: 18px;
+  --rc-r-lg: 22px;
+  --rc-r-xl: 26px;
+  --rc-shadow: 0 1px 2px rgba(16, 23, 42, 0.04), 0 6px 20px rgba(16, 23, 42, 0.05);
+}
+
+.dark {
+  --rc-bg: #0b0f17;
+  --rc-card: #151b27;
+  --rc-card2: #1c2433;
+  --rc-line: #263042;
+  --rc-ink: #eef1f7;
+  --rc-ink2: #aab3c4;
+  --rc-ink3: #939db0;
+  --rc-accent: #3f6ff0;
+  --rc-accent-ink: #8fb0ff;
+  --rc-on-accent: #ffffff;
+  --rc-on-red: #1a0a0e;
+  --rc-accent-soft: #1b2a52;
+  --rc-green: #4ad587;
+  --rc-green-soft: #12301f;
+  --rc-red: #ff7387;
+  --rc-red-soft: #3a1620;
+  --rc-amber: #f4bb55;
+  --rc-amber-soft: #36290c;
+  --rc-pink: #ff6f97;
+  --rc-pink-ink: #ff8fae;
+  --rc-shadow: none;
+}

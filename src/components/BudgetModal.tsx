@@ -120,7 +120,7 @@ export const BudgetModal = ({
       setValue('amount', 0, { shouldValidate: false });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [editingBudget?.id, selectedMonth.getTime(), reset, setValue]);
+  }, [isOpen, editingBudget?.id, selectedMonth.getTime(), reset, setValue]);
 
   // Clear category when it's not valid for the selected type (e.g. switched from expense to income)
   useEffect(() => {

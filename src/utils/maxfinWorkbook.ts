@@ -10,9 +10,13 @@ import {
   reconcileSelection, toCents,
 } from './maxfinPayload';
 import type { MaxFinBuiltConfirm, MaxFinConfirmContext, MaxFinConfirmTotals } from './maxfinPayload';
+import { MAXFIN_MAX_REALIGN_DECISIONS, realignOutcomeLines, realignProposals, realignedSummaryPart, reconcileRealignSelection } from './maxfinRealign';
+import type { MaxFinRealignSelection } from './maxfinRealign';
+import { realignTextPt } from './maxfinRealignTexts';
+import type { MaxFinRealignTextFn } from './maxfinRealignTexts';
 import type {
-  MaxFinCategoryTargetInput, MaxFinConfirmRequest, MaxFinConfirmResponse, MaxFinPreviewResponse, MaxFinPreviewRow, MaxFinWorkbookOptions,
-  MaxFinWorkbookPreviewResponse, MaxFinWorkbookSheet,
+  MaxFinCategoryTargetInput, MaxFinConfirmRequest, MaxFinConfirmResponse, MaxFinPreviewResponse, MaxFinPreviewRow, MaxFinRealignProposal,
+  MaxFinWorkbookOptions, MaxFinWorkbookPreviewResponse, MaxFinWorkbookSheet,
 } from '../hooks/api/useImportMaxFin';
 
 // ---- Month keys and labels --------------------------------------------------------------------------------
@@ -119,6 +123,41 @@ export function reconcileWorkbookSelection(
   return next;
 }
 
+/** workbookMonthId -> realignment proposal id -> ticked. */
+export type MaxFinWorkbookRealignSelection = Record<string, MaxFinRealignSelection>;
+/** workbookMonthId -> realignment proposals of the last preview that had the month. */
+export type MaxFinWorkbookProposalsByMonth = Record<string, MaxFinRealignProposal[]>;
+
+/** Proposals of every month seen so far, the newest response winning (input of the next reconcile). */
+export function proposalsByMonth(
+  prev: Readonly<MaxFinWorkbookProposalsByMonth>,
+  months: ReadonlyArray<Pick<MaxFinPreviewResponse, 'month' | 'monthKey' | 'realignments'>>,
+): MaxFinWorkbookProposalsByMonth {
+  const next: MaxFinWorkbookProposalsByMonth = { ...prev };
+  months.forEach((month, index) => {
+    next[workbookMonthId(month, index)] = realignProposals(month);
+  });
+  return next;
+}
+
+/**
+ * Realignment ticks after a workbook preview: every month goes through reconcileRealignSelection (a proposal that is
+ * the same as before keeps the choice of the user, anything else takes its default); a month that left the response
+ * keeps its choices for when it is ticked again.
+ */
+export function reconcileWorkbookRealign(
+  prevProposals: Readonly<MaxFinWorkbookProposalsByMonth>,
+  prevSelection: Readonly<MaxFinWorkbookRealignSelection>,
+  nextMonths: ReadonlyArray<Pick<MaxFinPreviewResponse, 'month' | 'monthKey' | 'realignments'>>,
+): MaxFinWorkbookRealignSelection {
+  const next: MaxFinWorkbookRealignSelection = { ...prevSelection };
+  nextMonths.forEach((month, index) => {
+    const id = workbookMonthId(month, index);
+    next[id] = reconcileRealignSelection(prevProposals[id] ?? [], prevSelection[id] ?? {}, realignProposals(month));
+  });
+  return next;
+}
+
 /** Month shown in the detail: the current one while the response still has it, else the first (oldest). */
 export function pickDetailMonth(current: string | null, monthIds: readonly string[]): string | null {
   if (current !== null && monthIds.includes(current)) return current;
@@ -161,6 +200,11 @@ export interface MaxFinWorkbookTotals {
   replacements: number;
   /** Of those, the ticked rows that take a recurrence over. */
   recurring: number;
+  /** Realignment blocks that will be applied, and the transactions they move. */
+  realignBlocks: number;
+  realignMoves: number;
+  /** Blocks of every month of the plan that stay pending (not ticked). */
+  realignPending: number;
   /** Invoice payments that will be recorded (closed months with credit rows sent) and their sum. */
   invoiceCount: number;
   invoiceCents: number;
@@ -191,6 +235,7 @@ export function buildWorkbookPlan(
   selection: Readonly<MaxFinWorkbookSelection>,
   categoryChoices: Readonly<Record<string, MaxFinCategoryTargetInput>>,
   context: MaxFinConfirmContext,
+  realignSelection: Readonly<MaxFinWorkbookRealignSelection> = {},
 ): MaxFinWorkbookPlan {
   const months: MaxFinWorkbookMonthPlan[] = workbook.months
     .map((preview, index) => {
@@ -201,7 +246,7 @@ export function buildWorkbookPlan(
         monthKey,
         label: monthKey ? monthKeyLabel(monthKey) : `mês não identificado (${index + 1})`,
         preview,
-        built: buildConfirmPayload(preview, selection[id] ?? {}, categoryChoices, context),
+        built: buildConfirmPayload(preview, selection[id] ?? {}, categoryChoices, context, realignSelection[id]),
       };
     })
     // Array.prototype.sort is stable: equal keys keep the order of the response.
@@ -217,13 +262,15 @@ export function buildWorkbookPlan(
   const emptyMonths: string[] = [];
   const totals: MaxFinWorkbookTotals = {
     months: 0, rows: 0, incomeCount: 0, incomeCents: 0, incomeTotal: 0, expenseCount: 0, expenseCents: 0, expenseTotal: 0,
-    replacements: 0, recurring: 0, invoiceCount: 0, invoiceCents: 0, invoiceTotal: 0, emptyMonths,
+    replacements: 0, recurring: 0, realignBlocks: 0, realignMoves: 0, realignPending: 0, invoiceCount: 0, invoiceCents: 0, invoiceTotal: 0, emptyMonths,
   };
   for (const month of months) {
     const { built, monthKey } = month;
+    totals.realignPending += built.totals.realign.declined;
     const repeated = monthKey !== null && seen.has(monthKey);
     if (monthKey !== null) seen.add(monthKey);
-    if (built.rowsSent.length === 0) {
+    // A month with nothing but a ticked realignment is a step too: the confirm may carry no rows.
+    if (built.rowsSent.length === 0 && built.totals.realign.applied === 0) {
       emptyMonths.push(month.label);
       continue;
     }
@@ -244,6 +291,8 @@ export function buildWorkbookPlan(
     totals.rows += built.rowsSent.length;
     totals.replacements += built.totals.replacements;
     totals.recurring += built.totals.recurring;
+    totals.realignBlocks += built.totals.realign.applied;
+    totals.realignMoves += built.totals.realign.moves;
     if (built.totals.invoice.willPay) {
       totals.invoiceCount += 1;
       totals.invoiceCents += built.totals.invoice.cents;
@@ -257,7 +306,7 @@ export function buildWorkbookPlan(
 }
 
 export interface MaxFinWorkbookBlocker {
-  code: 'needs-refresh' | 'no-month' | 'none-selected' | 'too-many';
+  code: 'needs-refresh' | 'no-month' | 'none-selected' | 'too-many' | 'too-many-realign';
   message: string;
 }
 
@@ -275,6 +324,10 @@ export function workbookConfirmBlocker(plan: MaxFinWorkbookPlan | null, needsRef
     };
   }
   if (plan.steps.length === 0) return { code: 'none-selected', message: 'Selecione ao menos uma transação.' };
+  const manyBlocks = plan.steps.find((step) => step.totals.realign.total > MAXFIN_MAX_REALIGN_DECISIONS);
+  if (manyBlocks) {
+    return { code: 'too-many-realign', message: realignTextPt('maxfinRealignTooMany', { max: MAXFIN_MAX_REALIGN_DECISIONS }) };
+  }
   const over = plan.steps.find((step) => step.totals.count > MAXFIN_MAX_ROWS);
   if (over) {
     return {
@@ -299,6 +352,8 @@ export interface MaxFinWorkbookMonthOutcome {
   result: MaxFinConfirmResponse | null;
   /** 'março/2026: 12 transações importadas, ...' for an imported month; null otherwise. */
   line: string | null;
+  /** One line per realignment block the server decided on, for an imported month ('Cartão, linhas 12 a 18: Realinhado (7)'). */
+  realignLines: string[];
 }
 
 export interface MaxFinWorkbookRunSummary {
@@ -311,6 +366,8 @@ export interface MaxFinWorkbookRunSummary {
   notSent: string[];
   /** Server warnings of the imported months, each prefixed with its month label. */
   warnings: string[];
+  /** Transactions the realignments of the imported months moved. */
+  realigned: number;
   totals: { imported: number; replaced: number; assumedRecurring: number; skipped: number; invoices: number; invoiceCents: number };
   /** Some imported month has something to read (warnings, skipped rows, consumed future installments). */
   needsReview: boolean;
@@ -321,13 +378,14 @@ export interface MaxFinWorkbookRunSummary {
  * `failure` is given; every other step was not sent.
  */
 export function summarizeWorkbookRun(
-  steps: ReadonlyArray<Pick<MaxFinWorkbookStep, 'monthKey' | 'label' | 'totals'>>,
+  steps: ReadonlyArray<Pick<MaxFinWorkbookStep, 'monthKey' | 'label' | 'totals'> & Partial<Pick<MaxFinWorkbookStep, 'payload'>>>,
   results: readonly MaxFinConfirmResponse[],
   failure: { reason: string } | null,
   formatAmount: (value: number) => string,
+  tx: MaxFinRealignTextFn = realignTextPt,
 ): MaxFinWorkbookRunSummary {
   const summary: MaxFinWorkbookRunSummary = {
-    months: [], imported: [], failed: null, notSent: [], warnings: [],
+    months: [], imported: [], failed: null, notSent: [], warnings: [], realigned: 0,
     totals: { imported: 0, replaced: 0, assumedRecurring: 0, skipped: 0, invoices: 0, invoiceCents: 0 },
     needsReview: false,
   };
@@ -336,10 +394,12 @@ export function summarizeWorkbookRun(
     if (result) {
       summary.months.push({
         monthKey: step.monthKey, label: step.label, status: 'imported', result,
-        line: `${step.label}: ${buildConfirmSummary(result, formatAmount)}`,
+        line: `${step.label}: ${buildConfirmSummary(result, formatAmount, tx)}`,
+        realignLines: realignOutcomeLines(result.realignments, step.payload?.realignments, tx).map((line) => `${step.label}: ${line}`),
       });
       summary.imported.push(step.label);
       for (const warning of result.warnings ?? []) summary.warnings.push(`${step.label}: ${warning}`);
+      summary.realigned += typeof result.realigned === 'number' ? result.realigned : 0;
       summary.totals.imported += result.imported;
       summary.totals.replaced += result.replaced;
       summary.totals.assumedRecurring += result.assumedRecurring ?? 0;
@@ -350,10 +410,10 @@ export function summarizeWorkbookRun(
       }
       if (confirmResultNeedsReview(result)) summary.needsReview = true;
     } else if (failure && index === results.length) {
-      summary.months.push({ monthKey: step.monthKey, label: step.label, status: 'failed', result: null, line: null });
+      summary.months.push({ monthKey: step.monthKey, label: step.label, status: 'failed', result: null, line: null, realignLines: [] });
       summary.failed = { label: step.label, reason: failure.reason, invoicePromised: step.totals.invoice.willPay };
     } else {
-      summary.months.push({ monthKey: step.monthKey, label: step.label, status: 'not-sent', result: null, line: null });
+      summary.months.push({ monthKey: step.monthKey, label: step.label, status: 'not-sent', result: null, line: null, realignLines: [] });
       summary.notSent.push(step.label);
     }
   });
@@ -361,11 +421,13 @@ export function summarizeWorkbookRun(
 }
 
 /** Toast after a run where every month went through. */
-export function workbookRunToast(summary: MaxFinWorkbookRunSummary): string {
+export function workbookRunToast(summary: MaxFinWorkbookRunSummary, tx: MaxFinRealignTextFn = realignTextPt): string {
   const { totals } = summary;
   const parts = [countLabel(totals.imported, 'transação importada', 'transações importadas')];
   if (totals.replaced > 0) parts.push(countLabel(totals.replaced, 'substituída', 'substituídas'));
   if (totals.assumedRecurring > 0) parts.push(`assumiu ${countLabel(totals.assumedRecurring, 'recorrente', 'recorrentes')}`);
+  const realigned = realignedSummaryPart(summary.realigned, tx);
+  if (realigned) parts.push(realigned);
   if (totals.invoices > 0) parts.push(countLabel(totals.invoices, 'fatura registrada', 'faturas registradas'));
   if (totals.skipped > 0) parts.push(countLabel(totals.skipped, 'linha ignorada', 'linhas ignoradas'));
   let text = `${countLabel(summary.imported.length, 'mês importado', 'meses importados')}: ${parts.join(', ')}.`;

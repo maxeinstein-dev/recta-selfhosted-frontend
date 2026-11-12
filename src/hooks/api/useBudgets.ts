@@ -21,12 +21,15 @@ export interface BudgetSummary {
     categoryColor?: string;
     monthlyLimit: number;
     spending: number;
+    /** Spending minus what other people owe on those expenses (absent on an older API). */
+    ownSpent?: number;
     remaining: number;
     percentage: number;
     isOverBudget: boolean;
   }>;
   totalLimit: number;
   totalSpending: number;
+  totalOwnSpending?: number;
 }
 
 export interface ListBudgetsParams {
@@ -38,8 +41,10 @@ export interface ListBudgetsParams {
 
 export interface BudgetSummaryParams {
   householdId: string;
-  startDate: string;
-  endDate: string;
+  /** Planning month 'YYYY-MM' (reference month when set); or a date range. */
+  month?: string;
+  startDate?: string;
+  endDate?: string;
 }
 
 /**
@@ -89,7 +94,10 @@ export function useBudgetSummary(params: BudgetSummaryParams) {
       const response = await apiClient.get<BudgetSummary>('/budgets/summary', params);
       return response.data!;
     },
-    enabled: isAuthenticated && !!params.householdId && !!params.startDate && !!params.endDate, // Only fetch when authenticated and all params are available
+    // The screens show these numbers as they are: never an old answer after a transaction changed.
+    staleTime: 0,
+    refetchOnMount: 'always',
+    enabled: isAuthenticated && !!params.householdId && (!!params.month || (!!params.startDate && !!params.endDate)), // Only fetch when authenticated and all params are available
   });
 }
 

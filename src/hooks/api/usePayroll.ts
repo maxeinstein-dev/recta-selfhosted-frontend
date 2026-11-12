@@ -36,7 +36,7 @@ export const payrollKeys = {
   all: ['payroll'] as const,
   employments: (householdId: string | null, personId: string | null) => ['payroll', 'employments', householdId, personId] as const,
   employment: (householdId: string | null, id: string) => ['payroll', 'employment', householdId, id] as const,
-  events: (householdId: string | null, from: string, to: string, personId: string | null) => ['payroll', 'events', householdId, from, to, personId] as const,
+  events: (householdId: string | null, from: string, to: string, personId: string | null, includePast = false) => ['payroll', 'events', householdId, from, to, personId, includePast] as const,
   employmentEvents: (householdId: string | null, id: string, from: string, to: string) => ['payroll', 'employment-events', householdId, id, from, to] as const,
 };
 
@@ -75,15 +75,18 @@ export function useEmployment(householdId: string | undefined, id: string | unde
   });
 }
 
-/** Forecast events of every active employment of the household (or of one person) in [from, to]. */
-export function useHouseholdEvents(householdId: string | undefined, from: string, to: string, personId?: string) {
+/**
+ * Forecast events of every active employment of the household (or of one person) in [from, to]. `includePast` also
+ * brings the 13th, vacations and birthday withdrawals dated before today (the yearly calendar asks for them).
+ */
+export function useHouseholdEvents(householdId: string | undefined, from: string, to: string, personId?: string, includePast = false) {
   const { currentUser } = useAuth();
   return useQuery({
-    queryKey: payrollKeys.events(householdId ?? null, from, to, personId ?? null),
+    queryKey: payrollKeys.events(householdId ?? null, from, to, personId ?? null, includePast),
     enabled: !!currentUser && !!householdId,
     refetchOnWindowFocus: false,
     queryFn: async (): Promise<HouseholdPayrollEvents> => {
-      const response = await apiClient.get<HouseholdPayrollEvents>('/payroll/events', { householdId, from, to, personId });
+      const response = await apiClient.get<HouseholdPayrollEvents>('/payroll/events', { householdId, from, to, personId, ...(includePast ? { includePast: 'true' } : {}) });
       if (!response.data) throw new Error('Empty payroll events response');
       return response.data;
     },

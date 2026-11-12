@@ -176,9 +176,12 @@ export interface BirthdayForecast {
   year: number;
   date: string;
   amount: number;
-  source: 'table' | 'informed';
+  /** 'recorded': a real withdrawal already registered (only when the events are asked with `includePast`). */
+  source: 'table' | 'informed' | 'recorded';
   balance: number;
   tableId: string | null;
+  /** Only with `includePast`: true when dated before today. */
+  past?: boolean;
 }
 
 export interface FgtsMonth {

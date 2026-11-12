@@ -2,6 +2,7 @@ import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { ArrowLeft, ChevronDown, ChevronRight, FileUp, RefreshCw, Upload, X } from 'lucide-react';
+import { useI18n } from '../context/I18nContext';
 import { useAccounts } from '../hooks/api/useAccounts';
 import type { Account } from '../hooks/api/useAccounts';
 import { useCategories } from '../hooks/api/useCategories';
@@ -19,8 +20,8 @@ import {
 } from '../hooks/api/useImportMaxFin';
 import type {
   MaxFinAccountsInput, MaxFinCategoryMapEntry, MaxFinCategoryTargetInput, MaxFinConfirmResponse, MaxFinImportOptions, MaxFinMonth,
-  MaxFinPreviewOptionsInput, MaxFinPreviewResponse, MaxFinPreviewRow, MaxFinSectionKey, MaxFinSkippedRow, MaxFinTransactionType,
-  MaxFinWorkbookOptions, MaxFinWorkbookOptionsInput, MaxFinWorkbookPreviewResponse,
+  MaxFinPreviewOptionsInput, MaxFinPreviewResponse, MaxFinPreviewRow, MaxFinRealignProposal, MaxFinSectionKey, MaxFinSkippedRow,
+  MaxFinTransactionType, MaxFinWorkbookOptions, MaxFinWorkbookOptionsInput, MaxFinWorkbookPreviewResponse,
 } from '../hooks/api/useImportMaxFin';
 import {
   MAXFIN_MAX_YEAR, MAXFIN_MIN_YEAR, MAXFIN_SECTION_ORDER, applyOptionPatch, buildConfirmPayload, buildConfirmSummary, categoryChoiceKey, rowDetailText,
@@ -30,12 +31,20 @@ import {
 } from '../utils/maxfinPayload';
 import type { MaxFinBuiltConfirm, MaxFinConfirmBlocker, MaxFinInvoiceSelection } from '../utils/maxfinPayload';
 import {
-  buildWorkbookPlan, closedThroughChoices, isSelectableSheet, monthKeyLabel, nextWorkbookOptions, pickDetailMonth, reconcileWorkbookSelection,
-  rowsByMonth, summarizeWorkbookRun, toggleWorkbookMonth, workbookConfirmBlocker, workbookProgressLabel, workbookRunToast, workbookStopMessage,
+  buildWorkbookPlan, closedThroughChoices, isSelectableSheet, monthKeyLabel, nextWorkbookOptions, pickDetailMonth, proposalsByMonth,
+  reconcileWorkbookRealign, reconcileWorkbookSelection, rowsByMonth, summarizeWorkbookRun, toggleWorkbookMonth, workbookConfirmBlocker, workbookProgressLabel, workbookRunToast, workbookStopMessage,
 } from '../utils/maxfinWorkbook';
 import type {
-  MaxFinWorkbookBlocker, MaxFinWorkbookPlan, MaxFinWorkbookRowsByMonth, MaxFinWorkbookRunSummary, MaxFinWorkbookSelection,
+  MaxFinWorkbookBlocker, MaxFinWorkbookPlan, MaxFinWorkbookProposalsByMonth, MaxFinWorkbookRealignSelection, MaxFinWorkbookRowsByMonth,
+  MaxFinWorkbookRunSummary, MaxFinWorkbookSelection,
 } from '../utils/maxfinWorkbook';
+import {
+  countShiftedRows, isShiftedRow, proposalHoldingRow, realignCardView, realignFooterLines, realignMoveLines, realignOutcomeLines,
+  realignProposals, reconcileRealignSelection, shiftedRowDetail, toggleRealign,
+} from '../utils/maxfinRealign';
+import type { MaxFinRealignSelection, MaxFinRealignTotals } from '../utils/maxfinRealign';
+import { realignPlural, realignTextFor } from '../utils/maxfinRealignTexts';
+import type { MaxFinRealignTextFn } from '../utils/maxfinRealignTexts';
 
 // ---------------------------------------------------------------------------
 // Shared styles (mirrors ImportTransactionsDialog)
@@ -87,6 +96,8 @@ const STATUS_CHIP: Partial<Record<string, { label: string; tone: ChipTone }>> = 
   'replaces-future': { label: 'Substitui futuras', tone: 'blue' },
   'legacy-duplicate': { label: 'Possível duplicata', tone: 'yellow' },
   'matches-recurring': { label: 'Recorrente', tone: 'blue' },
+  // Only moved to another line of the sheet; the label comes from the i18n texts (see PreviewRowItem).
+  shifted: { label: 'Deslocada', tone: 'blue' },
 };
 const FALLBACK_CHIP: { label: string; tone: ChipTone } = { label: 'Status desconhecido', tone: 'gray' };
 const ROW_TONE: Partial<Record<string, string>> = {
@@ -95,9 +106,10 @@ const ROW_TONE: Partial<Record<string, string>> = {
   'replaces-future': 'bg-blue-50/50 dark:bg-blue-900/10',
   'legacy-duplicate': 'bg-yellow-50/50 dark:bg-yellow-900/10',
   'matches-recurring': 'bg-blue-50/50 dark:bg-blue-900/10',
+  shifted: 'bg-blue-50/50 dark:bg-blue-900/10',
 };
 /** Statuses whose detail must be readable without hovering: they replace stored data, take a recurrence over or may duplicate it. */
-const INLINE_DETAIL_STATUSES: readonly string[] = ['changed', 'replaces-future', 'legacy-duplicate', 'matches-recurring'];
+const INLINE_DETAIL_STATUSES: readonly string[] = ['changed', 'replaces-future', 'legacy-duplicate', 'matches-recurring', 'shifted'];
 
 const EMPTY_ACCOUNTS: MaxFinAccountsInput = { income: '', bills: '', credit: '', debit: '' };
 const MONTH_MIN = monthToInputValue({ year: MAXFIN_MIN_YEAR, month: 1 });
@@ -360,6 +372,11 @@ const CategoryMapTable = ({ entries, choices, customCategories, disabled, onChan
 
 interface PreviewRowItemProps {
   row: MaxFinPreviewRow; checked: boolean; disabled: boolean; currency: CurrencyCode; onToggle: (key: string, checked: boolean) => void;
+  /** A new row on a line of a realignment block that stays pending: the server would not write it. */
+  held: boolean;
+  /** What a shifted row says about itself (from the proposal that moves it); null falls back to the text of the server. */
+  shiftedDetail: string | null;
+  tx: MaxFinRealignTextFn;
 }
 
 /** Accessible name of the row checkbox: what ticking it does, plus the description of the row. */
@@ -383,14 +400,16 @@ const rowCheckboxLabel = (row: MaxFinPreviewRow): string => {
   }
 };
 
-const PreviewRowItem = ({ row, checked, disabled, currency, onToggle }: PreviewRowItemProps) => {
+const PreviewRowItem = ({ row, checked, disabled, currency, onToggle, held, shiftedDetail, tx }: PreviewRowItemProps) => {
   const key = rowKey(row);
   const knownChip = STATUS_CHIP[row.status];
-  const status = knownChip ?? FALLBACK_CHIP;
+  const shifted = isShiftedRow(row);
+  const status = shifted ? { ...STATUS_CHIP.shifted!, label: tx('maxfinRealignRowShifted') } : knownChip ?? FALLBACK_CHIP;
   const isChanged = row.status === 'changed';
   const replacesFuture = row.status === 'replaces-future';
   const matchesRecurring = row.status === 'matches-recurring';
-  const detail = rowDetailText(row, (value) => formatCurrency(value, currency));
+  const detail = shifted ? (shiftedDetail ?? rowDetailText(row, (value) => formatCurrency(value, currency)) ?? tx('maxfinRealignRowShiftedHint'))
+    : rowDetailText(row, (value) => formatCurrency(value, currency));
   const showDetail = !!detail && (INLINE_DETAIL_STATUSES.includes(row.status) || !knownChip);
   const prepaid = row.installment ? prepaidLabel(row.installment) : null;
   // A negative value of the sheet: a credit (refund) in an expense block, an expense in the income block.
@@ -399,13 +418,18 @@ const PreviewRowItem = ({ row, checked, disabled, currency, onToggle }: PreviewR
   return (
     <tr className={ROW_TONE[row.status] ?? ''}>
       <td className="px-3 py-2 align-top whitespace-nowrap">
-        <label className="inline-flex items-center gap-1">
-          <input type="checkbox" checked={checked} disabled={disabled || !isSendableStatus(row.status)} className={CHECKBOX_CLS}
-            aria-label={rowCheckboxLabel(row)} onChange={(e) => onToggle(key, e.target.checked)} />
-          {isChanged && <span className="text-[11px] text-orange-700 dark:text-orange-300">substituir</span>}
-          {replacesFuture && <span className="text-[11px] text-blue-700 dark:text-blue-300">substitui futuras</span>}
-          {matchesRecurring && <span className="text-[11px] text-blue-700 dark:text-blue-300">assume a recorrente</span>}
-        </label>
+        {shifted ? (
+          // No checkbox of its own: the realignment block decides (see RealignPanel).
+          <span className={`text-xs ${MUTED_CLS}`} aria-hidden="true">—</span>
+        ) : (
+          <label className="inline-flex items-center gap-1">
+            <input type="checkbox" checked={checked && !held} disabled={disabled || held || !isSendableStatus(row.status)} className={CHECKBOX_CLS}
+              aria-label={rowCheckboxLabel(row)} onChange={(e) => onToggle(key, e.target.checked)} />
+            {isChanged && <span className="text-[11px] text-orange-700 dark:text-orange-300">substituir</span>}
+            {replacesFuture && <span className="text-[11px] text-blue-700 dark:text-blue-300">substitui futuras</span>}
+            {matchesRecurring && <span className="text-[11px] text-blue-700 dark:text-blue-300">assume a recorrente</span>}
+          </label>
+        )}
       </td>
       <td className={`${TD_CLS} max-w-[280px]`}>
         <div className="flex flex-wrap items-center gap-1 min-w-0">
@@ -417,6 +441,7 @@ const PreviewRowItem = ({ row, checked, disabled, currency, onToggle }: PreviewR
           {row.futureInstallments > 0 && <Chip tone="blue">+{row.futureInstallments} futuras</Chip>}
         </div>
         {showDetail && <p className={`mt-0.5 text-[11px] leading-snug ${MUTED_CLS}`}>{detail}</p>}
+        {held && <p className="mt-0.5 text-[11px] leading-snug text-orange-700 dark:text-orange-300">{tx('maxfinRealignRowBlocked')}</p>}
       </td>
       <td className={`${TD_CLS} whitespace-nowrap ${MUTED_CLS}`}>{row.categoryKey || '(sem)'}</td>
       <td className={`${TD_CLS} whitespace-nowrap text-right`}>{sign}{formatCurrency(row.amount, currency)}</td>
@@ -435,12 +460,17 @@ const PreviewRowItem = ({ row, checked, disabled, currency, onToggle }: PreviewR
 interface RowsTableProps {
   preview: MaxFinPreviewResponse; selected: Record<string, boolean>; accountName: (id: string) => string; currency: CurrencyCode;
   disabled: boolean; onToggle: (key: string, checked: boolean) => void; onSelectAllNew: () => void; onClear: () => void;
+  /** Realignment proposals of this preview and what is ticked (none on an older server). */
+  proposals: MaxFinRealignProposal[]; realignSelection: MaxFinRealignSelection; tx: MaxFinRealignTextFn;
 }
 
-const RowsTable = ({ preview, selected, accountName, currency, disabled, onToggle, onSelectAllNew, onClear }: RowsTableProps) => {
+const RowsTable = ({
+  preview, selected, accountName, currency, disabled, onToggle, onSelectAllNew, onClear, proposals, realignSelection, tx,
+}: RowsTableProps) => {
   const groups = useMemo(() => groupRowsBySection(preview), [preview]);
   // Counted from the rows themselves, so the chips always match what the table lists.
   const counts = useMemo(() => countByStatus(preview.rows), [preview.rows]);
+  const shiftedCount = useMemo(() => countShiftedRows(preview.rows), [preview.rows]);
   return (
     <div>
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
@@ -455,6 +485,7 @@ const RowsTable = ({ preview, selected, accountName, currency, disabled, onToggl
           {counts.matchesRecurring > 0 && (
             <Chip tone="blue">{countLabel(counts.matchesRecurring, 'recorrente', 'recorrentes')}</Chip>
           )}
+          {shiftedCount > 0 && <Chip tone="blue">{realignPlural(tx, 'maxfinRealignShiftedCount', shiftedCount)}</Chip>}
           {counts.legacyDuplicate > 0 && (
             <Chip tone="yellow">{countLabel(counts.legacyDuplicate, 'possível duplicata', 'possíveis duplicatas')}</Chip>
           )}
@@ -493,7 +524,9 @@ const RowsTable = ({ preview, selected, accountName, currency, disabled, onToggl
                   </tr>
                   {group.rows.map((row) => (
                     <PreviewRowItem key={rowKey(row)} row={row} checked={isSendableStatus(row.status) && !!selected[rowKey(row)]}
-                      disabled={disabled} currency={currency} onToggle={onToggle} />
+                      disabled={disabled} currency={currency} onToggle={onToggle} tx={tx}
+                      held={proposalHoldingRow(row, proposals, realignSelection) !== null}
+                      shiftedDetail={shiftedRowDetail(row, proposals, tx)} />
                   ))}
                 </Fragment>
               ))}
@@ -502,6 +535,68 @@ const RowsTable = ({ preview, selected, accountName, currency, disabled, onToggl
         </div>
       )}
     </div>
+  );
+};
+
+interface RealignPanelProps {
+  proposals: MaxFinRealignProposal[]; selection: MaxFinRealignSelection; disabled: boolean; currency: CurrencyCode; tx: MaxFinRealignTextFn;
+  onToggle: (id: string, checked: boolean) => void;
+}
+
+/**
+ * One card per realignment proposal of the preview (a block of rows the sheet moved): what moves, why it may be
+ * ambiguous, what it needs, and a "Realinhar" checkbox. Only the position of the row changes.
+ */
+const RealignPanel = ({ proposals, selection, disabled, currency, tx, onToggle }: RealignPanelProps) => {
+  if (proposals.length === 0) return null;
+  return (
+    <section aria-label={tx('maxfinRealignTitle')} className="rounded-md border border-blue-200 dark:border-blue-900/60 bg-blue-50/50 dark:bg-blue-900/10 p-4 space-y-3 min-w-0">
+      <div>
+        <h4 className={H4_CLS}>{tx('maxfinRealignTitle')}</h4>
+        <p className={`mt-1 text-xs ${MUTED_CLS}`}>{tx('maxfinRealignNote')}</p>
+      </div>
+      <ul className="space-y-2">
+        {proposals.map((proposal) => {
+          const view = realignCardView(proposals, selection, proposal.id, tx);
+          if (!view) return null;
+          const unavailable = view.unavailableText;
+          return (
+            <li key={view.id} className="rounded-md border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3 min-w-0">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0 space-y-1">
+                  <p className="text-sm font-medium text-gray-900 dark:text-white">
+                    {view.sectionLabel} <span className={`font-normal ${MUTED_CLS}`}>· {view.range}</span>
+                  </p>
+                  <p className="text-sm text-gray-900 dark:text-white">{view.movesText}</p>
+                  {view.removedText && <p className={`text-xs ${MUTED_CLS}`}>{view.removedText}</p>}
+                  {view.insertedText && <p className={`text-xs ${MUTED_CLS}`}>{view.insertedText}</p>}
+                  {view.ambiguous && (
+                    <p className="text-xs text-orange-700 dark:text-orange-300">
+                      <Chip tone="orange">{tx('maxfinRealignAmbiguous')}</Chip> {view.ambiguousText}
+                    </p>
+                  )}
+                  {view.requiresText && <p className={`text-xs ${MUTED_CLS}`}>{view.requiresText}</p>}
+                  {view.tickFirstText && <p className="text-xs text-orange-700 dark:text-orange-300">{view.tickFirstText}</p>}
+                  {unavailable && <p className="text-xs text-red-600 dark:text-red-400">{unavailable}</p>}
+                </div>
+                <label className="inline-flex items-center gap-2 min-h-[44px] sm:min-h-0 text-sm text-gray-900 dark:text-white">
+                  <input type="checkbox" checked={view.checked} disabled={disabled || (view.tickDisabled && !view.checked)} className={CHECKBOX_CLS}
+                    aria-label={tx('maxfinRealignApplyLabel', { section: view.sectionLabel, first: proposal.firstLine, last: proposal.lastLine })}
+                    onChange={(e) => onToggle(view.id, e.target.checked)} />
+                  {tx('maxfinRealignApply')}
+                </label>
+              </div>
+              <details className="mt-2">
+                <summary className={`cursor-pointer text-xs ${MUTED_CLS}`}>{tx('maxfinRealignShowMoves')}</summary>
+                <ul className={`mt-1 space-y-0.5 text-xs list-disc list-inside ${MUTED_CLS}`}>
+                  {realignMoveLines(proposal, (value) => formatCurrency(value, currency), tx).map((line) => <li key={line.key}>{line.text}</li>)}
+                </ul>
+              </details>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
   );
 };
 
@@ -530,13 +625,21 @@ const SkippedList = ({ skipped }: { skipped: MaxFinSkippedRow[] }) => {
 interface PreviewFooterProps {
   built: MaxFinBuiltConfirm; blocker: MaxFinConfirmBlocker | null; armed: boolean; busy: boolean; isConfirming: boolean;
   confirmError: string | null; currency: CurrencyCode; onBack: () => void; onConfirm: () => void; onRefresh: () => void;
+  tx: MaxFinRealignTextFn;
 }
+
+/** What the ticked realignments will do and what stays pending (nothing when the preview had no proposal). */
+const RealignFooterNotes = ({ totals, tx }: { totals: MaxFinRealignTotals; tx: MaxFinRealignTextFn }) => (
+  <>
+    {realignFooterLines(totals, tx).map((line) => <p key={line} className={MUTED_CLS}>{line}</p>)}
+  </>
+);
 
 const REPLACED_ONE = 'linha substitui dados já registrados';
 const REPLACED_MANY = 'linhas substituem dados já registrados';
 
 /** Numbers come from buildConfirmPayload, the same rows the request is built from. */
-const PreviewFooter = ({ built, blocker, armed, busy, isConfirming, confirmError, currency, onBack, onConfirm, onRefresh }: PreviewFooterProps) => {
+const PreviewFooter = ({ built, blocker, armed, busy, isConfirming, confirmError, currency, onBack, onConfirm, onRefresh, tx }: PreviewFooterProps) => {
   const { totals } = built;
   // After a failed (possibly partial) confirm the preview is stale: nothing about the invoice is promised until it is refreshed.
   const stale = blocker?.code === 'needs-refresh';
@@ -558,6 +661,7 @@ const PreviewFooter = ({ built, blocker, armed, busy, isConfirming, confirmError
           {totals.invoice.willPay && !stale && (
             <p className={MUTED_CLS}>Fatura de {formatCurrency(totals.invoice.amount, currency)} será registrada.</p>
           )}
+          <RealignFooterNotes totals={totals.realign} tx={tx} />
         </div>
         <div className="flex gap-3">
           <button type="button" onClick={onBack} disabled={busy} className={BTN_SECONDARY}>
@@ -594,9 +698,13 @@ const PreviewFooter = ({ built, blocker, armed, busy, isConfirming, confirmError
 // Step 3: result (only when there is something to read)
 // ---------------------------------------------------------------------------
 
-interface ResultStepProps { result: MaxFinConfirmResponse; summary: string; onClose: () => void }
+interface ResultStepProps {
+  result: MaxFinConfirmResponse; summary: string; onClose: () => void;
+  /** One line per realignment block the server decided on (see realignOutcomeLines). */
+  realignLines: string[]; tx: MaxFinRealignTextFn;
+}
 
-const ResultStep = ({ result, summary, onClose }: ResultStepProps) => {
+const ResultStep = ({ result, summary, onClose, realignLines, tx }: ResultStepProps) => {
   const warnings = result.warnings ?? [];
   const consumed = result.consumedFutureInstallments ?? 0;
   return (
@@ -605,6 +713,14 @@ const ResultStep = ({ result, summary, onClose }: ResultStepProps) => {
         <h4 className={H4_CLS}>Importação concluída</h4>
         <p className="mt-1 text-sm text-gray-900 dark:text-white">{summary}</p>
       </div>
+      {realignLines.length > 0 && (
+        <div>
+          <h4 className={`${H4_CLS} mb-1`}>{tx('maxfinRealignResultTitle')}</h4>
+          <ul className="text-sm text-gray-900 dark:text-white list-disc list-inside space-y-1">
+            {realignLines.map((line, index) => <li key={index}>{line}</li>)}
+          </ul>
+        </div>
+      )}
       {warnings.length > 0 && (
         <div>
           <h4 className={`${H4_CLS} mb-1`}>{countLabel(warnings.length, 'aviso', 'avisos')}</h4>
@@ -698,11 +814,11 @@ const WorkbookOptionsBar = ({ workbook, options, isRefreshing, disabled, onChang
 
 interface MonthsTableProps {
   workbook: MaxFinWorkbookPreviewResponse; plan: MaxFinWorkbookPlan; checkedMonths: readonly string[]; stale: boolean; disabled: boolean;
-  currency: CurrencyCode; onToggleMonth: (monthKey: string, checked: boolean) => void;
+  currency: CurrencyCode; onToggleMonth: (monthKey: string, checked: boolean) => void; tx: MaxFinRealignTextFn;
 }
 
 /** Every sheet in workbook order: months can be ticked, the other sheets say why they were skipped. */
-const MonthsTable = ({ workbook, plan, checkedMonths, stale, disabled, currency, onToggleMonth }: MonthsTableProps) => {
+const MonthsTable = ({ workbook, plan, checkedMonths, stale, disabled, currency, onToggleMonth, tx }: MonthsTableProps) => {
   const planByKey = new Map(plan.months.map((month) => [month.monthKey, month]));
   const columns = stale ? 5 : 6;
   return (
@@ -764,6 +880,9 @@ const MonthsTable = ({ workbook, plan, checkedMonths, stale, disabled, currency,
                         <Chip tone="yellow">{countLabel(counts.duplicate, 'duplicada', 'duplicadas')}</Chip>
                         <Chip tone="orange">{countLabel(counts.changed, 'alterada', 'alteradas')}</Chip>
                         {counts.matchesRecurring > 0 && <Chip tone="blue">{countLabel(counts.matchesRecurring, 'recorrente', 'recorrentes')}</Chip>}
+                        {month.built.totals.realign.total > 0 && (
+                          <Chip tone="blue" title={tx('maxfinRealignTitle')}>{realignPlural(tx, 'maxfinRealignBlocks', month.built.totals.realign.total)}</Chip>
+                        )}
                         <span className={`text-xs ${MUTED_CLS}`}>{month.built.totals.count} a importar</span>
                         {month.preview.warnings.length > 0 && (
                           <Chip tone="yellow" title={month.preview.warnings.join('\n')}>
@@ -801,14 +920,20 @@ interface MonthDetailProps {
   accountName: (id: string) => string; currency: CurrencyCode; onDetailChange: (id: string) => void;
   onToggleRow: (monthId: string, key: string, checked: boolean) => void; onSelectAllNew: (monthId: string) => void;
   onClear: (monthId: string) => void;
+  /** Realignment ticks of every month, and the toggle of one proposal of one month. */
+  realignSelection: MaxFinWorkbookRealignSelection; onToggleRealign: (monthId: string, id: string, checked: boolean) => void;
+  tx: MaxFinRealignTextFn;
 }
 
 /** One month at a time: its blocks, invoice, rows (with their own selection) and skipped lines. */
 const MonthDetail = ({
   plan, detailId, selection, stale, disabled, accountName, currency, onDetailChange, onToggleRow, onSelectAllNew, onClear,
+  realignSelection, onToggleRealign, tx,
 }: MonthDetailProps) => {
   const month = plan.months.find((m) => m.id === detailId) ?? plan.months[0];
   if (!month) return null;
+  const proposals = realignProposals(month.preview);
+  const monthRealign = realignSelection[month.id] ?? {};
   const source = monthSourceLabel(month.preview.monthSource);
   return (
     <div className="space-y-4 min-w-0 rounded-md border border-gray-200 dark:border-gray-800 p-4">
@@ -826,9 +951,11 @@ const MonthDetail = ({
         label={countLabel(month.preview.warnings.length, 'aviso deste mês', 'avisos deste mês')} />
       <SectionSummary preview={month.preview} accountName={accountName} currency={currency} />
       {!stale && <InvoiceNotice preview={month.preview} selection={month.built.totals.invoice} accountName={accountName} currency={currency} />}
+      <RealignPanel proposals={proposals} selection={monthRealign} disabled={disabled} currency={currency} tx={tx}
+        onToggle={(id, checked) => onToggleRealign(month.id, id, checked)} />
       <RowsTable preview={month.preview} selected={selection[month.id] ?? {}} accountName={accountName} currency={currency} disabled={disabled}
         onToggle={(key, checked) => onToggleRow(month.id, key, checked)} onSelectAllNew={() => onSelectAllNew(month.id)}
-        onClear={() => onClear(month.id)} />
+        onClear={() => onClear(month.id)} proposals={proposals} realignSelection={monthRealign} tx={tx} />
       <SkippedList key={`skipped-${month.id}`} skipped={month.preview.skipped} />
     </div>
   );
@@ -837,11 +964,12 @@ const MonthDetail = ({
 interface WorkbookFooterProps {
   plan: MaxFinWorkbookPlan; blocker: MaxFinWorkbookBlocker | null; armed: boolean; busy: boolean; running: boolean; progress: string | null;
   confirmError: string | null; currency: CurrencyCode; onBack: () => void; onConfirm: () => void; onRefresh: () => void;
+  tx: MaxFinRealignTextFn;
 }
 
 /** Numbers come from buildWorkbookPlan: the same steps the run sends. */
 const WorkbookFooter = ({
-  plan, blocker, armed, busy, running, progress, confirmError, currency, onBack, onConfirm, onRefresh,
+  plan, blocker, armed, busy, running, progress, confirmError, currency, onBack, onConfirm, onRefresh, tx,
 }: WorkbookFooterProps) => {
   const { totals } = plan;
   // After a failed run the preview is stale: nothing about the invoices is promised until it is refreshed.
@@ -873,6 +1001,9 @@ const WorkbookFooter = ({
               {countLabel(totals.invoiceCount, 'fatura será registrada', 'faturas serão registradas')}: {formatCurrency(totals.invoiceTotal, currency)}.
             </p>
           )}
+          <RealignFooterNotes
+            totals={{ total: totals.realignBlocks + totals.realignPending, applied: totals.realignBlocks, declined: totals.realignPending, moves: totals.realignMoves }}
+            tx={tx} />
           {totals.emptyMonths.length > 0 && (
             <p className={`text-xs ${MUTED_CLS}`}>Sem linhas para importar: {totals.emptyMonths.join(', ')}.</p>
           )}
@@ -910,7 +1041,7 @@ const WorkbookFooter = ({
 };
 
 /** After a run with something to read: one line per month and the warnings, each with its month. */
-const WorkbookResultStep = ({ summary, onClose }: { summary: MaxFinWorkbookRunSummary; onClose: () => void }) => (
+const WorkbookResultStep = ({ summary, onClose, tx }: { summary: MaxFinWorkbookRunSummary; onClose: () => void; tx: MaxFinRealignTextFn }) => (
   <div className="space-y-4 min-w-0">
     <div>
       <h4 className={H4_CLS}>Importação concluída</h4>
@@ -918,6 +1049,14 @@ const WorkbookResultStep = ({ summary, onClose }: { summary: MaxFinWorkbookRunSu
         {summary.months.map((month) => month.line && <li key={month.monthKey}>{month.line}</li>)}
       </ul>
     </div>
+    {summary.months.some((month) => month.realignLines.length > 0) && (
+      <div>
+        <h4 className={`${H4_CLS} mb-1`}>{tx('maxfinRealignResultTitle')}</h4>
+        <ul className="text-sm text-gray-900 dark:text-white list-disc list-inside space-y-1">
+          {summary.months.flatMap((month) => month.realignLines.map((line, index) => <li key={`${month.monthKey}-${index}`}>{line}</li>))}
+        </ul>
+      </div>
+    )}
     {summary.warnings.length > 0 && (
       <div>
         <h4 className={`${H4_CLS} mb-1`}>{countLabel(summary.warnings.length, 'aviso', 'avisos')}</h4>
@@ -956,6 +1095,9 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp, initi
   const householdId = householdIdProp ?? defaultHouseholdId;
   const { success, error: showError, showToast } = useToastContext();
   const { baseCurrency } = useCurrency();
+  // Texts of the shifted rows / realignment part (pt-BR and en-US in the i18n files; other locales fall back to Portuguese).
+  const { t } = useI18n();
+  const tx = useMemo(() => realignTextFor(t), [t]);
 
   const { data: accountsData, isLoading: isLoadingAccounts } = useAccounts({ householdId: householdId ?? '' });
   const accounts = useMemo(() => accountsData?.accounts ?? [], [accountsData]);
@@ -987,7 +1129,10 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp, initi
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   // Step 3 state: only set when the confirmed import has something to read (warnings, skipped, consumed).
-  const [result, setResult] = useState<{ data: MaxFinConfirmResponse; summary: string } | null>(null);
+  const [result, setResult] = useState<{ data: MaxFinConfirmResponse; summary: string; realignLines: string[] } | null>(null);
+  // Realignment ticks (proposal id -> ticked): of the monthly preview, and per month of the workbook.
+  const [realignSelection, setRealignSelection] = useState<MaxFinRealignSelection>({});
+  const [workbookRealign, setWorkbookRealign] = useState<MaxFinWorkbookRealignSelection>({});
   // Workbook (.xlsx) state. workbook.options is the source of truth for its options; pendingWorkbookOptions only
   // shows the change the user just made while the workbook preview is being recomputed.
   const [workbook, setWorkbook] = useState<MaxFinWorkbookPreviewResponse | null>(null);
@@ -1003,6 +1148,9 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp, initi
   const lastRowsRef = useRef<MaxFinPreviewRow[]>([]);
   // Same, per month of the workbook (months that left the selection are kept for when they come back).
   const lastMonthRowsRef = useRef<MaxFinWorkbookRowsByMonth>({});
+  // Proposals of the last preview (and per month of the workbook), to keep the ticks of the user across re-runs.
+  const lastProposalsRef = useRef<MaxFinRealignProposal[]>([]);
+  const lastMonthProposalsRef = useRef<MaxFinWorkbookProposalsByMonth>({});
   // Synchronous twin of `running`: guards closing and a second run before React re-renders.
   const runningRef = useRef(false);
   // Bumped when the dialog closes: a run in progress stops before its next month.
@@ -1049,6 +1197,8 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp, initi
     setFormError(handedProblem);
     setConfirmError(null);
     setResult(null);
+    setRealignSelection({});
+    setWorkbookRealign({});
     setWorkbook(null);
     setPendingWorkbookOptions(null);
     setWorkbookSelection({});
@@ -1056,6 +1206,8 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp, initi
     setWorkbookResult(null);
     lastRowsRef.current = [];
     lastMonthRowsRef.current = {};
+    lastProposalsRef.current = [];
+    lastMonthProposalsRef.current = {};
     return () => {
       seqRef.current += 1;
       runTokenRef.current += 1;
@@ -1122,17 +1274,18 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp, initi
   );
   // One source for the footer and the request: the payload and the numbers come from the same rows.
   const built = useMemo(
-    () => (preview ? buildConfirmPayload(preview, selected, effectiveChoices, { accounts, customIdsByType }) : null),
-    [preview, selected, effectiveChoices, accounts, customIdsByType],
+    () => (preview ? buildConfirmPayload(preview, selected, effectiveChoices, { accounts, customIdsByType }, realignSelection) : null),
+    [preview, selected, effectiveChoices, accounts, customIdsByType, realignSelection],
   );
+  const proposals = useMemo(() => realignProposals(preview), [preview]);
   // Workbook: one category table for every month (the merged map), and one plan for the table, the footer and the run.
   const workbookChoices = useMemo(
     () => (workbook ? resolveCategoryChoices(workbook.categoryMap, categoryChoices, {}, customIdsByType) : {}),
     [workbook, categoryChoices, customIdsByType],
   );
   const plan = useMemo(
-    () => (workbook ? buildWorkbookPlan(workbook, workbookSelection, workbookChoices, { accounts, customIdsByType }) : null),
-    [workbook, workbookSelection, workbookChoices, accounts, customIdsByType],
+    () => (workbook ? buildWorkbookPlan(workbook, workbookSelection, workbookChoices, { accounts, customIdsByType }, workbookRealign) : null),
+    [workbook, workbookSelection, workbookChoices, accounts, customIdsByType, workbookRealign],
   );
 
   // Anything that changes what would be sent (rows, targets, accounts, options) cancels a pending "replace" confirmation.
@@ -1171,9 +1324,12 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp, initi
       saveAccountIds(householdId, accountIds);
       const prevRows = lastRowsRef.current;
       lastRowsRef.current = data.rows;
+      const prevProposals = lastProposalsRef.current;
+      lastProposalsRef.current = realignProposals(data);
       setPreview(data);
       setConfirmError(null);
       setSelected((prev) => reconcileSelection(prevRows, prev, data.rows));
+      setRealignSelection((prev) => reconcileRealignSelection(prevProposals, prev, lastProposalsRef.current));
       setCategoryChoices((prev) => resolveCategoryChoices(data.categoryMap, prev, loadSavedCategoryChoices(householdId), customIdsRef.current));
       if (data.month) setMonthInput(monthToInputValue(data.month));
       return 'ok';
@@ -1250,6 +1406,9 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp, initi
 
   const handleToggleRow = (key: string, checked: boolean) => setSelected((prev) => ({ ...prev, [key]: checked }));
 
+  const handleToggleRealign = (id: string, checked: boolean) =>
+    setRealignSelection((prev) => toggleRealign(proposals, prev, id, checked));
+
   const handleSelectAllNew = () => {
     if (!preview) return;
     setSelected((prev) => {
@@ -1286,11 +1445,12 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp, initi
     setArmed(false);
     try {
       const data = await confirmMutation.mutateAsync(built.payload);
-      const summary = buildConfirmSummary(data, (value) => formatCurrency(value, baseCurrency));
+      const summary = buildConfirmSummary(data, (value) => formatCurrency(value, baseCurrency), tx);
       success(summary);
       if (!mountedRef.current) return;
-      if (confirmResultNeedsReview(data)) setResult({ data, summary });
-      else onClose();
+      if (confirmResultNeedsReview(data)) {
+        setResult({ data, summary, realignLines: realignOutcomeLines(data.realignments, built.payload.realignments, tx) });
+      } else onClose();
     } catch (err: unknown) {
       const message = confirmFailureMessage(getErrorMessage(err, 'Não foi possível confirmar a importação.'));
       showToast(message, 'error', ERROR_TOAST_MS);
@@ -1312,7 +1472,10 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp, initi
       saveAccountIds(householdId, accountIds);
       const prevRows = lastMonthRowsRef.current;
       lastMonthRowsRef.current = rowsByMonth(prevRows, data.months);
+      const prevProposals = lastMonthProposalsRef.current;
+      lastMonthProposalsRef.current = proposalsByMonth(prevProposals, data.months);
       setWorkbook(data);
+      setWorkbookRealign((prev) => reconcileWorkbookRealign(prevProposals, prev, data.months));
       setConfirmError(null);
       setWorkbookSelection((prev) => reconcileWorkbookSelection(prevRows, prev, data.months));
       setCategoryChoices((prev) => resolveCategoryChoices(data.categoryMap, prev, loadSavedCategoryChoices(householdId), customIdsRef.current));
@@ -1348,6 +1511,11 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp, initi
 
   const handleToggleWorkbookRow = (monthId: string, key: string, checked: boolean) =>
     setWorkbookSelection((prev) => ({ ...prev, [monthId]: { ...prev[monthId], [key]: checked } }));
+
+  const handleToggleWorkbookRealign = (monthId: string, id: string, checked: boolean) => {
+    const monthProposals = realignProposals(plan?.months.find((month) => month.id === monthId)?.preview);
+    setWorkbookRealign((prev) => ({ ...prev, [monthId]: toggleRealign(monthProposals, prev[monthId] ?? {}, id, checked) }));
+  };
 
   const monthRows = (monthId: string): MaxFinPreviewRow[] => plan?.months.find((month) => month.id === monthId)?.preview.rows ?? [];
 
@@ -1393,7 +1561,7 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp, initi
       for (let index = 0; index < steps.length; index += 1) {
         if (!isLive()) {
           // The dialog went away mid-run: no further month is sent; say what was stored.
-          showToast(workbookStopMessage(summarizeWorkbookRun(steps, results, null, formatAmount)), 'error', ERROR_TOAST_MS);
+          showToast(workbookStopMessage(summarizeWorkbookRun(steps, results, null, formatAmount, tx)), 'error', ERROR_TOAST_MS);
           return;
         }
         setProgress(workbookProgressLabel(steps[index].label, index, steps.length));
@@ -1408,8 +1576,8 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp, initi
           return;
         }
       }
-      const summary = summarizeWorkbookRun(steps, results, null, formatAmount);
-      success(workbookRunToast(summary));
+      const summary = summarizeWorkbookRun(steps, results, null, formatAmount, tx);
+      success(workbookRunToast(summary, tx));
       if (!isLive()) return;
       if (summary.needsReview) setWorkbookResult(summary);
       else onClose();
@@ -1444,7 +1612,7 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp, initi
           {formError && <p role="alert" className="mb-4 text-sm text-red-600 dark:text-red-400">{formError}</p>}
 
           {result ? (
-            <ResultStep result={result.data} summary={result.summary} onClose={requestClose} />
+            <ResultStep result={result.data} summary={result.summary} onClose={requestClose} realignLines={result.realignLines} tx={tx} />
           ) : preview && built ? (
             <div className="space-y-5 min-w-0">
               <PreviewHeader preview={preview} options={shownOptions} monthInput={monthInput} isRefreshing={isRefreshing} disabled={busy}
@@ -1464,16 +1632,19 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp, initi
                 )}
                 <CategoryMapTable entries={preview.categoryMap} choices={effectiveChoices} customCategories={customCategories} disabled={busy}
                   onChange={handleCategoryChange} />
+                <RealignPanel proposals={proposals} selection={realignSelection} disabled={busy} currency={baseCurrency} tx={tx}
+                  onToggle={handleToggleRealign} />
                 <RowsTable preview={preview} selected={selected} accountName={accountName} currency={baseCurrency} disabled={busy}
-                  onToggle={handleToggleRow} onSelectAllNew={handleSelectAllNew} onClear={handleClear} />
+                  onToggle={handleToggleRow} onSelectAllNew={handleSelectAllNew} onClear={handleClear}
+                  proposals={proposals} realignSelection={realignSelection} tx={tx} />
                 <SkippedList skipped={preview.skipped} />
               </div>
 
               <PreviewFooter built={built} blocker={blocker} armed={armed} busy={busy} isConfirming={isConfirming} confirmError={confirmError}
-                currency={baseCurrency} onBack={handleBack} onConfirm={() => void handleConfirm()} onRefresh={() => void handleRefresh()} />
+                currency={baseCurrency} onBack={handleBack} onConfirm={() => void handleConfirm()} onRefresh={() => void handleRefresh()} tx={tx} />
             </div>
           ) : workbookResult ? (
-            <WorkbookResultStep summary={workbookResult} onClose={requestClose} />
+            <WorkbookResultStep summary={workbookResult} onClose={requestClose} tx={tx} />
           ) : workbook && plan && shownWorkbookOptions ? (
             <div className="space-y-5 min-w-0">
               <WorkbookOptionsBar workbook={workbook} options={shownWorkbookOptions} isRefreshing={isRefreshing} disabled={busy}
@@ -1491,17 +1662,18 @@ const ImportMaxFinDialog = ({ open, onClose, householdId: householdIdProp, initi
               {/* Kept visible (dimmed) while the preview is being recomputed. */}
               <div className={`space-y-5 min-w-0 transition-opacity ${isRefreshing ? 'opacity-60' : ''}`} aria-busy={isRefreshing}>
                 <MonthsTable workbook={workbook} plan={plan} checkedMonths={shownWorkbookOptions.months} stale={workbookStale} disabled={busy}
-                  currency={baseCurrency} onToggleMonth={handleToggleMonth} />
+                  currency={baseCurrency} onToggleMonth={handleToggleMonth} tx={tx} />
                 <CategoryMapTable entries={workbook.categoryMap} choices={workbookChoices} customCategories={customCategories} disabled={busy}
                   onChange={handleCategoryChange} />
                 <MonthDetail plan={plan} detailId={detailId} selection={workbookSelection} stale={workbookStale} disabled={busy}
                   accountName={accountName} currency={baseCurrency} onDetailChange={setDetailMonth} onToggleRow={handleToggleWorkbookRow}
-                  onSelectAllNew={handleSelectAllNewInMonth} onClear={handleClearMonth} />
+                  onSelectAllNew={handleSelectAllNewInMonth} onClear={handleClearMonth} realignSelection={workbookRealign}
+                  onToggleRealign={handleToggleWorkbookRealign} tx={tx} />
               </div>
 
               <WorkbookFooter plan={plan} blocker={workbookBlocker} armed={armed} busy={busy} running={running} progress={progress}
                 confirmError={confirmError} currency={baseCurrency} onBack={handleBack} onConfirm={() => void handleWorkbookConfirm()}
-                onRefresh={() => void handleWorkbookRefresh()} />
+                onRefresh={() => void handleWorkbookRefresh()} tx={tx} />
             </div>
           ) : (
             <SetupStep file={file} accountIds={accountIds} accounts={accounts} isLoadingAccounts={isLoadingAccounts} isPreviewing={isPreviewing}

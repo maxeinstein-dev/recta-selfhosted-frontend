@@ -17,6 +17,9 @@ import { BudgetList } from '../components/budgets';
 import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
 import { useBudgetSummary } from '../hooks/api/useBudgets';
 import { budgetRealized, summaryMonthOf, summaryRowsByBudget } from '../utils/budgetOwnShare';
+import { budgetsInForce, editTarget, isInherited, monthKeyOfDate, monthLabel, removalFor } from '../utils/budgetPeriod';
+import { useUpdateBudget } from '../hooks/api/useBudgets';
+import { useToastContext } from '../context/ToastContext';
 
 const Budgets = () => {
   const { budgets, deleteBudget, loading } = useTransactions();
@@ -60,20 +63,12 @@ const Budgets = () => {
   const summary = useBudgetSummary({ householdId: householdId ?? '', month: summaryMonthOf(selectedMonth) });
   const summaryRows = useMemo(() => summaryRowsByBudget(summary.data?.budgets), [summary.data]);
 
-  const monthBudgets = useMemo(() => {
-    if (!budgets || budgets.length === 0) {
-      return [];
-    }
-    
-    const filtered = budgets.filter(b => {
-      if (!b.month) return false;
-      const budgetMonth = startOfMonth(b.month);
-      const selected = startOfMonth(selectedMonth);
-      return budgetMonth.getTime() === selected.getTime();
-    });
-    
-    return filtered;
-  }, [budgets, selectedMonth]);
+  // A budget repeats from its month on: the server says which ones are in force in the month shown.
+  const selectedKey = monthKeyOfDate(selectedMonth);
+  const monthBudgets = useMemo(
+    () => budgetsInForce(budgets ?? [], new Set(summaryRows.keys())),
+    [budgets, summaryRows],
+  );
 
   const budgetStatus = useMemo(() => {
     return monthBudgets.map(budget => {
@@ -87,19 +82,34 @@ const Budgets = () => {
         ownSpent: realized?.ownSpent,
         // No answer of the API for this budget (loading or failed): the item shows that instead of a number.
         pending: realized === null,
+        // In force since an earlier month: shown as "since MM/YYYY"
+        since: isInherited(summaryRows.get(budget.id ?? '')?.month, selectedKey) ? monthLabel(summaryRows.get(budget.id ?? '')!.month!) : undefined,
       };
     });
-  }, [monthBudgets, summaryRows]);
+  }, [monthBudgets, summaryRows, selectedKey]);
 
   const handleDelete = (id: string) => {
     setConfirmModal({ isOpen: true, budgetId: id });
   };
 
+  // Removing a budget shown in a later month ends it before that month (earlier months keep it); in its own month, deletes it.
+  const updateBudgetApi = useUpdateBudget();
+  const { success: showSuccess, error: showError } = useToastContext();
+  const removal = confirmModal.budgetId ? removalFor(summaryRows.get(confirmModal.budgetId)?.month, selectedKey) : null;
   const handleConfirmDelete = async () => {
-    if (confirmModal.budgetId) {
-      await deleteBudget(confirmModal.budgetId);
-      setConfirmModal({ isOpen: false, budgetId: null });
+    const id = confirmModal.budgetId;
+    if (!id || !removal) return;
+    try {
+      if (removal.kind === 'end') {
+        await updateBudgetApi.mutateAsync({ id, endMonth: removal.endMonth });
+        showSuccess(t.budgetEnded);
+      } else {
+        await deleteBudget(id);
+      }
+    } catch (err) {
+      showError(err instanceof Error ? err.message : t.errorSavingBudget);
     }
+    setConfirmModal({ isOpen: false, budgetId: null });
   };
 
   const handleCloseModal = () => {
@@ -107,7 +117,8 @@ const Budgets = () => {
     setEditingBudget(null);
   };
 
-  if (loading) {
+  // Until the server says which budgets are in force, the list is not known: show the skeleton, not an empty month
+  if (loading || (!!householdId && summary.isPending)) {
     return <BudgetsSkeleton />;
   }
 
@@ -147,7 +158,8 @@ const Budgets = () => {
         onRetryRealized={() => void summary.refetch()}
         baseCurrency={baseCurrency}
         onEdit={(budget) => {
-          setEditingBudget(budget);
+          // Inherited from an earlier month: the edit is a new amount from the month shown on
+          setEditingBudget(editTarget(budget, summaryRows.get(budget.id ?? '')?.month, selectedMonth));
           setIsModalOpen(true);
         }}
         onDelete={handleDelete}
@@ -165,8 +177,8 @@ const Budgets = () => {
         isOpen={confirmModal.isOpen}
         onClose={() => setConfirmModal({ isOpen: false, budgetId: null })}
         onConfirm={handleConfirmDelete}
-        title={t.delete}
-        message={t.confirmDeleteBudget}
+        title={removal?.kind === 'end' ? t.budgetEnd : t.delete}
+        message={removal?.kind === 'end' ? t.confirmEndBudget.replace('{month}', monthLabel(selectedKey)) : t.confirmDeleteBudget}
         variant="danger"
       />
     </div>

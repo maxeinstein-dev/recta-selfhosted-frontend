@@ -15,6 +15,8 @@ interface BudgetItemProps {
     ownSpent?: number;
     /** The API has not answered the realized amount of this budget. */
     pending?: boolean;
+    /** In force since an earlier month ('MM/YYYY'). */
+    since?: string;
   };
   baseCurrency: string;
   onEdit: (budget: Budget) => void;
@@ -36,6 +38,9 @@ export const BudgetItem = ({
           <h3 className="text-lg font-light tracking-tight text-gray-900 dark:text-white mb-4">
             {isGeneralBudget(budget) ? t.general : budget.category}
           </h3>
+          {budget.since && (
+            <p className="-mt-3 mb-4 text-xs font-light text-gray-500 dark:text-gray-400">{t.budgetSince.replace('{month}', budget.since)}</p>
+          )}
           {budget.type === TransactionType.EXPENSE && (
             <p className="-mt-3 mb-4 text-xs font-light text-gray-500 dark:text-gray-400">
               {budget.measure === 'OWN_SHARE' ? t.budgetMeasuredOwn : t.budgetMeasuredWhole}

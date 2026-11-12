@@ -3,13 +3,13 @@ import { useTransactions } from '../../context/TransactionsContext';
 import { useCurrency } from '../../context/CurrencyContext';
 import { useI18n } from '../../context/I18nContext';
 import { formatCurrency } from '../../utils/format';
-import { startOfMonth } from 'date-fns';
 import { TransactionType, getCategoryDisplayName, CustomCategoryInfo } from '../../lib/enums';
 import { Target, AlertCircle, CheckCircle2 } from 'lucide-react';
 import { useCategories } from '../../hooks/api/useCategories';
 import { useDefaultHousehold } from '../../hooks/useDefaultHousehold';
 import { useBudgetSummary } from '../../hooks/api/useBudgets';
 import { budgetRealized, summaryMonthOf, summaryRowsByBudget } from '../../utils/budgetOwnShare';
+import { budgetsInForce } from '../../utils/budgetPeriod';
 
 interface BudgetVsRealizedWidgetProps {
   selectedMonth: Date;
@@ -41,11 +41,8 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
   const summaryRows = useMemo(() => summaryRowsByBudget(summary.data?.budgets), [summary.data]);
 
   const budgetData = useMemo(() => {
-    const monthBudgets = budgets.filter((b) => {
-      const budgetMonth = startOfMonth(b.month);
-      const selected = startOfMonth(selectedMonth);
-      return budgetMonth.getTime() === selected.getTime();
-    });
+    // A budget repeats from its month on: the server says which ones are in force in the month shown
+    const monthBudgets = budgetsInForce(budgets, new Set(summaryRows.keys()));
 
     if (monthBudgets.length === 0) return [];
 
@@ -81,7 +78,7 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
       // Se mesmo status, ordenar por porcentagem (maior primeiro)
       return b.percentage - a.percentage;
     });
-  }, [budgets, selectedMonth, summaryRows]);
+  }, [budgets, summaryRows]);
 
   if (budgetData.length === 0) {
     return (

@@ -12,6 +12,8 @@ interface BudgetListProps {
     ownSpent?: number;
     /** The API has not answered the realized amount of this budget. */
     pending?: boolean;
+    /** In force since an earlier month ('MM/YYYY'). */
+    since?: string;
   }>;
   /** The realized amounts could not be loaded. */
   realizedFailed?: boolean;

@@ -542,6 +542,10 @@ export interface Translations {
   budgetOwnShareOfLimit: string;
   budgetRealizedFailed: string;
   budgetRealizedRetry: string;
+  budgetSince: string;
+  budgetEnd: string;
+  confirmEndBudget: string;
+  budgetEnded: string;
   budgetMeasureLabel: string;
   budgetMeasureWhole: string;
   budgetMeasureOwn: string;

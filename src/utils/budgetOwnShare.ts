@@ -15,6 +15,8 @@ export interface OwnShareSummaryRow {
   measure?: string;
   /** The amount the limit is compared with, as the API computed it. */
   measured?: number;
+  /** First month in force ('YYYY-MM'): the budget repeats from it on. */
+  month?: string;
 }
 
 export interface OwnShare {

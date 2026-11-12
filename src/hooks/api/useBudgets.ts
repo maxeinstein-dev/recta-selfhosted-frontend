@@ -11,6 +11,8 @@ export interface Budget {
   month: string;
   type: CategoryType;
   measure?: 'WHOLE' | 'OWN_SHARE';
+  /** Last month in force ('YYYY-MM-DD', first day); null or absent = no end. */
+  endMonth?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -27,6 +29,9 @@ export interface BudgetSummary {
     /** How the budget is measured, and the amount the limit is compared with. */
     measure?: 'WHOLE' | 'OWN_SHARE';
     measured?: number;
+    /** First month in force and last one ('YYYY-MM'; null = no end). Absent on an older API. */
+    month?: string;
+    endMonth?: string | null;
     remaining: number;
     percentage: number;
     isOverBudget: boolean;

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react';
 import { X } from 'lucide-react';
 import { useI18n } from '../../context/I18nContext';
 import { useCurrency } from '../../context/CurrencyContext';
@@ -121,15 +121,23 @@ const AddTransactionSheet = ({ onClose, onOpenFullForm }: AddTransactionSheetPro
     .find((part) => part.type === 'currency')?.value ?? currency.symbol;
 
   // Digits enter from the right; the caret stays at the end whatever the touch does (the prototype's rule).
-  const keepCaretAtEnd = (el: HTMLInputElement) => {
-    setTimeout(() => {
-      try {
-        el.setSelectionRange(el.value.length, el.value.length);
-      } catch {
-        // Some engines refuse a selection on this input; the digits still enter from the right.
-      }
-    }, 0);
+  // Moved at once and again after the browser's own caret placement (focus and touch set it after the event).
+  const moveCaretToEnd = (el: HTMLInputElement) => {
+    try {
+      el.setSelectionRange(el.value.length, el.value.length);
+    } catch {
+      // Some engines refuse a selection on this input; the digits still enter from the right.
+    }
   };
+  const keepCaretAtEnd = (el: HTMLInputElement) => {
+    moveCaretToEnd(el);
+    setTimeout(() => moveCaretToEnd(el), 0);
+  };
+  // After every change of the amount the caret goes to the end before the next key.
+  useLayoutEffect(() => {
+    const el = amountRef.current;
+    if (el && document.activeElement === el) moveCaretToEnd(el);
+  }, [amountText]);
 
   const onAmountChange = (e: ChangeEvent<HTMLInputElement>) => {
     const cents = amountDigitsToCents(e.target.value);
@@ -208,7 +216,7 @@ const AddTransactionSheet = ({ onClose, onOpenFullForm }: AddTransactionSheetPro
         role="dialog"
         aria-modal="true"
         aria-labelledby="add-sheet-title"
-        className="relative flex max-h-[92%] w-full flex-col overflow-y-auto overflow-x-hidden rounded-t-[26px] bg-rc-card px-4 pt-2"
+        className="relative max-h-[92%] w-full overflow-y-auto overflow-x-hidden rounded-t-[26px] bg-rc-card px-4 pt-2"
         style={{ paddingBottom: 'calc(16px + env(safe-area-inset-bottom, 0px))' }}
       >
         <div className="mx-auto mb-1.5 h-1 w-10 flex-none rounded-full bg-rc-line" aria-hidden="true" />
@@ -279,7 +287,7 @@ const AddTransactionSheet = ({ onClose, onOpenFullForm }: AddTransactionSheetPro
         />
 
         <div className="mt-4 text-[13px] font-medium text-rc-ink3">Categoria</div>
-        <div role="group" aria-label="Categoria" className="-mx-4 mt-1.5 flex gap-2 overflow-x-auto px-4 py-0.5 [scrollbar-width:none]">
+        <div role="group" aria-label="Categoria" className="-mx-4 mt-1 flex gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:none]">
           {visibleCategories.map((value) => (
             <button
               key={value}
@@ -317,7 +325,7 @@ const AddTransactionSheet = ({ onClose, onOpenFullForm }: AddTransactionSheetPro
         )}
 
         <div className="mt-4 text-[13px] font-medium text-rc-ink3">{typeLabel}</div>
-        <div role="group" aria-label={typeLabel} className="-mx-4 mt-1.5 flex gap-2 overflow-x-auto px-4 py-0.5 [scrollbar-width:none]">
+        <div role="group" aria-label={typeLabel} className="-mx-4 mt-1 flex gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:none]">
           {orderedAccounts.map((account) => (
             <button
               key={account.id}
@@ -332,7 +340,7 @@ const AddTransactionSheet = ({ onClose, onOpenFullForm }: AddTransactionSheetPro
         </div>
 
         <div className="mt-4 text-[13px] font-medium text-rc-ink3">Data</div>
-        <div role="group" aria-label="Data" className="-mx-4 mt-1.5 flex gap-2 overflow-x-auto px-4 py-0.5 [scrollbar-width:none]">
+        <div role="group" aria-label="Data" className="-mx-4 mt-1 flex gap-2 overflow-x-auto px-4 py-1 [scrollbar-width:none]">
           <button type="button" aria-pressed={dateChip === 'today'} onClick={() => pickDate('today')} className={pillClass(dateChip === 'today')}>Hoje</button>
           <button type="button" aria-pressed={dateChip === 'yesterday'} onClick={() => pickDate('yesterday')} className={pillClass(dateChip === 'yesterday')}>Ontem</button>
           <button type="button" aria-pressed={dateChip === 'other'} onClick={() => setDateChip('other')} className={pillClass(dateChip === 'other')}>Outra data</button>

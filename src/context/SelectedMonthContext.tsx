@@ -11,6 +11,8 @@ interface SelectedMonthValue {
   previousMonth: () => void;
   nextMonth: () => void;
   goToCurrentMonth: () => void;
+  /** Sets the month directly. Used by the Cartões screen to open the invoice that matters (and to give the month back). */
+  setMonthKey: (key: string) => void;
 }
 
 const SelectedMonthContext = createContext<SelectedMonthValue | undefined>(undefined);
@@ -30,6 +32,7 @@ export const SelectedMonthProvider = ({ children }: { children: ReactNode }) => 
       previousMonth,
       nextMonth,
       goToCurrentMonth,
+      setMonthKey,
     }),
     [monthKey, currentKey, previousMonth, nextMonth, goToCurrentMonth],
   );

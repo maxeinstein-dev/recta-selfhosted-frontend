@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState, useEffect } from "react";
+import { useCallback, useMemo, useRef, useState, useEffect } from "react";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "react-router-dom";
 import { useTransactions } from "../context/TransactionsContext";
@@ -66,7 +66,7 @@ import { useDefaultHousehold } from "../hooks/useDefaultHousehold";
 import { useIsMobileShell } from "../hooks/useIsMobileShell";
 import { useSelectedMonth } from "../context/SelectedMonthContext";
 import MobileCreditCards from "../components/credit-cards/MobileCreditCards";
-import { monthStartOf } from "../utils/cardsMobile";
+import { addMonthKey, invoiceMemo, monthStartOf, openInvoiceMonthKey, openingInvoiceMonth } from "../utils/cardsMobile";
 
 const CreditCards = () => {
   const {
@@ -94,11 +94,28 @@ const CreditCards = () => {
   const [selectedMonth, setSelectedMonth] = useState(new Date());
   // Mobile shell (below 768 px): the month of the header chooses the invoice; the desktop keeps its own navigator.
   const isMobileShell = useIsMobileShell();
-  const { monthKey: headerMonthKey } = useSelectedMonth();
+  const { monthKey: headerMonthKey, setMonthKey: setHeaderMonthKey } = useSelectedMonth();
+  // The day of the visit (fixed while the screen is open), used to tell the open invoice from the closed ones.
+  const [todayIso] = useState(() => format(new Date(), "yyyy-MM-dd"));
+  // The user chose a month by hand in this visit: from then on the rule does not pick the month of this visit.
+  const manualMonthRef = useRef(false);
+  // The header month this screen last wrote. Starts as the header at entry, so that is not read as a choice.
+  const headerWrittenRef = useRef(headerMonthKey);
+  // The header month at entry: given back when leaving, so the other screens are not left on the rule's month.
+  const [headerAtEntry] = useState(headerMonthKey);
+  // The card whose invoice the rule already decided for this visit.
+  const [ruleAppliedFor, setRuleAppliedFor] = useState<string | null>(null);
   useEffect(() => {
     if (!isMobileShell) return;
+    if (headerMonthKey !== headerWrittenRef.current) manualMonthRef.current = true;
     setSelectedMonth(monthStartOf(headerMonthKey));
   }, [isMobileShell, headerMonthKey]);
+  useEffect(() => {
+    if (!isMobileShell) return undefined;
+    return () => {
+      if (!manualMonthRef.current) setHeaderMonthKey(headerAtEntry);
+    };
+  }, [isMobileShell, setHeaderMonthKey, headerAtEntry]);
   
   // Format month for API: "YYYY-MM"
   const selectedMonthKey = format(selectedMonth, "yyyy-MM");
@@ -186,11 +203,8 @@ const CreditCards = () => {
     if (creditCards.length > 0 && !selectedAccountId) {
       const wanted = cardParam ? creditCards.find((acc) => acc.id === cardParam) : undefined;
       setSelectedAccountId((wanted ?? creditCards[0]).id || null);
-      if (wanted && monthParam && /^\d{4}-(0[1-9]|1[0-2])$/.test(monthParam)) {
-        setSelectedMonth(new Date(Number(monthParam.slice(0, 4)), Number(monthParam.slice(5, 7)) - 1, 1));
-      }
     }
-  }, [creditCards, selectedAccountId, cardParam, monthParam]);
+  }, [creditCards, selectedAccountId, cardParam]);
 
   const selectedAccount = useMemo(() => {
     return creditCards.find((acc) => acc.id === selectedAccountId);
@@ -198,6 +212,53 @@ const CreditCards = () => {
 
   // The closing day is also the best day to buy; without one it is the due day - 7.
   const effectiveClosing = effectiveClosingDay(selectedAccount);
+
+  // Which invoice opens (pedido do usuário, item 31). The open one is the default; a closed one not paid comes first
+  // (the oldest of the two before the open one). Only the state of those two earlier invoices is read.
+  const openKey = selectedAccountId ? openInvoiceMonthKey(todayIso, effectiveClosing ?? null) : null;
+  const earlierKey1 = openKey ? addMonthKey(openKey, -1) : "";
+  const earlierKey2 = openKey ? addMonthKey(openKey, -2) : "";
+  // A month in the link (?card=&month=) applies to the card it names, and wins over the rule.
+  const urlMonthForCard =
+    selectedAccountId && cardParam === selectedAccountId && monthParam && /^\d{4}-(0[1-9]|1[0-2])$/.test(monthParam)
+      ? monthParam
+      : null;
+  const earlier1 = useCreditCardInvoice({ accountId: selectedAccountId, month: earlierKey1, householdId, limit: 1 });
+  const earlier2 = useCreditCardInvoice({ accountId: selectedAccountId, month: earlierKey2, householdId, limit: 1 });
+  const earlierReady = !earlier1.isPending && !earlier2.isPending;
+  const decision =
+    selectedAccountId && openKey && (urlMonthForCard || earlierReady)
+      ? openingInvoiceMonth({
+          today: todayIso,
+          closingDay: effectiveClosing ?? null,
+          urlMonth: urlMonthForCard,
+          statusOf: (key) =>
+            key === earlierKey1
+              ? invoiceMemo(earlier1.data?.data)
+              : key === earlierKey2
+                ? invoiceMemo(earlier2.data?.data)
+                : "unknown",
+        })
+      : null;
+  const decidedKey = decision?.monthKey ?? null;
+  // Applies the decision once per card and visit. A month the user already chose by hand is kept when the card changes.
+  useEffect(() => {
+    if (!selectedAccountId || ruleAppliedFor === selectedAccountId) return;
+    if (manualMonthRef.current) {
+      setRuleAppliedFor(selectedAccountId);
+      return;
+    }
+    if (!decidedKey) return;
+    setSelectedMonth(monthStartOf(decidedKey));
+    if (isMobileShell) {
+      headerWrittenRef.current = decidedKey;
+      setHeaderMonthKey(decidedKey);
+    }
+    setRuleAppliedFor(selectedAccountId);
+  }, [selectedAccountId, ruleAppliedFor, decidedKey, isMobileShell, setHeaderMonthKey]);
+  // While the rule has not decided the card's month, the invoice shows as loading (no flash of the wrong month).
+  const rulePending = !!selectedAccountId && ruleAppliedFor !== selectedAccountId && !manualMonthRef.current;
+  const invoiceBusy = invoiceLoading || rulePending;
 
 
   // Helper function to convert backend transaction to frontend format
@@ -445,7 +506,10 @@ const CreditCards = () => {
 
   const cardDetails = useMemo(() => (selectedAccountId ? limitsOf(selectedAccountId) : null), [selectedAccountId, limitsOf]);
 
-  const handleMonthChange = (month: Date) => setSelectedMonth(month);
+  const handleMonthChange = (month: Date) => {
+    manualMonthRef.current = true;
+    setSelectedMonth(month);
+  };
 
   const handleNewTransaction = () => {
     // Se não tiver cartão selecionado, seleciona o primeiro
@@ -866,7 +930,7 @@ const CreditCards = () => {
           limitsOf={limitsOf}
           effectiveClosing={effectiveClosing ?? null}
           statementView={statementView}
-          invoiceLoading={invoiceLoading}
+          invoiceLoading={invoiceBusy}
           invoiceTotal={invoiceStats.total}
           isPaid={invoiceStats.isPaid}
           paidWithName={payerId ? accounts.find((a) => a.id === payerId)?.name ?? null : null}
@@ -1212,7 +1276,7 @@ const CreditCards = () => {
                 </div>
               </div>
 
-              {statementView && !invoiceLoading && (
+              {statementView && !invoiceBusy && (
                 <div className="px-6 pt-6">
                   <CreditCardStatementPanel
                     view={statementView}
@@ -1233,7 +1297,7 @@ const CreditCards = () => {
                 </div>
 
                 <div className="space-y-4">
-                  {invoiceLoading ? (
+                  {invoiceBusy ? (
                     <div className="space-y-4 animate-pulse">
                       {[1, 2, 3, 4, 5].map((i) => (
                         <div key={i} className="flex items-center justify-between p-3">
@@ -1359,7 +1423,7 @@ const CreditCards = () => {
             </div>
           </div>
         </div>
-      ) : selectedAccountId && invoiceLoading ? (
+      ) : selectedAccountId && invoiceBusy ? (
         // Skeleton quando tem cartão selecionado mas está carregando fatura
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* Sidebar Stats skeleton */}

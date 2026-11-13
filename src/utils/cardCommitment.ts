@@ -73,9 +73,19 @@ export function monthLabel(month: string | null | undefined): string {
   return month && MONTH_RE.test(month) ? `${month.slice(5, 7)}/${month.slice(0, 4)}` : '';
 }
 
+/** The badge a month shows next to its label: the invoice is already paid, or closed and waiting to be paid. */
+export type CommitmentBadge = 'paid' | 'closed';
+
+/** The badge for the invoice `state` the route sends; an open (or unknown) invoice has none. */
+export function commitmentBadge(state: string | null | undefined): CommitmentBadge | null {
+  return state === 'paid' || state === 'closed' ? state : null;
+}
+
 export interface CommitmentRow {
   month: string;
   label: string;
+  /** 'paid' or 'closed' from the route's `state`; null while the invoice is open. */
+  badge: CommitmentBadge | null;
   postedCents: number;
   installmentsCents: number;
   recurrencesCents: number;
@@ -95,9 +105,12 @@ export interface CommitmentRow {
   /** Width in percent of the heaviest month: the posted part, then the expected part stacked on top of it. */
   postedBar: number;
   forecastBar: number;
-  /** The month with the biggest total (the first one when two tie); never set when every month is zero. */
+  /**
+   * The month with the biggest total (the first one when two tie) among the invoices not yet paid; never set when every
+   * one of them is zero. A paid invoice no longer weighs on what is to come.
+   */
   heaviest: boolean;
-  /** The total is more than the income expected for the month. */
+  /** The total is more than the income expected for the month; never set on a paid invoice. */
   overIncome: boolean;
 }
 
@@ -116,8 +129,12 @@ export function buildCommitmentRows(response: Pick<CardCommitmentResponse, 'mont
     incomeCents: toCents(m.expectedIncome),
   }));
   const totals = cents.map((c) => c.postedCents + c.forecastCents);
+  const badges = months.map((m) => commitmentBadge(m.state));
   const maxTotal = Math.max(0, ...totals);
-  const heaviestIndex = maxTotal > 0 ? totals.indexOf(maxTotal) : -1;
+  // The heaviest mark skips paid invoices; the bars still scale to every month, so the amounts compare as they are.
+  const unpaidTotals = totals.map((total, i) => (badges[i] === 'paid' ? 0 : total));
+  const maxUnpaid = Math.max(0, ...unpaidTotals);
+  const heaviestIndex = maxUnpaid > 0 ? unpaidTotals.indexOf(maxUnpaid) : -1;
 
   return months.map((m, i): CommitmentRow => {
     const { postedCents, installmentsCents, recurrencesCents, purchasesCents, forecastCents, incomeCents } = cents[i];
@@ -128,6 +145,7 @@ export function buildCommitmentRows(response: Pick<CardCommitmentResponse, 'mont
     return {
       month: m.month,
       label: monthLabel(m.month),
+      badge: badges[i],
       postedCents,
       installmentsCents,
       recurrencesCents,
@@ -146,7 +164,7 @@ export function buildCommitmentRows(response: Pick<CardCommitmentResponse, 'mont
       postedBar,
       forecastBar,
       heaviest: i === heaviestIndex,
-      overIncome: share !== null && share > 1,
+      overIncome: badges[i] !== 'paid' && share !== null && share > 1,
     };
   });
 }

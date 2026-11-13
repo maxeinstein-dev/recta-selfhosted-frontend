@@ -20,6 +20,8 @@ export const CARD_COMMITMENT_TEXTS_PT = {
   cardCommitForecast: 'Recorrências previstas',
   cardCommitHeaviest: 'Mais pesado',
   cardCommitOverIncome: 'Acima da renda esperada',
+  cardCommitPaid: 'Paga',
+  cardCommitClosed: 'Fechada',
 
   cardCommitRiseWarning:
     'A fatura de {month} ({amount}) passa da fatura de {base}: alguma compra parcelada ou recorrência pesa nos meses seguintes.',

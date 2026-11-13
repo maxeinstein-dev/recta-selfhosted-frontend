@@ -183,7 +183,21 @@ function MonthRow({
       className={`py-3 ${row.heaviest ? 'bg-primary-50/60 dark:bg-primary-900/20 -mx-2 px-2 rounded-md' : ''}`}
     >
       <div className="flex items-baseline justify-between gap-2">
-        <span className="text-sm font-medium text-gray-900 dark:text-white tabular-nums">{row.label}</span>
+        <span className="flex flex-wrap items-baseline gap-2">
+          <span className="text-sm font-medium text-gray-900 dark:text-white tabular-nums">{row.label}</span>
+          {row.badge && (
+            <span
+              data-testid="commitment-badge"
+              className={`${CHIP_CLS} ${
+                row.badge === 'paid'
+                  ? 'bg-green-50 text-green-700 dark:bg-green-900/30 dark:text-green-300'
+                  : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300'
+              }`}
+            >
+              {tx(row.badge === 'paid' ? 'cardCommitPaid' : 'cardCommitClosed')}
+            </span>
+          )}
+        </span>
         <span className="text-sm font-medium text-gray-900 dark:text-white tabular-nums">{money(row.total)}</span>
       </div>
 

@@ -11,6 +11,7 @@ import {
   percentText,
   summarizeCommitment,
   commitmentState,
+  type CommitmentBadge,
   type CommitmentRow,
 } from '../../utils/cardCommitment';
 import { cardCommitmentText, type CardCommitmentTextKey } from '../../utils/cardCommitmentTexts';
@@ -542,6 +543,7 @@ function CommitmentSection({ householdId, accountId, baseCurrency }: { household
   const rise = useMemo(() => firstRiseRow(rows), [rows]);
   const heights = columnHeights(rows.map((row) => row.total));
   const selected: CommitmentRow | undefined = rows.find((row) => row.month === selectedMonth);
+  const badgeText = (badge: CommitmentBadge) => tx(badge === 'paid' ? 'cardCommitPaid' : 'cardCommitClosed');
 
   return (
     <section aria-label="Próximas faturas" className={CARD_BLOCK}>
@@ -588,7 +590,7 @@ function CommitmentSection({ householdId, accountId, baseCurrency }: { household
                     type="button"
                     aria-pressed={on}
                     aria-controls={detailId}
-                    aria-label={`${monthLabelPt(row.month)}: ${money(row.total, baseCurrency)}`}
+                    aria-label={`${monthLabelPt(row.month)}: ${money(row.total, baseCurrency)}${row.badge ? ` (${badgeText(row.badge)})` : ''}`}
                     onClick={() => setSelectedMonth(on ? null : row.month)}
                     className={`flex min-h-[44px] min-w-[56px] flex-1 flex-col items-center gap-1 rounded-md px-1 py-1 ${on ? 'bg-rc-accentSoft' : ''}`}
                   >
@@ -600,6 +602,15 @@ function CommitmentSection({ householdId, accountId, baseCurrency }: { household
                       />
                     </span>
                     <span className="whitespace-nowrap text-[11px] tabular-nums text-rc-ink" aria-hidden="true">{shortAmount(row.total)}</span>
+                    {row.badge && (
+                      <span
+                        data-testid="commitment-badge"
+                        aria-hidden="true"
+                        className={`whitespace-nowrap text-[10px] font-semibold ${row.badge === 'paid' ? 'text-rc-green' : 'text-rc-ink2'}`}
+                      >
+                        {badgeText(row.badge)}
+                      </span>
+                    )}
                   </button>
                 );
               })}
@@ -609,7 +620,18 @@ function CommitmentSection({ householdId, accountId, baseCurrency }: { household
               {selected ? (
                 <div className="space-y-2 rounded-lg bg-rc-card2 p-3 text-sm">
                   <div className="flex items-baseline justify-between gap-2">
-                    <span className="font-semibold text-rc-ink">Fatura de {selected.label}</span>
+                    <span className="flex flex-wrap items-baseline gap-2">
+                      <span className="font-semibold text-rc-ink">Fatura de {selected.label}</span>
+                      {selected.badge && (
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                            selected.badge === 'paid' ? 'bg-rc-greenSoft text-rc-green' : 'bg-rc-card text-rc-ink2'
+                          }`}
+                        >
+                          {badgeText(selected.badge)}
+                        </span>
+                      )}
+                    </span>
                     <span className="font-semibold tabular-nums text-rc-ink">{money(selected.total, baseCurrency)}</span>
                   </div>
                   <dl className="space-y-1 text-rc-ink2">

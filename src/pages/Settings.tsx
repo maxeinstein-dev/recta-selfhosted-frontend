@@ -52,6 +52,7 @@ import {
 import CategoryManager from "../components/categories/CategoryManager";
 import CaptureDiagnostics from "../components/capture/CaptureDiagnostics";
 import CaptureRulesCard from "../components/capture/CaptureRulesCard";
+import CaptureReaderCard from "../components/capture/CaptureReaderCard";
 import CaptureDevicesCard from "../components/capture/CaptureDevicesCard";
 import { isNativeApp } from "../native/captureReader";
 import { canWritePeople } from "../utils/people";
@@ -603,6 +604,7 @@ const SettingsPage = () => {
 
       {/* Capturas: a conta de cada notificação e os aparelhos vinculados */}
       <CaptureRulesCard householdId={householdId ?? undefined} canEdit={canWritePeople(household)} />
+      <CaptureReaderCard householdId={householdId ?? undefined} canEdit={canWritePeople(household)} />
       <CaptureDevicesCard />
 
       {/* Categorias: padrão (somente leitura) e personalizadas (criar, renomear, unir, excluir) */}

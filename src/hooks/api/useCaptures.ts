@@ -4,6 +4,7 @@ import { apiClient } from '../../utils/api';
 import type { CaptureItem, CaptureStatus, ConfirmBody } from '../../utils/captureInbox';
 import type { AccountRule, RulesDraft } from '../../utils/captureRules';
 import { buildRulesBody } from '../../utils/captureRules';
+import { buildCardRulesBody, type CardRule, type ReparseResult } from '../../utils/captureReading';
 
 /** Rows per page of the inbox. */
 export const CAPTURE_PAGE_SIZE = 20;
@@ -140,6 +141,51 @@ export function useSaveCaptureAccountRules(householdId: string | undefined) {
     onSuccess: (rules) => {
       // The PUT answers the household's rules as saved: show them at once, no flash of the old ones.
       queryClient.setQueryData(['captures', 'account-rules', householdId ?? null], rules);
+    },
+  });
+}
+
+/**
+ * POST /captures/reparse (EDITOR): reads again the pending captures read by an older version of the reader. Running it
+ * again without a new version answers scanned 0. The lists change, so they are refreshed.
+ */
+export function useReparseCaptures(householdId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async () => {
+      const response = await apiClient.post<ReparseResult>(withHousehold('/captures/reparse', householdId));
+      return bodyOf<ReparseResult>(response).data ?? null;
+    },
+    onSettled: () => void queryClient.invalidateQueries({ queryKey: ['captures'] }),
+  });
+}
+
+/** GET /captures/card-rules: the account of each card ending (VIEWER reads). */
+export function useCaptureCardRules(householdId: string | undefined) {
+  const { currentUser } = useAuth();
+  return useQuery({
+    queryKey: ['captures', 'card-rules', householdId ?? null],
+    enabled: !!currentUser && !!householdId,
+    queryFn: async () => {
+      const body = bodyOf<CardRule[]>(await apiClient.get<CardRule[]>('/captures/card-rules', { householdId }));
+      return body.data ?? [];
+    },
+    refetchOnWindowFocus: false,
+  });
+}
+
+/** PUT /captures/card-rules (EDITOR): replaces every card-ending rule; the body comes from buildCardRulesBody. */
+export function useSaveCaptureCardRules(householdId: string | undefined) {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (rows: CardRule[]) => {
+      const response = await apiClient.put<CardRule[]>(withHousehold('/captures/card-rules', householdId), buildCardRulesBody(rows));
+      return bodyOf<CardRule[]>(response).data ?? [];
+    },
+    onSuccess: (rules) => {
+      queryClient.setQueryData(['captures', 'card-rules', householdId ?? null], rules);
+      // The suggested account of the pending captures may change with the rules.
+      void queryClient.invalidateQueries({ queryKey: ['captures', 'list'] });
     },
   });
 }

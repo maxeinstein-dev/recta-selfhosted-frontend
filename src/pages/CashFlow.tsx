@@ -109,7 +109,6 @@ const CashFlow = () => {
         accountId={accountId}
         onSelectAccount={setAccountId}
         accounts={cashList.map((account) => ({ id: account.id, name: account.name }))}
-        footer={<BillsChecklist householdId={householdId ?? undefined} accountId={accountId || undefined} />}
         tx={tx}
         pay={pay}
       />

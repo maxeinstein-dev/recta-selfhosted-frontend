@@ -44,8 +44,6 @@ export interface MobileCashFlowProps {
   accountId: string;
   onSelectAccount: (accountId: string) => void;
   accounts: Array<{ id: string; name: string }>;
-  /** The bills checklist, shown at the end of the screen until the Início takes it (lote R5). */
-  footer: ReactNode;
   /** The "Pagar agora" of an event with an early-payment discount (one call at a time). */
   pay: ReturnType<typeof usePayNow>;
   /** "Marcar como feito" of a planned contribution of a savings goal (source `reserve`). */
@@ -91,7 +89,6 @@ export default function MobileCashFlow({
   accountId,
   onSelectAccount,
   accounts,
-  footer,
   pay,
   keepNow,
   split,
@@ -276,8 +273,6 @@ export default function MobileCashFlow({
       </label>
 
       {body}
-
-      {footer}
     </div>
   );
 }

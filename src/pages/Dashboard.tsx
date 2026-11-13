@@ -38,8 +38,10 @@ import { useBudgetAlerts } from '../hooks/useBudgetAlerts';
 import { MonthlyRecapModal, useMonthlyRecapCheck } from '../components/MonthlyRecap';
 import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
 import { useCommandMenu } from '../context/CommandMenuContext';
+import { useIsMobileShell } from '../hooks/useIsMobileShell';
+import MobileHome from '../components/home/MobileHome';
 
-const Dashboard = () => {
+const DesktopDashboard = () => {
   const { loading } = useTransactions();
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -400,6 +402,12 @@ const Dashboard = () => {
       )}
     </div>
   );
+};
+
+/** Below 768 px the Início tab of the mobile shell (lote R5); from 768 px up the dashboard stays as it is. */
+const Dashboard = () => {
+  const isMobileShell = useIsMobileShell();
+  return isMobileShell ? <MobileHome /> : <DesktopDashboard />;
 };
 
 export default Dashboard;

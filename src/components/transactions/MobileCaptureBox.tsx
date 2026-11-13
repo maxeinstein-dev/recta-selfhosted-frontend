@@ -3,7 +3,8 @@ import CaptureConfirmModal from '../captures/CaptureConfirmModal';
 import { useI18n } from '../../context/I18nContext';
 import { useToastContext } from '../../context/ToastContext';
 import { useCaptures, useCapturesCount, useConfirmCapture, useDismissCapture } from '../../hooks/api/useCaptures';
-import { appLabel, buildConfirmBody, draftFromSuggestion, formatCaptureDateTime, localDayKey, type CaptureItem } from '../../utils/captureInbox';
+import { appLabel, formatCaptureDateTime, localDayKey, type CaptureItem } from '../../utils/captureInbox';
+import { oneTapConfirmBody, readingOf, warningText } from '../../utils/captureReading';
 import { captureText } from '../../utils/captureTexts';
 import { captureAmountSign, captureLineMeta, captureVisibleCount } from '../../utils/extratoMobile';
 import { formatCurrency } from '../../utils/format';
@@ -83,7 +84,7 @@ const MobileCaptureBox = ({ householdId, accounts, canEdit }: MobileCaptureBoxPr
 
   const handleConfirm = async (item: CaptureItem) => {
     if (!householdId) return;
-    const result = buildConfirmBody(draftFromSuggestion(item.suggestion, localDayKey(new Date().toISOString()) ?? ''));
+    const result = oneTapConfirmBody(item.suggestion, localDayKey(new Date().toISOString()) ?? '');
     if (!result.ok) {
       setEditing(item);
       return;
@@ -121,15 +122,20 @@ const MobileCaptureBox = ({ householdId, accounts, canEdit }: MobileCaptureBoxPr
 
       <ul className="mt-1">
         {shown.map((item) => {
-          const desc = item.suggestion.description || item.title || appLabel(item.package);
-          const amount = item.suggestion.amount;
+          const reading = readingOf(item);
+          const desc = reading.title || item.title || appLabel(item.package);
+          // Reais as the server sent them; the screen only formats.
+          const amount = reading.amount;
+          const warning = warningText(reading.warning);
+          const oneTap = oneTapConfirmBody(item.suggestion, '0000-01-01').ok;
           const sign = captureAmountSign(item.suggestion.type);
           const typeLabel = item.suggestion.type === 'INCOME'
             ? tx('captureFormIncome')
             : item.suggestion.type === 'EXPENSE'
               ? tx('captureFormExpense')
               : '';
-          const accountName = accounts.find((a) => a.id === item.suggestion.accountId)?.name ?? null;
+          const accountBase = accounts.find((a) => a.id === item.suggestion.accountId)?.name ?? null;
+          const accountName = reading.cardLast4 ? `${accountBase ?? 'sem conta'} · final ${reading.cardLast4}` : accountBase;
           const busy = (confirm.isPending && confirm.variables?.id === item.id) || (dismiss.isPending && dismiss.variables?.id === item.id);
           return (
             <li key={item.id} className="border-t border-rc-line py-2.5 first:border-t-0 last:pb-0">
@@ -142,6 +148,7 @@ const MobileCaptureBox = ({ householdId, accounts, canEdit }: MobileCaptureBoxPr
               <p className="truncate text-[12.5px] text-rc-ink3">
                 {captureLineMeta(typeLabel, accountName, formatCaptureDateTime(item.postedAt))}
               </p>
+              {warning && <p className="mt-1 text-[12.5px] font-medium text-rc-amber">{warning}</p>}
               <div className="mt-2 flex gap-2">
                 <button
                   type="button"
@@ -156,10 +163,10 @@ const MobileCaptureBox = ({ householdId, accounts, canEdit }: MobileCaptureBoxPr
                   type="button"
                   disabled={!canEdit || busy}
                   onClick={() => void handleConfirm(item)}
-                  aria-label={`Lançar captura: ${desc}`}
+                  aria-label={`${oneTap ? 'Lançar' : 'Completar'} captura: ${desc}`}
                   className={`${TOUCH} flex-1 rounded-xl bg-rc-accent px-3 text-sm font-semibold text-rc-onAccent disabled:opacity-50`}
                 >
-                  Lançar
+                  {oneTap ? 'Lançar' : 'Completar'}
                 </button>
               </div>
             </li>

@@ -1,4 +1,5 @@
 import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { Inbox } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import { EmptyState } from '../components/EmptyState';
@@ -18,10 +19,9 @@ import {
 } from '../hooks/api/useCaptures';
 import { getCategoryDisplayName } from '../lib/enums';
 import { canWritePeople } from '../utils/people';
+import { oneTapConfirmBody } from '../utils/captureReading';
 import {
-  buildConfirmBody,
   captureBadgeText,
-  draftFromSuggestion,
   localDayKey,
   type CaptureItem,
   type CaptureStatus,
@@ -45,7 +45,16 @@ const Captures = () => {
   const canEdit = canWritePeople(household);
   const { success, error: showError } = useToastContext();
 
-  const [status, setStatus] = useState<CaptureStatus>('PENDING');
+  // ?status=DISMISSED opens the dismissed tab (the link of Settings > Leitura das notificações).
+  const [searchParams, setSearchParams] = useSearchParams();
+  const status: CaptureStatus = searchParams.get('status') === 'DISMISSED' ? 'DISMISSED' : 'PENDING';
+  const setStatus = (next: CaptureStatus) =>
+    setSearchParams((params) => {
+      const copy = new URLSearchParams(params);
+      if (next === 'DISMISSED') copy.set('status', 'DISMISSED');
+      else copy.delete('status');
+      return copy;
+    }, { replace: true });
   const [editing, setEditing] = useState<CaptureItem | null>(null);
 
   const list = useCaptures({ householdId, status });
@@ -93,7 +102,7 @@ const Captures = () => {
 
   const handleConfirm = async (item: CaptureItem) => {
     if (!householdId) return;
-    const result = buildConfirmBody(draftFromSuggestion(item.suggestion, localDayKey(new Date().toISOString()) ?? ''));
+    const result = oneTapConfirmBody(item.suggestion, localDayKey(new Date().toISOString()) ?? '');
     if (!result.ok) {
       // Not enough to post in one tap: open the form with what there is.
       setEditing(item);

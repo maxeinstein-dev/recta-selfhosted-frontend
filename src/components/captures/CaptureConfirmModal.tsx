@@ -19,6 +19,7 @@ import {
   type CaptureItem,
 } from '../../utils/captureInbox';
 import { captureText, type CaptureTextKey } from '../../utils/captureTexts';
+import { readingOf, warningText } from '../../utils/captureReading';
 import SelectCombobox from '../SelectCombobox';
 import CategoryCombobox from '../CategoryCombobox';
 import { DatePicker } from '../DatePicker';
@@ -107,6 +108,10 @@ const CaptureConfirmModal = ({ item, householdId, onDone, onClose }: CaptureConf
   };
 
   const noAccounts = accountOptions.length === 0;
+  const reading = readingOf(item);
+  const warning = warningText(reading.warning);
+  // What the reader understood that the form has no field for: the merchant and the card ending.
+  const readNote = [reading.merchant, reading.cardLast4 ? `cartão final ${reading.cardLast4}` : null].filter(Boolean).join(' · ');
   const typeButton = (type: 'INCOME' | 'EXPENSE', label: string) => {
     const active = draft.type === type;
     return (
@@ -139,6 +144,16 @@ const CaptureConfirmModal = ({ item, householdId, onDone, onClose }: CaptureConf
         <p className={`text-xs font-light ${MUTED_CLS}`}>
           {appLabel(item.package)} · {tx('captureFormIntro')}
         </p>
+        {readNote && (
+          <p className="text-sm font-light text-gray-800 dark:text-gray-200 break-words">
+            <span className={MUTED_CLS}>Lido: </span>{readNote}
+          </p>
+        )}
+        {warning && (
+          <p role="note" className="rounded-md bg-amber-50 dark:bg-amber-900/30 px-3 py-2 text-xs font-light text-amber-800 dark:text-amber-200">
+            {warning}. Se for, descarte esta captura e lance a transferência pelo Extrato.
+          </p>
+        )}
 
         <div>
           <span className={LABEL_CLS}>{tx('captureFormType')}</span>

@@ -30,6 +30,8 @@ import {
 } from '../../utils/billsChecklist';
 import { billsText, type BillsTextKey } from '../../utils/billsChecklistTexts';
 import { EarlyDiscountNotice, usePayNow } from '../cashflow/EarlyDiscountBits';
+import { useKeepNow } from '../goals/KeepNow';
+import { reserveText } from '../../utils/savingsGoalsPlan';
 
 const CARD_CLS = 'rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3';
 const CHIP_CLS = 'inline-flex items-center rounded-full px-2 py-0.5 text-xs font-light';
@@ -55,6 +57,8 @@ export default function BillsChecklist({ householdId, accountId }: BillsChecklis
   const confirmReceipt = useConfirmReceipt();
   const { payPending, generateOccurrence } = useBillActions();
   const pay = usePayNow();
+  // "Guardar" lines: record the contribution (no entry, the account balance does not change); 409 asks first
+  const keepNow = useKeepNow({ successText: () => tx('billsReserveDoneToast') });
 
   const [filter, setFilter] = useState<string>(FILTER_ALL);
   const [busyKey, setBusyKey] = useState<string | null>(null);
@@ -90,6 +94,16 @@ export default function BillsChecklist({ householdId, accountId }: BillsChecklis
   };
 
   const mark = async (bill: Bill, action: BillAction) => {
+    if (action.type === 'reserve') {
+      setBusyKey(bill.key);
+      try {
+        const ok = await keepNow.keep({ goalId: action.goalId, name: reserveText(bill.description, null), date: action.date });
+        if (ok) markDone(bill, null);
+      } finally {
+        setBusyKey(null);
+      }
+      return;
+    }
     if (action.type === 'payNext') {
       // Not generated yet and with a discount: the route creates the occurrence already paid (discounted until the limit)
       // and moves the recurrence on, so the job does not generate another one at the due date.
@@ -219,15 +233,15 @@ export default function BillsChecklist({ householdId, accountId }: BillsChecklis
             <ul className="divide-y divide-gray-100 dark:divide-gray-800">
               {visible.map((bill) => {
                 const action = billAction(bill, recurrenceById);
-                const name = bill.description || tx('billsNoDescription');
+                const name = bill.kind === 'reserve' ? reserveText(bill.description, null) : bill.description || tx('billsNoDescription');
                 return (
                   <li key={bill.key} className="flex min-h-[44px] items-start gap-2 py-2">
                     <div className="flex h-11 w-11 shrink-0 items-center justify-center">
-                      {action.type === 'pay' || action.type === 'execute' || action.type === 'payNext' ? (
+                      {action.type === 'pay' || action.type === 'execute' || action.type === 'payNext' || action.type === 'reserve' ? (
                         <button
                           type="button"
-                          disabled={busyKey !== null || pay.busy}
-                          aria-label={tx('billsMarkPaid', { name })}
+                          disabled={busyKey !== null || pay.busy || keepNow.busy}
+                          aria-label={action.type === 'reserve' ? tx('billsMarkReserveDone', { name }) : tx('billsMarkPaid', { name })}
                           onClick={() => void mark(bill, action)}
                           className="flex h-11 w-11 items-center justify-center rounded-full text-gray-400 hover:text-emerald-600 disabled:opacity-60 dark:text-gray-500 dark:hover:text-emerald-400"
                         >
@@ -284,6 +298,7 @@ export default function BillsChecklist({ householdId, accountId }: BillsChecklis
       <h2 className="text-sm font-medium text-gray-900 dark:text-white">{tx('billsTitle')}</h2>
       {body}
       {confirmReceipt.dialog}
+      {keepNow.dialog}
     </section>
   );
 }

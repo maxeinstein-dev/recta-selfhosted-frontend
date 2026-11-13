@@ -9,8 +9,12 @@
 import type { CashFlowTextKey } from './cashFlowTexts';
 import type { CashFlowEarlyDiscount } from './earlyDiscount';
 
-/** 'payroll': 13th, vacation and birthday FGTS withdrawal forecast by a CLT employment (an entry, never a bill). */
-export type CashFlowSource = 'pending' | 'recurrence' | 'payroll' | 'invoice';
+/**
+ * 'payroll': 13th, vacation and birthday FGTS withdrawal forecast by a CLT employment (an entry, never a bill).
+ * 'reserve': the planned contribution of a savings goal not yet made this month (sourceId = the goal). It leaves the FREE
+ * balance, never the account balance.
+ */
+export type CashFlowSource = 'pending' | 'recurrence' | 'payroll' | 'invoice' | 'reserve';
 export type CashFlowCertainty = 'confirmed' | 'expected' | 'estimated';
 export type CashFlowReason = 'no_payer_account' | 'no_due_date';
 
@@ -65,7 +69,12 @@ export interface CashFlowUnassignedInvoice {
 export interface CashFlowResponse {
   currency: string | null;
   period: { from: string; to: string; days: number };
+  /** The FREE balance of today: the account balance minus what the savings goals keep in it. */
   startingBalance: number;
+  /** What the savings goals keep in the accounts of the answer (absent on an older backend). */
+  allocated?: number;
+  /** startingBalance + allocated: the balance the statement shows. */
+  totalBalance?: number;
   days: CashFlowDay[];
   summary: CashFlowSummary;
   unassignedInvoices: CashFlowUnassignedInvoice[];
@@ -161,7 +170,7 @@ export function firstNegativeDate(points: readonly CashFlowPoint[]): string | nu
 }
 
 /** The order of the sources on one day. A source this build does not know sorts last (a future one must not break the list). */
-const SOURCE_ORDER: Record<CashFlowSource, number> = { pending: 0, recurrence: 1, payroll: 2, invoice: 3 };
+const SOURCE_ORDER: Record<CashFlowSource, number> = { pending: 0, recurrence: 1, payroll: 2, invoice: 3, reserve: 4 };
 const sourceRank = (source: string): number => (source in SOURCE_ORDER ? SOURCE_ORDER[source as CashFlowSource] : 99);
 
 const compareText = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
@@ -217,6 +226,7 @@ export function sourceTextKey(source: CashFlowSource | string): CashFlowTextKey 
   if (source === 'recurrence') return 'cashFlowSourceRecurrence';
   if (source === 'invoice') return 'cashFlowSourceInvoice';
   if (source === 'payroll') return 'cashFlowSourcePayroll';
+  if (source === 'reserve') return 'cashFlowSourceReserve';
   if (source === 'pending') return 'cashFlowSourcePending';
   return 'cashFlowSourceOther';
 }
@@ -244,6 +254,18 @@ export function estimatedNotice(count: number): { key: CashFlowTextKey; vars: { 
 
 export function reasonTextKey(reason: CashFlowReason): CashFlowTextKey {
   return reason === 'no_due_date' ? 'cashFlowUnassignedNoDue' : 'cashFlowUnassignedNoPayer';
+}
+
+/**
+ * Free, kept and total balance of today, when the savings goals keep something in the accounts; null otherwise (nothing
+ * to split: the starting balance is the whole balance). The total is computed in cents when the answer lacks it.
+ */
+export function balanceSplit(response: Pick<CashFlowResponse, 'startingBalance' | 'allocated' | 'totalBalance'>): { free: number; allocated: number; total: number } | null {
+  const allocatedCents = toCents(Number(response.allocated) || 0);
+  if (allocatedCents === 0) return null;
+  const freeCents = toCents(response.startingBalance);
+  const total = typeof response.totalBalance === 'number' ? response.totalBalance : fromCents(freeCents + allocatedCents);
+  return { free: fromCents(freeCents), allocated: fromCents(allocatedCents), total };
 }
 
 /** Account shape the cash flow screen needs. */

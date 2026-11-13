@@ -3,6 +3,10 @@ import { formatCurrency } from '../../utils/format';
 import { getAccountBalance } from '../../utils/accountBalance';
 import { AccountActionsMenu } from '../AccountActionsMenu';
 import { ArrowRightLeft } from 'lucide-react';
+import { useDefaultHousehold } from '../../hooks/useDefaultHousehold';
+import { useSavingsGoalsSummary } from '../../hooks/api/useSavingsGoals';
+import { splitsByAccount } from '../../utils/savingsGoalsPlan';
+import { AccountSplitPanel } from '../goals/KeepNow';
 
 interface AccountSidebarProps {
   account: Account;
@@ -33,6 +37,10 @@ export const AccountSidebar = ({
   onDeallocate,
   t,
 }: AccountSidebarProps) => {
+  // Savings goals keep money inside the account: the balance stays, part of it is marked as kept
+  const { householdId } = useDefaultHousehold();
+  const goalsSummary = useSavingsGoalsSummary(householdId ?? undefined);
+  const goalsSplit = account.id ? splitsByAccount(goalsSummary.data).get(account.id) : undefined;
   return (
     <div className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-lg p-6">
       <div className="flex items-center justify-between mb-6 pb-6 border-b border-gray-100 dark:border-gray-800">
@@ -70,6 +78,12 @@ export const AccountSidebar = ({
             {formatCurrency(accountBalance.totalBalance, baseCurrency)}
           </div>
         </div>
+
+        {goalsSplit && goalsSplit.allocatedCents > 0 && (
+          <div className="pt-6 border-t border-gray-100 dark:border-gray-800">
+            <AccountSplitPanel split={goalsSplit} accountName={account.name} currency={baseCurrency} variant="compact" />
+          </div>
+        )}
 
         {accountBalance.allocatedBalance > 0 && (
           <div className="grid grid-cols-2 gap-4 pt-6 border-t border-gray-100 dark:border-gray-800">

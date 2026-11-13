@@ -5,6 +5,8 @@ import CashFlowChart from '../components/cashflow/CashFlowChart';
 import MobileCashFlow from '../components/cashflow/MobileCashFlow';
 import BillsChecklist from '../components/bills/BillsChecklist';
 import { EarlyDiscountNotice, PayNowButton, usePayNow } from '../components/cashflow/EarlyDiscountBits';
+import { ReserveDoneButton, useKeepNow } from '../components/goals/KeepNow';
+import { reserveText } from '../utils/savingsGoalsPlan';
 import { useI18n } from '../context/I18nContext';
 import { useCurrency } from '../context/CurrencyContext';
 import { useDefaultHousehold } from '../hooks/useDefaultHousehold';
@@ -31,6 +33,7 @@ import {
   reasonTextKey,
   shortDate,
   sourceTextKey,
+  balanceSplit,
   type CashFlowEvent,
   type CashFlowPoint,
 } from '../utils/cashFlow';
@@ -64,6 +67,8 @@ const CashFlow = () => {
   const isMobileShell = useIsMobileShell();
   // One "Pagar agora" at a time across the events of the screen
   const pay = usePayNow();
+  // "Marcar como feito" of the planned contributions of the savings goals
+  const keepNow = useKeepNow();
 
   const accounts = useAccounts({ householdId: householdId ?? '' });
   const cashList = useMemo(() => cashAccounts(accounts.data?.accounts ?? []), [accounts.data]);
@@ -75,6 +80,8 @@ const CashFlow = () => {
   const pointByDate = useMemo(() => new Map(points.map((p) => [p.date, p])), [points]);
   const lowest = useMemo(() => lowestPoint(points), [points]);
   const negativeDate = useMemo(() => firstNegativeDate(points), [points]);
+  // Free / kept / total when savings goals keep money in the accounts (the starting balance is the free one)
+  const split = data ? balanceSplit(data) : null;
   const dayGroups = useMemo(() => (data ? groupEventsByDay(allEvents(data)) : []), [data]);
 
   const selectPeriod = (value: number) => setDays(normalizePeriod(value));
@@ -82,6 +89,7 @@ const CashFlow = () => {
   if (isMobileShell) {
     const loading = !householdId || query.isPending;
     return (
+      <>
       <MobileCashFlow
         loading={loading}
         failed={!loading && (query.isError || !data)}
@@ -94,6 +102,8 @@ const CashFlow = () => {
         dayGroups={dayGroups}
         pointByDate={pointByDate}
         currency={currency}
+        keepNow={keepNow}
+        split={split}
         days={days}
         onSelectDays={selectPeriod}
         accountId={accountId}
@@ -103,6 +113,8 @@ const CashFlow = () => {
         tx={tx}
         pay={pay}
       />
+      {keepNow.dialog}
+      </>
     );
   }
 
@@ -138,6 +150,11 @@ const CashFlow = () => {
             <div className={CARD_CLS}>
               <dt className="text-xs font-light text-gray-500 dark:text-gray-400">{tx('cashFlowTodayBalance')}</dt>
               <dd className={`mt-1 text-base font-medium ${moneyClass(data.startingBalance)}`}>{formatCurrency(data.startingBalance, currency)}</dd>
+              {split && (
+                <dd className="text-xs font-light text-gray-500 dark:text-gray-400">
+                  {tx('cashFlowFreeBalance', { total: formatCurrency(split.total, currency), kept: formatCurrency(split.allocated, currency) })}
+                </dd>
+              )}
             </div>
             <div className={CARD_CLS}>
               <dt className="text-xs font-light text-gray-500 dark:text-gray-400">{tx('cashFlowLowestBalance')}</dt>
@@ -203,7 +220,7 @@ const CashFlow = () => {
                 </header>
                 <ul className="divide-y divide-gray-100 dark:divide-gray-800">
                   {group.events.map((event) => (
-                    <EventRow key={`${event.source}:${event.sourceId}:${event.date}:${event.amount}:${event.description}`} event={event} currency={currency} today={data.period.from} pay={pay} tx={tx} />
+                    <EventRow key={`${event.source}:${event.sourceId}:${event.date}:${event.amount}:${event.description}`} event={event} currency={currency} today={data.period.from} pay={pay} keepNow={keepNow} tx={tx} />
                   ))}
                 </ul>
                 <p className="text-right text-xs font-light text-gray-500 dark:text-gray-400">
@@ -282,18 +299,19 @@ const CashFlow = () => {
         <BillsChecklist householdId={householdId ?? undefined} accountId={accountId || undefined} />
         {body}
       </div>
+      {keepNow.dialog}
     </div>
   );
 };
 
 /** One event: description, source and badges, signed amount. Wraps on a narrow screen; no table. */
-function EventRow({ event, currency, today, pay, tx }: { event: CashFlowEvent; currency: string; today: string; pay: ReturnType<typeof usePayNow>; tx: (key: CashFlowTextKey, vars?: Record<string, string | number>) => string }) {
+function EventRow({ event, currency, today, pay, keepNow, tx }: { event: CashFlowEvent; currency: string; today: string; pay: ReturnType<typeof usePayNow>; keepNow: ReturnType<typeof useKeepNow>; tx: (key: CashFlowTextKey, vars?: Record<string, string | number>) => string }) {
   const overdue = overdueDetail(event);
   const tone = eventTone(event.amount);
   return (
     <li className="flex min-h-[44px] items-start justify-between gap-3 py-3">
       <div className="min-w-0 flex-1">
-        <p className="break-words text-sm text-gray-900 dark:text-white">{event.description || tx('cashFlowNoDescription')}</p>
+        <p className="break-words text-sm text-gray-900 dark:text-white">{event.source === 'reserve' ? reserveText(event.description, null) : event.description || tx('cashFlowNoDescription')}</p>
         <div className="mt-1 flex flex-wrap gap-1.5">
           <span className={`${CHIP_CLS} bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-300`}>{tx(sourceTextKey(event.source))}</span>
           {isEstimated(event) && (
@@ -311,6 +329,7 @@ function EventRow({ event, currency, today, pay, tx }: { event: CashFlowEvent; c
         <EarlyDiscountNotice quote={event.earlyDiscount} today={today} currency={currency} />
         <div>
           <PayNowButton discount={event.earlyDiscount} name={event.description || tx('cashFlowNoDescription')} pay={pay} />
+          <ReserveDoneButton event={event} keepNow={keepNow} />
         </div>
       </div>
       <p

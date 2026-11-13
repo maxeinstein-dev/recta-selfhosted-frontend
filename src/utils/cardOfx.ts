@@ -657,6 +657,27 @@ export interface CardOfxConfirmContext {
   /** The accounts of the household, used to check the source account of a payment. */
   accounts: readonly CardOfxAccountRef[];
   customIdsByType: Readonly<Record<MaxFinTransactionType, ReadonlySet<string>>>;
+  /** Group -> person id of the lines that belong to another person (an empty id means "mine"). */
+  otherPeople?: Readonly<Record<string, string>>;
+}
+
+/** Only a new purchase or an advance payment can belong to another person (a pairing with a sheet row keeps its own row). */
+export function isOtherPersonAssignable(group: Pick<CardOfxGroupView, 'section' | 'sendable'>): boolean {
+  return group.sendable && (group.section === 'new' || group.section === 'advance');
+}
+
+/** Sets (or, with an empty id, clears) the person of a group, leaving the others as they are. */
+export function setOtherPerson(current: Readonly<Record<string, string>>, group: string, personId: string): Record<string, string> {
+  const next = { ...current };
+  if (personId === '') delete next[group];
+  else next[group] = personId;
+  return next;
+}
+
+/** "3 linhas de outras pessoas"; null when there is none. */
+export function otherPeopleSummary(totals: { lines: number }): string | null {
+  if (totals.lines <= 0) return null;
+  return countLabel(totals.lines, 'linha de outra pessoa', 'linhas de outras pessoas');
 }
 
 export interface CardOfxKindTotals {
@@ -677,6 +698,8 @@ export interface CardOfxTotals {
   reversal: CardOfxKindTotals;
   /** Ticked advance payments: credits that will be recorded on the card (outside the OFX total). */
   advance: CardOfxKindTotals;
+  /** Ticked groups (and their lines) that go to another person. */
+  otherPeople: { groups: number; lines: number };
   /** Lines already in Recta (payments excluded), at the OFX amounts. */
   reconciled: { lines: number; cents: number };
   /** Card transactions of the month that no OFX line matched (they stay as they are). */
@@ -806,6 +829,9 @@ export function buildCardOfxConfirm(
     ? paymentSourceProblem(paymentChoice.sourceAccountId, context.accounts)
     : null;
 
+  const assigned = selected.filter((group) => isOtherPersonAssignable(group) && (context.otherPeople?.[group.proposal.group] ?? '') !== '');
+  const otherPeople = assigned.map((group) => ({ group: group.proposal.group, personId: context.otherPeople![group.proposal.group]! }));
+
   const payload: CardOfxConfirmRequest = {
     accountId: preview.accountId,
     monthKey: preview.monthKey,
@@ -820,6 +846,7 @@ export function buildCardOfxConfirm(
       context.customIdsByType,
     ),
     payment: decision,
+    ...(otherPeople.length > 0 ? { otherPeople } : {}),
   };
 
   return {
@@ -833,6 +860,7 @@ export function buildCardOfxConfirm(
       created,
       reversal,
       advance,
+      otherPeople: { groups: assigned.length, lines: assigned.reduce((sum, group) => sum + group.lines.length, 0) },
       reconciled: { lines: reconciledLines.length, cents: reconciledCents },
       sheetOnly: { count: sheetOnly.length, cents: sheetOnlyCents },
       ofxCents,
@@ -971,6 +999,12 @@ export function cardOfxResultLines(
   }
   if ((result.advancePayments ?? 0) > 0) {
     lines.push(countLabel(result.advancePayments ?? 0, 'pagamento antecipado registrado', 'pagamentos antecipados registrados'));
+  }
+  if ((result.sharedWithPeople ?? 0) > 0) {
+    lines.push(countLabel(result.sharedWithPeople ?? 0, 'lançamento dividido 100% com outra pessoa', 'lançamentos divididos 100% com outras pessoas'));
+  }
+  if ((result.settlementsRecorded ?? 0) > 0) {
+    lines.push(countLabel(result.settlementsRecorded ?? 0, 'acerto registrado com quem pagou antes', 'acertos registrados com quem pagou antes'));
   }
   if (result.payment) {
     const verb = result.payment.action === 'adjusted' ? 'ajustado' : 'registrado';

@@ -243,7 +243,9 @@ export function InvitesNotification({ onInviteClick }: InvitesNotificationProps)
                 // Budget Alert notification
                 if (notification.type === 'BUDGET_ALERT') {
                   const percentage = notification.metadata?.percentage as number | undefined;
-                  const isOverBudget = percentage !== undefined && percentage >= 100;
+                  // Only "exceeded" counts as over the budget; "reached" (exactly the limit) is the warning above it
+                  const isOverBudget = notification.metadata?.status === 'exceeded'
+                    || (notification.metadata?.status === undefined && percentage !== undefined && percentage > 100);
 
                   return (
                     <BudgetAlertNotificationCard

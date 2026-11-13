@@ -556,6 +556,7 @@ export interface Translations {
   budgetOwnShareMeasured: string;
   remaining: string;
   exceeded: string;
+  reached: string;
   general: string;
   month: string;
   

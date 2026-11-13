@@ -4,13 +4,14 @@ import { BudgetActionsMenu } from '../BudgetActionsMenu';
 import { isGeneralBudget } from '../../utils/categories';
 import { ownSharePercentage } from '../../utils/budgetOwnShare';
 import { TransactionType } from '../../lib/enums';
+import type { BudgetStatusName } from '../../utils/budgetStatus';
 
 interface BudgetItemProps {
   budget: Budget & {
     spent: number;
     remaining: number;
     percentage: number;
-    status: 'exceeded' | 'warning' | 'ok';
+    status: BudgetStatusName;
     /** Own share of the spending, only when other people owe part of it. */
     ownSpent?: number;
     /** The API has not answered the realized amount of this budget. */
@@ -75,7 +76,7 @@ export const BudgetItem = ({
             <div className="pt-4 border-t border-gray-100 dark:border-gray-800">
               <div className="flex items-center justify-between mb-2">
                 <span className="text-xs font-medium text-gray-500 dark:text-gray-300">
-                  {budget.remaining >= 0 ? t.remaining : t.exceeded}
+                  {budget.status === 'reached' ? t.reached : budget.remaining >= 0 ? t.remaining : t.exceeded}
                 </span>
                 <span className={`text-sm font-light ${
                   budget.remaining >= 0 ? 'text-green-500' : 'text-red-500'
@@ -87,6 +88,7 @@ export const BudgetItem = ({
                 <div
                   className={`h-1 rounded-full transition-all ${
                     budget.status === 'exceeded' ? 'bg-red-500' :
+                    budget.status === 'reached' ? 'bg-orange-500' :
                     budget.status === 'warning' ? 'bg-yellow-500' : 'bg-green-500'
                   }`}
                   style={{ width: `${Math.min(budget.percentage, 100)}%` }}

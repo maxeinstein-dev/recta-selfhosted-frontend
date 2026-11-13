@@ -3,11 +3,12 @@ import { useTransactions } from '../context/TransactionsContext';
 import { startOfMonth } from 'date-fns';
 import { TransactionType } from '../lib/enums';
 import { isGeneralBudget } from '../utils/categories';
+import { budgetStatusOf, type BudgetStatusName } from '../utils/budgetStatus';
 
 export interface BudgetAlert {
   category: string;
   percentage: number;
-  status: 'exceeded' | 'warning' | 'ok';
+  status: BudgetStatusName;
 }
 
 export function useBudgetAlerts(selectedMonth: Date, categoryData: any[], totalExpense: number, totalIncome: number): BudgetAlert[] {
@@ -43,12 +44,7 @@ export function useBudgetAlerts(selectedMonth: Date, categoryData: any[], totalE
         const percentage =
           budget.amount > 0 ? (spent / budget.amount) * 100 : 0;
 
-        const status: 'exceeded' | 'warning' | 'ok' =
-          percentage >= 100
-            ? 'exceeded'
-            : percentage >= 80
-            ? 'warning'
-            : 'ok';
+        const status = budgetStatusOf(spent, budget.amount);
 
         return {
           category: budget.category,

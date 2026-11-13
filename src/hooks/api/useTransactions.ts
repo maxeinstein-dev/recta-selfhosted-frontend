@@ -1040,7 +1040,7 @@ export interface BudgetVsRealized {
   spent: number;
   remaining: number;
   percentage: number;
-  status: 'ok' | 'warning' | 'exceeded';
+  status: 'ok' | 'warning' | 'reached' | 'exceeded';
 }
 
 export interface DashboardOverviewData {

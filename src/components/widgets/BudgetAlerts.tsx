@@ -15,11 +15,16 @@ export const BudgetAlerts = ({ budgetAlerts, blurNumbers = false }: BudgetAlerts
   }
 
   const exceededCount = budgetAlerts.filter(a => a.status === 'exceeded').length;
+  // Tone: red when something is over its limit, orange when a limit is exactly used, yellow for the 75% warnings
+  const reachedCount = budgetAlerts.filter(a => a.status === 'reached').length;
+  const tone = exceededCount > 0 ? 'red' : reachedCount > 0 ? 'orange' : 'yellow';
 
   return (
     <div className={`mb-4 sm:mb-6 border-l-4 p-3 sm:p-4 rounded-lg ${
-      exceededCount > 0 
-        ? 'bg-red-50 dark:bg-red-900/20 border-red-400 dark:border-red-600' 
+      tone === 'red'
+        ? 'bg-red-50 dark:bg-red-900/20 border-red-400 dark:border-red-600'
+        : tone === 'orange'
+        ? 'bg-orange-50 dark:bg-orange-900/20 border-orange-400 dark:border-orange-600'
         : 'bg-yellow-50 dark:bg-yellow-900/20 border-yellow-400 dark:border-yellow-600'
     }`}>
       <div className="flex items-start gap-2 sm:gap-3">
@@ -68,6 +73,11 @@ export const BudgetAlerts = ({ budgetAlerts, blurNumbers = false }: BudgetAlerts
                   {alert.status === 'exceeded' && (
                     <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-600 text-white whitespace-nowrap">
                       {t.budgetExceeded}
+                    </span>
+                  )}
+                  {alert.status === 'reached' && (
+                    <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-orange-500 text-white whitespace-nowrap">
+                      {t.reached}
                     </span>
                   )}
                 </div>

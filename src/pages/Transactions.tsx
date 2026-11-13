@@ -313,6 +313,10 @@ const Transactions = () => {
       setTypeFilter('todos');
     }
 
+    // ?paid=pending|paid (vindo do Fechamento do mês) abre a lista já filtrada
+    const paidParam = searchParams.get('paid');
+    if (paidParam === 'pending' || paidParam === 'paid') setPaidFilter(paidParam);
+
     // Ler datas dos query params (formato ISO: YYYY-MM-DD)
     const startDateParam = searchParams.get('startDate');
     const endDateParam = searchParams.get('endDate');

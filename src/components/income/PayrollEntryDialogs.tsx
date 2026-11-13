@@ -13,6 +13,7 @@ import {
   parseMoneyText,
   emptyVacationForm,
   fgtsBalanceBody,
+  fgtsModeAfterSwitch,
   fgtsModeBody,
   fgtsWithdrawalBody,
   hasErrors,
@@ -533,7 +534,7 @@ export function FgtsModeDialog({ open, onClose, householdId, employmentId, curre
       <form onSubmit={submit} className="space-y-4" noValidate>
         <p className={`text-xs ${MUTED_CLS}`}>{tx('incomeFormModeHint')}</p>
         <Field id="fgts-mode" label={tx('incomeFormMode')} error={err('mode')}>
-          <select id="fgts-mode" value={form.mode} disabled={flow.saving} className={FIELD_CLS} onChange={(e) => setForm({ ...form, mode: e.target.value as FgtsMode })}>
+          <select id="fgts-mode" value={form.mode} disabled={flow.saving} className={FIELD_CLS} onChange={(e) => setForm(fgtsModeAfterSwitch(form, e.target.value as FgtsMode))}>
             <option value="BIRTHDAY">{tx('incomeFormModeBirthday')}</option>
             <option value="TERMINATION">{tx('incomeFormModeTermination')}</option>
           </select>

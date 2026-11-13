@@ -459,6 +459,15 @@ export function validateFgtsMode(form: FgtsModeForm): FieldErrors<keyof FgtsMode
   return errors;
 }
 
+/**
+ * The form after the mode select changes. Termination hides the birthday month and the expected amount, so they are
+ * cleared with the switch: otherwise the hidden values stay in the form and validateFgtsMode refuses it.
+ */
+export function fgtsModeAfterSwitch(form: FgtsModeForm, mode: FgtsMode): FgtsModeForm {
+  if (mode === 'TERMINATION') return { ...form, mode, birthdayMonth: '', expectedAmount: '' };
+  return { ...form, mode };
+}
+
 export const fgtsModeBody = (form: FgtsModeForm): Record<string, unknown> =>
   form.mode === 'BIRTHDAY'
     ? {

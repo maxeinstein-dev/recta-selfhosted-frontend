@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { apiClient } from '../../utils/api';
 import { useAuth } from '../../context/AuthContext';
+import { contributionBody, type GoalKind, type GoalThisMonth } from '../../utils/savingsGoalsPlan';
 
 export interface SavingsGoal {
   id: string;
@@ -10,6 +11,14 @@ export interface SavingsGoal {
   currentAmount: number;
   targetDate?: string;
   accountId?: string;
+  /** P03: reserve (kept little by little) or provision (an expense with a due month). */
+  kind?: GoalKind;
+  monthlyContribution?: number | string | null;
+  /** 1..28 */
+  contributionDay?: number | null;
+  /** 'YYYY-MM', provisions only. */
+  dueMonth?: string | null;
+  thisMonth?: GoalThisMonth;
   createdAt: string;
   updatedAt: string;
 }
@@ -67,6 +76,10 @@ export function useCreateSavingsGoal() {
       currentAmount?: number;
       targetDate?: string;
       accountId?: string;
+      kind?: GoalKind;
+      monthlyContribution?: number;
+      contributionDay?: number;
+      dueMonth?: string;
     }) => {
       const response = await apiClient.post<SavingsGoal>('/savings-goals', {
         ...data,
@@ -137,3 +150,73 @@ export function useDeleteSavingsGoal() {
   });
 }
 
+
+/** One account of GET /savings-goals/summary: what the goals keep in it and what is free. */
+export interface SavingsGoalsSummary {
+  accounts: Array<{ accountId: string; name: string; type: string; balance: number; allocated: number; free: number }>;
+  totalAllocated: number;
+}
+
+/** Free and kept money of the accounts that have a linked goal (the account balance itself never changes with a contribution). */
+export function useSavingsGoalsSummary(householdId?: string) {
+  const { currentUser } = useAuth();
+  return useQuery({
+    queryKey: ['savings-goals', 'summary', householdId ?? null],
+    enabled: !!currentUser && !!householdId,
+    queryFn: async () => {
+      const response = await apiClient.get<SavingsGoalsSummary>('/savings-goals/summary', householdId ? { householdId } : undefined);
+      return response.data!;
+    },
+  });
+}
+
+export interface GoalContribution {
+  id: string;
+  goalId: string;
+  amount: number;
+  date: string;
+  month: string;
+  createdAt: string;
+}
+
+/** What changes after a contribution: the goals, the summary (same key) and the cash flow / bills (['dashboard']). */
+function invalidateAfterContribution(queryClient: ReturnType<typeof useQueryClient>) {
+  queryClient.invalidateQueries({ queryKey: ['savings-goals'] });
+  queryClient.invalidateQueries({ queryKey: ['dashboard'] });
+}
+
+/**
+ * "Guardar agora": POST /savings-goals/:id/contributions. No amount = the month's planned one; no date = today. The 409
+ * (the month already has one) is left to the caller, which asks and sends again with confirmDuplicate.
+ */
+export function useContributeToGoal() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { goalId: string; amountCents?: number | null; date?: string | null; confirmDuplicate?: boolean }) => {
+      const response = await apiClient.post<{ contribution: GoalContribution; goal: { id: string; currentAmount: number } }>(
+        `/savings-goals/${p.goalId}/contributions`,
+        contributionBody(p),
+      );
+      return response.data!;
+    },
+    onSuccess: () => invalidateAfterContribution(queryClient),
+  });
+}
+
+/** Undo the latest contribution of the goal in `month` ('YYYY-MM'). Resolves false when the month has none. */
+export function useUndoLastContribution() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (p: { goalId: string; month: string }) => {
+      const list = await apiClient.get<GoalContribution[] | { contributions: GoalContribution[] }>(`/savings-goals/${p.goalId}/contributions`, { month: p.month });
+      const raw = list.data as unknown;
+      const items = Array.isArray(raw) ? raw : ((raw as { contributions?: GoalContribution[] } | undefined)?.contributions ?? []);
+      // The route lists the newest first
+      const latest = items[0];
+      if (!latest) return false;
+      await apiClient.delete(`/savings-goals/${p.goalId}/contributions/${latest.id}`);
+      return true;
+    },
+    onSuccess: () => invalidateAfterContribution(queryClient),
+  });
+}

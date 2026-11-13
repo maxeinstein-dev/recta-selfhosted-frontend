@@ -143,9 +143,17 @@ export interface SavingsGoal {
   currentAmount: number;
   targetDate?: Date;
   accountId?: string;
+  /** P03 plan: reserve or provision, monthly contribution, its day (1..28) and the due month of a provision. */
+  kind?: GoalKind;
+  monthlyContribution?: number | null;
+  contributionDay?: number | null;
+  dueMonth?: string | null;
+  /** Where this month's contribution stands (read only). */
+  thisMonth?: GoalThisMonth;
 }
 
 import { User } from 'firebase/auth';
+import type { GoalKind, GoalThisMonth } from '../utils/savingsGoalsPlan';
 
 export interface AuthContextType {
   currentUser: User | null;

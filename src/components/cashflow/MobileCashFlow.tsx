@@ -21,6 +21,8 @@ import {
 import { cashFlowWarningFacts, cashFlowWarningLines, dayHeadingLabel } from '../../utils/cashFlowMobile';
 import type { CashFlowTextKey } from '../../utils/cashFlowTexts';
 import { EarlyDiscountNotice, PayNowButton, type usePayNow } from './EarlyDiscountBits';
+import { ReserveDoneButton, type useKeepNow } from '../goals/KeepNow';
+import { reserveText } from '../../utils/savingsGoalsPlan';
 
 export interface MobileCashFlowProps {
   /** Still waiting for the household or the projection. */
@@ -46,6 +48,10 @@ export interface MobileCashFlowProps {
   footer: ReactNode;
   /** The "Pagar agora" of an event with an early-payment discount (one call at a time). */
   pay: ReturnType<typeof usePayNow>;
+  /** "Marcar como feito" of a planned contribution of a savings goal (source `reserve`). */
+  keepNow: ReturnType<typeof useKeepNow>;
+  /** Free / kept / total of today when goals keep money in the accounts; null otherwise. */
+  split: { free: number; allocated: number; total: number } | null;
   tx: (key: CashFlowTextKey, vars?: Record<string, string | number>) => string;
 }
 
@@ -87,6 +93,8 @@ export default function MobileCashFlow({
   accounts,
   footer,
   pay,
+  keepNow,
+  split,
   tx,
 }: MobileCashFlowProps) {
   const facts = useMemo(() => cashFlowWarningFacts(points), [points]);
@@ -136,6 +144,7 @@ export default function MobileCashFlow({
             <h2 id="cash-flow-chart-title" className="text-sm font-semibold text-rc-ink">{tx('cashFlowChartTitle')}</h2>
             <p className={`${MUTED} text-xs tabular-nums`}>
               {tx('cashFlowTodayBalance')} {formatCurrency(data.startingBalance, currency)}
+              {split ? ` · ${tx('cashFlowFreeBalance', { total: formatCurrency(split.total, currency), kept: formatCurrency(split.allocated, currency) })}` : ''}
             </p>
           </div>
           <CashFlowChart
@@ -192,7 +201,7 @@ export default function MobileCashFlow({
                 </header>
                 <ul className="mt-2 divide-y divide-rc-line">
                   {group.events.map((event) => (
-                    <EventRow key={`${event.source}:${event.sourceId}:${event.date}:${event.amount}:${event.description}`} event={event} currency={currency} today={data.period.from} pay={pay} tx={tx} />
+                    <EventRow key={`${event.source}:${event.sourceId}:${event.date}:${event.amount}:${event.description}`} event={event} currency={currency} today={data.period.from} pay={pay} keepNow={keepNow} tx={tx} />
                   ))}
                 </ul>
               </section>
@@ -274,13 +283,13 @@ export default function MobileCashFlow({
 }
 
 /** One event: description, source and badges, signed amount. Wraps on a narrow screen; no table. */
-function EventRow({ event, currency, today, pay, tx }: { event: CashFlowEvent; currency: string; today: string; pay: MobileCashFlowProps['pay']; tx: MobileCashFlowProps['tx'] }) {
+function EventRow({ event, currency, today, pay, keepNow, tx }: { event: CashFlowEvent; currency: string; today: string; pay: MobileCashFlowProps['pay']; keepNow: MobileCashFlowProps['keepNow']; tx: MobileCashFlowProps['tx'] }) {
   const overdue = overdueDetail(event);
   const tone = eventTone(event.amount);
   return (
     <li className="flex min-h-[44px] items-start justify-between gap-3 py-2.5">
       <div className="min-w-0 flex-1">
-        <p className="break-words text-sm text-rc-ink">{event.description || tx('cashFlowNoDescription')}</p>
+        <p className="break-words text-sm text-rc-ink">{event.source === 'reserve' ? reserveText(event.description, null) : event.description || tx('cashFlowNoDescription')}</p>
         <div className="mt-1 flex flex-wrap gap-1.5">
           <span className={`${CHIP} bg-rc-card2 text-rc-ink2`}>{tx(sourceTextKey(event.source))}</span>
           {isEstimated(event) && (
@@ -298,6 +307,7 @@ function EventRow({ event, currency, today, pay, tx }: { event: CashFlowEvent; c
         <EarlyDiscountNotice quote={event.earlyDiscount} today={today} currency={currency} variant="rc" />
         <div>
           <PayNowButton discount={event.earlyDiscount} name={event.description || tx('cashFlowNoDescription')} pay={pay} variant="rc" />
+          <ReserveDoneButton event={event} keepNow={keepNow} variant="rc" />
         </div>
       </div>
       <p

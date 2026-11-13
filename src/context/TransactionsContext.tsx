@@ -330,6 +330,11 @@ const convertSavingsGoalFromBackend = (g: BackendSavingsGoal): SavingsGoal => {
     currentAmount: Number(g.currentAmount),
     targetDate: g.targetDate ? new Date(g.targetDate) : undefined,
     accountId: g.accountId,
+    kind: g.kind === 'PROVISION' ? 'PROVISION' : 'RESERVE',
+    monthlyContribution: g.monthlyContribution === null || g.monthlyContribution === undefined ? null : Number(g.monthlyContribution),
+    contributionDay: g.contributionDay ?? null,
+    dueMonth: g.dueMonth ?? null,
+    thisMonth: g.thisMonth,
   };
 };
 
@@ -867,6 +872,11 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
       currentAmount: goal.currentAmount ?? 0,
       targetDate: goal.targetDate ? formatDateForAPI(goal.targetDate) : undefined,
       accountId: goal.accountId,
+      // Plan fields: the create route takes no null, so the empty ones are left out
+      ...(goal.kind ? { kind: goal.kind } : {}),
+      ...(goal.monthlyContribution ? { monthlyContribution: goal.monthlyContribution } : {}),
+      ...(goal.contributionDay ? { contributionDay: goal.contributionDay } : {}),
+      ...(goal.dueMonth ? { dueMonth: goal.dueMonth } : {}),
     });
 
     analyticsHelpers.logSavingsGoalCreated();
@@ -884,6 +894,11 @@ export const TransactionsProvider = ({ children }: TransactionsProviderProps) =>
     if (goal.accountId !== undefined) {
       updateData.accountId = goal.accountId || null;
     }
+    // Plan fields: null clears them
+    if (goal.kind !== undefined) updateData.kind = goal.kind;
+    if (goal.monthlyContribution !== undefined) updateData.monthlyContribution = goal.monthlyContribution;
+    if (goal.contributionDay !== undefined) updateData.contributionDay = goal.contributionDay;
+    if (goal.dueMonth !== undefined) updateData.dueMonth = goal.dueMonth;
 
     await updateSavingsGoal.mutateAsync({ id, ...updateData });
     analyticsHelpers.logSavingsGoalUpdated();

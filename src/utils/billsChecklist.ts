@@ -15,10 +15,10 @@ import { canPayNow, type CashFlowEarlyDiscount } from './earlyDiscount';
 export const BILLS_PERIOD_DAYS = 30;
 
 /** What a bill is, as far as this screen can act on it. A source the screen does not know is 'unknown' (never markable). */
-export type BillKind = 'pending' | 'recurrence' | 'invoice' | 'unknown';
+export type BillKind = 'pending' | 'recurrence' | 'invoice' | 'reserve' | 'unknown';
 
 export function billKind(source: string): BillKind {
-  if (source === 'pending' || source === 'recurrence' || source === 'invoice') return source;
+  if (source === 'pending' || source === 'recurrence' || source === 'invoice' || source === 'reserve') return source;
   return 'unknown';
 }
 
@@ -177,6 +177,8 @@ export type BillAction =
   | { type: 'execute'; confirm: boolean }
   /** Recurrence occurrence with a discount that the API says can be paid now: pay it ahead through pay-next (never generated first). */
   | { type: 'payNext'; recurringId: string }
+  /** Planned contribution of a savings goal: record it (POST .../contributions) dated on the line's day. No entry, no balance change. */
+  | { type: 'reserve'; goalId: string; date: string }
   /** Card invoice: never paid here; go to the card's payment flow. */
   | { type: 'invoice' }
   /** No control: `later` for a recurrence that is not the next one (or not monthly), `unknown` for an unknown source. */
@@ -187,9 +189,11 @@ export type BillAction =
  * the recurrence is monthly (the route has a once-per-month guard only for those) and the bill's day is the recurrence's
  * next run (the route always generates the next run). Any other recurrence line waits for its date.
  */
-export function billAction(bill: Pick<Bill, 'kind' | 'sourceId' | 'dueDate' | 'estimated'> & { earlyDiscount?: CashFlowEarlyDiscount | null }, recurrences?: ReadonlyMap<string, RecurrenceInfo>): BillAction {
+export function billAction(bill: Pick<Bill, 'kind' | 'sourceId' | 'dueDate' | 'estimated'> & { date?: string } & { earlyDiscount?: CashFlowEarlyDiscount | null }, recurrences?: ReadonlyMap<string, RecurrenceInfo>): BillAction {
   if (bill.kind === 'pending') return { type: 'pay', confirm: bill.estimated };
   if (bill.kind === 'invoice') return { type: 'invoice' };
+  // An overdue contribution is listed today (the API moves it), and today is the day it is made
+  if (bill.kind === 'reserve') return { type: 'reserve', goalId: bill.sourceId, date: bill.date ?? bill.dueDate };
   if (bill.kind === 'recurrence') {
     if (canPayNow(bill.earlyDiscount)) return { type: 'payNext', recurringId: bill.earlyDiscount!.recurringId };
     const info = recurrences?.get(bill.sourceId);
@@ -258,12 +262,13 @@ export function billsProgress(bills: readonly Bill[], paidCount: number): BillsP
   return { paid, total: bills.length + paid };
 }
 
-export type BillSourceTextKey = 'billsSourcePending' | 'billsSourceRecurrence' | 'billsSourceInvoice' | 'billsSourceOther';
+export type BillSourceTextKey = 'billsSourcePending' | 'billsSourceRecurrence' | 'billsSourceInvoice' | 'billsSourceReserve' | 'billsSourceOther';
 
 export function billSourceTextKey(kind: BillKind): BillSourceTextKey {
   if (kind === 'pending') return 'billsSourcePending';
   if (kind === 'recurrence') return 'billsSourceRecurrence';
   if (kind === 'invoice') return 'billsSourceInvoice';
+  if (kind === 'reserve') return 'billsSourceReserve';
   return 'billsSourceOther';
 }
 

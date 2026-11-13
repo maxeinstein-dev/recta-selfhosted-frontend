@@ -206,6 +206,12 @@ export interface CardOfxConfirmRequest {
   /** Merchants of the selected create proposals. */
   categoryMap: MaxFinCategoryMapInput[];
   payment: CardOfxPaymentDecision | null;
+  /**
+   * Ticked `create` and `advance-payment` groups that belong to another person: a purchase is recorded as the holder's own expense
+   * split 100% to the person (on every installment); an advance payment becomes the credit plus a received settlement with the person.
+   * Omitted when there is none.
+   */
+  otherPeople?: Array<{ group: string; personId: string }>;
 }
 
 export interface CardOfxConfirmResponse {
@@ -219,6 +225,10 @@ export interface CardOfxConfirmResponse {
   /** Advance payments recorded as credits on the card (kind 'advance-payment'); absent on a server that predates them. */
   advancePayments?: number;
   payment: { action: 'adjusted' | 'created'; transactionId: string; amount: number; date: string } | null;
+  /** Transactions split 100% to another person; absent on a server that predates `otherPeople`. */
+  sharedWithPeople?: number;
+  /** Advance payments recorded with a received settlement; absent on a server that predates `otherPeople`. */
+  settlementsRecorded?: number;
   /** Groups that no longer exist when confirm recomputes the reconciliation. */
   skipped: number;
   createdCategories: Array<{ id: string; name: string; type: MaxFinTransactionType }>;

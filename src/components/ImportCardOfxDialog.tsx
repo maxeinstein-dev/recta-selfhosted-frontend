@@ -15,6 +15,8 @@ import { CATEGORY_NAME_DISPLAY, CategoryType } from '../lib/enums';
 import { loadSavedCategoryChoices, monthLabel, saveCategoryChoices } from '../hooks/api/useImportMaxFin';
 import type { MaxFinCategoryMapEntry, MaxFinCategoryTargetInput, MaxFinMonth, MaxFinTransactionType } from '../hooks/api/useImportMaxFin';
 import { useCardOfxConfirm, useCardOfxPreview } from '../hooks/api/useImportCardOfx';
+import { usePeople } from '../hooks/api/usePeople';
+import type { Person } from '../hooks/api/usePeople';
 import type {
   CardOfxConfirmResponse, CardOfxLine, CardOfxOptionsInput, CardOfxPayment, CardOfxPreviewResponse, CardOfxResult, CardOfxSheetOnly,
   CardOfxTarget,
@@ -27,7 +29,7 @@ import { monthKeyLabel } from '../utils/maxfinWorkbook';
 import {
   PROPOSAL_KIND_LABEL, buildCardOfxConfirm, buildCardOfxSections, buildCardOfxSummary, cardOfxConfirmBlocker, cardOfxFailureMessage,
   cardOfxMonthSourceLabel, cardOfxResultLines, clearGroups, defaultPaymentChoice, isGroupSelected, isKnownProposalKind,
-  ADVANCE_PAYMENT_HEADLINE, advancePaymentEffect, counterpartNote, isPaymentActionable, lineKindLabel, mergeAbsorbedNotice, mergeSummary, nearChange, nearChangeText, recurrenceAmbiguityNotice, recurrenceChange, recurrenceChangeText, neighbourMonthLabel, newLinesNotice, paymentNeedsSource, paymentSourceAccounts,
+  ADVANCE_PAYMENT_HEADLINE, advancePaymentEffect, isOtherPersonAssignable, otherPeopleSummary, setOtherPerson, counterpartNote, isPaymentActionable, lineKindLabel, mergeAbsorbedNotice, mergeSummary, nearChange, nearChangeText, recurrenceAmbiguityNotice, recurrenceChange, recurrenceChangeText, neighbourMonthLabel, newLinesNotice, paymentNeedsSource, paymentSourceAccounts,
   proposalHeadline, proposalReasonChip, reconcileGroupSelection, reconcilePaymentChoice, selectAllGroups, setGroupSelected, validateCardOfxFile,
 } from '../utils/cardOfx';
 import { buildClosingView, closingBasisLabel, closingHeadline, closingResidualStatus, closingRows } from '../utils/cardOfxClosing';
@@ -401,12 +403,27 @@ const groupCheckboxLabel = (group: CardOfxGroupView): string => {
   }
 };
 
+/** "De outra pessoa": the line becomes the holder's expense split 100% to the person (a purchase) or a settlement with them (an advance payment). */
+const OtherPersonSelect = ({ group, people, value, disabled, onChange }: {
+  group: CardOfxGroupView; people: readonly Person[]; value: string; disabled: boolean; onChange: (group: string, personId: string) => void;
+}) => (
+  <label className="mt-1 flex flex-wrap items-center gap-2 text-xs text-gray-600 dark:text-gray-400">
+    <span>{group.section === 'advance' ? 'Quem pagou?' : 'De quem é?'}</span>
+    <select value={value} disabled={disabled} onChange={(e) => onChange(group.proposal.group, e.target.value)}
+      aria-label={`Pessoa da linha: ${group.lines[0]?.memo ?? group.proposal.group}`} className={`${SELECT_SM_CLS} !w-auto !min-w-[140px]`}>
+      <option value="">{group.section === 'advance' ? 'Ninguém (crédito sem acerto)' : 'Meu'}</option>
+      {people.map((person) => <option key={person.id} value={person.id}>{person.name}</option>)}
+    </select>
+  </label>
+);
+
 interface GroupRowProps {
   group: CardOfxGroupView; checked: boolean; disabled: boolean; currency: CurrencyCode;
   onToggle: (group: CardOfxGroupView, checked: boolean) => void;
+  people?: readonly Person[]; otherPeople?: Readonly<Record<string, string>>; onOtherPerson?: (group: string, personId: string) => void;
 }
 
-const GroupRow = ({ group, checked, disabled, currency, onToggle }: GroupRowProps) => {
+const GroupRow = ({ group, checked, disabled, currency, onToggle, people = [], otherPeople = {}, onOtherPerson }: GroupRowProps) => {
   const { proposal, section } = group;
   const twoColumns = section === 'matched' || section === 'futures' || section === 'advance';
   const counterpart = counterpartNote(proposal, (value, type) => signedAmount(value, type, currency), fmtDate);
@@ -439,6 +456,9 @@ const GroupRow = ({ group, checked, disabled, currency, onToggle }: GroupRowProp
           )}
         </div>
         <LineList lines={group.lines} currency={currency} />
+        {onOtherPerson && people.length > 0 && isOtherPersonAssignable(group) && (
+          <OtherPersonSelect group={group} people={people} value={otherPeople[proposal.group] ?? ''} disabled={disabled || !checked} onChange={onOtherPerson} />
+        )}
         {counterpart && <p data-counterpart className={`mt-1 text-xs ${MUTED_CLS}`}>{counterpart}</p>}
       </td>
       {section === 'advance' && (
@@ -481,11 +501,12 @@ interface GroupSectionProps {
   hint?: ReactNode; bulk?: { selectAll: string; clear: string }; children?: ReactNode;
   onToggle: (group: CardOfxGroupView, checked: boolean) => void; onSelectAll: (groups: CardOfxGroupView[]) => void;
   onClear: (groups: CardOfxGroupView[]) => void;
+  people?: readonly Person[]; otherPeople?: Readonly<Record<string, string>>; onOtherPerson?: (group: string, personId: string) => void;
 }
 
 /** One section of proposals: a checkbox per group (a group goes in with all of its OFX lines). */
 const GroupSection = ({
-  id, title, groups, selection, disabled, currency, hint, bulk, children, onToggle, onSelectAll, onClear,
+  id, title, groups, selection, disabled, currency, hint, bulk, children, onToggle, onSelectAll, onClear, people, otherPeople, onOtherPerson,
 }: GroupSectionProps) => {
   if (groups.length === 0) return null;
   const section = groups[0].section;
@@ -517,7 +538,7 @@ const GroupSection = ({
           <tbody className={TBODY_CLS}>
             {groups.map((group, index) => (
               <GroupRow key={`${index}-${group.proposal.group}`} group={group} checked={isGroupSelected(selection, group)} disabled={disabled}
-                currency={currency} onToggle={onToggle} />
+                currency={currency} onToggle={onToggle} people={people} otherPeople={otherPeople} onOtherPerson={onOtherPerson} />
             ))}
           </tbody>
         </table>
@@ -772,6 +793,8 @@ const PreviewFooter = ({
   if (totals.reversal.groups > 0) parts.push(countLabel(totals.reversal.groups, 'par compra/estorno', 'pares compra/estorno'));
   if (totals.advance.groups > 0) parts.push(countLabel(totals.advance.groups, 'pagamento antecipado a registrar', 'pagamentos antecipados a registrar'));
   // Exactly what the request carries: the source account appears only when the payment needs one.
+  const othersText = otherPeopleSummary(totals.otherPeople);
+  if (othersText) parts.push(othersText);
   const sourceId = built.payload.payment?.sourceAccountId ?? '';
   const sourceText = sourceId ? `, da conta ${accountName(sourceId)}` : '';
   const promise = payment && totals.payment.action
@@ -950,6 +973,14 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
   const [selection, setSelection] = useState<CardOfxSelection>({});
   const [paymentChoice, setPaymentChoice] = useState<CardOfxPaymentChoice>(() => defaultPaymentChoice(null));
   const [categoryChoices, setCategoryChoices] = useState<Record<string, MaxFinCategoryTargetInput>>({});
+  // Group -> person of the lines that belong to someone else (cleared with the preview).
+  const [otherPeople, setOtherPeople] = useState<Record<string, string>>({});
+  const { data: peopleData } = usePeople(householdId);
+  const people = useMemo(() => (peopleData ?? []).filter((person) => person.isActive), [peopleData]);
+  useEffect(() => {
+    if (preview === null) setOtherPeople({});
+  }, [preview]);
+  const handleOtherPerson = (group: string, personId: string) => setOtherPeople((current) => setOtherPerson(current, group, personId));
   const [formError, setFormError] = useState<string | null>(null);
   const [confirmError, setConfirmError] = useState<string | null>(null);
   const [result, setResult] = useState<CardOfxConfirmResponse | null>(null);
@@ -1083,8 +1114,8 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
   );
   // One source for the numbers on screen and the request.
   const built = useMemo(
-    () => (preview ? buildCardOfxConfirm(preview, selection, effectiveChoices, paymentChoice, { accounts, customIdsByType }) : null),
-    [preview, selection, effectiveChoices, paymentChoice, accounts, customIdsByType],
+    () => (preview ? buildCardOfxConfirm(preview, selection, effectiveChoices, paymentChoice, { accounts, customIdsByType, otherPeople }) : null),
+    [preview, selection, effectiveChoices, paymentChoice, accounts, customIdsByType, otherPeople],
   );
 
   // The statement closing for the selection on screen (the server's numbers for its default, recomputed otherwise).
@@ -1413,6 +1444,7 @@ const ImportCardOfxDialog = ({ open, onClose, accountId, householdId: householdI
 
   const groupSectionProps = {
     selection, disabled: busy, currency: baseCurrency, onToggle: handleToggleGroup, onSelectAll: handleSelectAll, onClear: handleClear,
+    people, otherPeople, onOtherPerson: handleOtherPerson,
   };
 
   return createPortal(

@@ -16,6 +16,7 @@ const DEFAULT_WIDGETS: WidgetConfig[] = [
   { id: 'budgetVsRealized', enabled: true, order: 9 },
   { id: 'fixedVsVariable', enabled: true, order: 10 },
   { id: 'dailyCashFlow', enabled: true, order: 11 },
+  { id: 'incomeSplit', enabled: true, order: 12 },
 ];
 
 export const useDashboardPreferences = () => {

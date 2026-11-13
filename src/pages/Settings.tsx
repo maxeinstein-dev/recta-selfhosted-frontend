@@ -50,6 +50,7 @@ import {
   useDefaultHousehold,
 } from "../hooks/useDefaultHousehold";
 import CategoryManager from "../components/categories/CategoryManager";
+import SpendingGroupsManager from "../components/spending-groups/SpendingGroupsManager";
 import CaptureDiagnostics from "../components/capture/CaptureDiagnostics";
 import CaptureRulesCard from "../components/capture/CaptureRulesCard";
 import CaptureReaderCard from "../components/capture/CaptureReaderCard";
@@ -609,6 +610,9 @@ const SettingsPage = () => {
 
       {/* Categorias: padrão (somente leitura) e personalizadas (criar, renomear, unir, excluir) */}
       <CategoryManager householdId={householdId ?? undefined} canEdit={canWritePeople(household)} />
+
+      {/* Grupos de gasto: acima das categorias de despesa, para a barra da renda do Início (P05) */}
+      <SpendingGroupsManager householdId={householdId ?? undefined} canEdit={canWritePeople(household)} />
 
       {/* Moeda Base */}
       <div className="bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-lg p-4 sm:p-6 mb-4 sm:mb-6">

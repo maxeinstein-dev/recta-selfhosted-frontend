@@ -230,7 +230,8 @@ export type WidgetId =
   | 'budgetVsRealized'
   | 'fixedVsVariable'
   | 'dailyCashFlow'
-  | 'spendingHeatmap';
+  | 'spendingHeatmap'
+  | 'incomeSplit';
 
 export interface WidgetConfig {
   id: WidgetId;

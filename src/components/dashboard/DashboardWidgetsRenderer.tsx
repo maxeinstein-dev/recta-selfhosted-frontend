@@ -12,6 +12,7 @@ import {
   FixedVsVariableWidget,
   DailyCashFlowWidget,
   SpendingHeatmapWidget,
+  IncomeSplitWidget,
   TrendsForecastSkeleton,
   CreditCardsSkeleton,
   SavingsGoalsSkeleton,
@@ -176,6 +177,8 @@ export const DashboardWidgetsRenderer = ({
             selectedMonth={selectedMonth || new Date()}
           />
         );
+      case 'incomeSplit':
+        return <IncomeSplitWidget selectedMonth={selectedMonth || new Date()} blurNumbers={isBlurred} />;
     default:
       return null;
   }

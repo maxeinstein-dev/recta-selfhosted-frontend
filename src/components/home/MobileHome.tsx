@@ -55,6 +55,7 @@ import {
 import { MONTH_NAMES_PT, monthLabelPt } from '../../utils/mobileShell';
 import { shortMonthLabel } from '../../utils/cardsMobile';
 import { EarlyDiscountNotice } from '../cashflow/EarlyDiscountBits';
+import MobileIncomeSplit from '../spending-groups/MobileIncomeSplit';
 
 const CARD = 'rounded-2xl border border-rc-line bg-rc-card p-4';
 const MUTED = 'text-sm text-rc-ink2';
@@ -217,6 +218,8 @@ export default function MobileHome() {
           <ChevronRight className="h-4 w-4 flex-none text-rc-ink2" aria-hidden="true" />
         </button>
       ))}
+
+      <MobileIncomeSplit householdId={householdId ?? undefined} monthKey={monthKey} money={money} />
 
       <BillsCard
         loading={!householdId || cashFlow.isPending}

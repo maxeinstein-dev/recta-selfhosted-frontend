@@ -44,7 +44,9 @@ export function ownShareByBudget(rows: readonly OwnShareSummaryRow[] | undefined
   return out;
 }
 
-export type BudgetRealizedStatus = 'ok' | 'warning' | 'exceeded';
+import { budgetStatusOf, type BudgetStatusName } from './budgetStatus';
+
+export type BudgetRealizedStatus = BudgetStatusName;
 
 /** WHOLE: the full spending (a budget kept together). OWN_SHARE: only the own share (kept separately). */
 export type BudgetMeasure = 'WHOLE' | 'OWN_SHARE';
@@ -76,7 +78,8 @@ export function summaryRowsByBudget(rows: readonly OwnShareSummaryRow[] | undefi
  * available instead of a number of its own.
  *
  * Sums are made in whole cents. The status follows the MEASURED amount over the limit (the amount the API measured for
- * the mode of the budget; never one computed here): 100% or more is exceeded, 80% or more a warning.
+ * the mode of the budget; never one computed here): above the limit is exceeded, exactly the limit is reached, 80% or
+ * more a warning (budgetStatus.ts).
  */
 export function budgetRealized(limit: number, row: OwnShareSummaryRow | undefined, isExpense: boolean): BudgetRealized | null {
   if (!row || typeof row.spending !== 'number' || !Number.isFinite(row.spending) || !Number.isFinite(limit)) return null;
@@ -87,7 +90,7 @@ export function budgetRealized(limit: number, row: OwnShareSummaryRow | undefine
   const measure: BudgetMeasure = isExpense && row.measure === 'OWN_SHARE' ? 'OWN_SHARE' : 'WHOLE';
   const measuredCents = separate ? Math.max(0, cents(row.measured as number)) : spentCents;
   const percentage = limitCents > 0 ? (measuredCents / limitCents) * 100 : 0;
-  const status: BudgetRealizedStatus = percentage >= 100 ? 'exceeded' : percentage >= 80 ? 'warning' : 'ok';
+  const status: BudgetRealizedStatus = budgetStatusOf(measuredCents / 100, limitCents / 100);
   const own = isExpense ? ownShareByBudget([row]).get(row.budgetId) : undefined;
   return {
     measure,

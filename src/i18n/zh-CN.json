@@ -232,6 +232,7 @@
   "spent": "已花费",
   "remaining": "剩余",
   "exceeded": "超出",
+  "reached": "已达到",
   "general": "通用（所有类别）",
   "month": "月份",
   "newGoal": "新建目标",

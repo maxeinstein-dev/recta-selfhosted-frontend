@@ -10,6 +10,7 @@ import { useDefaultHousehold } from '../../hooks/useDefaultHousehold';
 import { useBudgetSummary } from '../../hooks/api/useBudgets';
 import { budgetRealized, summaryMonthOf, summaryRowsByBudget } from '../../utils/budgetOwnShare';
 import { budgetsInForce } from '../../utils/budgetPeriod';
+import type { BudgetStatusName } from '../../utils/budgetStatus';
 
 interface BudgetVsRealizedWidgetProps {
   selectedMonth: Date;
@@ -54,7 +55,7 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
       // Limitar a porcentagem exibida a 1000% para evitar números extremos
       const percentage = Math.min(rawPercentage, 1000);
       const remaining = realized?.remaining ?? budget.amount;
-      const status: 'exceeded' | 'warning' | 'ok' = realized?.status ?? 'ok';
+      const status: BudgetStatusName = realized?.status ?? 'ok';
 
       return {
         category: budget.category,
@@ -71,7 +72,7 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
       };
     }).sort((a, b) => {
       // Ordenar: exceeded primeiro, depois warning, depois ok
-      const statusOrder = { exceeded: 0, warning: 1, ok: 2 };
+      const statusOrder = { exceeded: 0, reached: 1, warning: 2, ok: 3 };
       if (statusOrder[a.status] !== statusOrder[b.status]) {
         return statusOrder[a.status] - statusOrder[b.status];
       }
@@ -108,7 +109,7 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
         {budgetData.map((budget) => {
           const StatusIcon = budget.status === 'exceeded' 
             ? AlertCircle 
-            : budget.status === 'warning' 
+            : budget.status === 'warning' || budget.status === 'reached'
             ? AlertCircle 
             : CheckCircle2;
           
@@ -119,6 +120,13 @@ export const BudgetVsRealizedWidget = ({ selectedMonth, blurNumbers = false }: B
               text: 'text-red-700 dark:text-red-300',
               icon: 'text-red-600 dark:text-red-400',
               bar: 'bg-red-600',
+            },
+            reached: {
+              bg: 'bg-orange-50 dark:bg-orange-900/20',
+              border: 'border-orange-200 dark:border-orange-800',
+              text: 'text-orange-700 dark:text-orange-300',
+              icon: 'text-orange-600 dark:text-orange-400',
+              bar: 'bg-orange-500',
             },
             warning: {
               bg: 'bg-yellow-50 dark:bg-yellow-900/20',

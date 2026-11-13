@@ -1,13 +1,14 @@
 import { Budget } from '../../types';
 import { BudgetItem } from './BudgetItem';
 import { AlertCircle } from 'lucide-react';
+import type { BudgetStatusName } from '../../utils/budgetStatus';
 
 interface BudgetListProps {
   budgets: Array<Budget & {
     spent: number;
     remaining: number;
     percentage: number;
-    status: 'exceeded' | 'warning' | 'ok';
+    status: BudgetStatusName;
     /** Own share of the spending, only when other people owe part of it. */
     ownSpent?: number;
     /** The API has not answered the realized amount of this budget. */
@@ -34,6 +35,7 @@ export const BudgetList = ({
   onRetryRealized,
 }: BudgetListProps) => {
   const exceededCount = budgets.filter(b => b.status === 'exceeded').length;
+  const reachedCount = budgets.filter(b => b.status === 'reached').length;
   const warningCount = budgets.filter(b => b.status === 'warning').length;
 
   return (
@@ -49,13 +51,15 @@ export const BudgetList = ({
         </div>
       )}
       {/* Alertas */}
-      {exceededCount > 0 || warningCount > 0 ? (
-        <div className="mb-6 border-l-4 border-yellow-400 dark:border-yellow-500 bg-yellow-50/50 dark:bg-yellow-900/10 p-4">
+      {exceededCount > 0 || reachedCount > 0 || warningCount > 0 ? (
+        <div className={`mb-6 border-l-4 p-4 ${reachedCount > 0 && exceededCount === 0
+          ? 'border-orange-400 dark:border-orange-500 bg-orange-50/50 dark:bg-orange-900/10'
+          : 'border-yellow-400 dark:border-yellow-500 bg-yellow-50/50 dark:bg-yellow-900/10'}`}>
           <div className="flex">
-            <AlertCircle className="h-5 w-5 text-yellow-500 dark:text-yellow-400" />
+            <AlertCircle className={reachedCount > 0 && exceededCount === 0 ? 'h-5 w-5 text-orange-500 dark:text-orange-400' : 'h-5 w-5 text-yellow-500 dark:text-yellow-400'} />
             <div className="ml-3">
-              <p className="text-sm font-light text-yellow-700 dark:text-yellow-300">
-                Você tem {exceededCount} orçamento(s) excedido(s) e{' '}
+              <p className={`text-sm font-light ${reachedCount > 0 && exceededCount === 0 ? 'text-orange-700 dark:text-orange-300' : 'text-yellow-700 dark:text-yellow-300'}`}>
+                Você tem {exceededCount} orçamento(s) excedido(s), {reachedCount} atingido(s) e{' '}
                 {warningCount} próximo(s) do limite
               </p>
             </div>

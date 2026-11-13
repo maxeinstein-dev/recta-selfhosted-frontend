@@ -339,6 +339,7 @@
   "budgetOwnShareMeasured": "Your share (counts in the limit)",
   "remaining": "Remaining",
   "exceeded": "Exceeded",
+  "reached": "Reached",
   "general": "General (All categories)",
   "month": "Month",
   "newGoal": "New Goal",

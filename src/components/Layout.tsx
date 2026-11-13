@@ -23,6 +23,7 @@ import {
   Inbox,
   TrendingUp,
   Briefcase,
+  ClipboardCheck,
 } from "lucide-react";
 import { useState, useEffect, useCallback, useRef } from "react";
 import MobileBanner from "./MobileBanner";
@@ -39,6 +40,7 @@ import { useCapturesCount } from "../hooks/api/useCaptures";
 import { captureBadgeText } from "../utils/captureInbox";
 import { captureText } from "../utils/captureTexts";
 import { cashFlowText } from "../utils/cashFlowTexts";
+import { monthCloseText } from "../utils/monthCloseTexts";
 import { incomeText } from "../utils/incomeTexts";
 import { isNativeApp } from "../native/captureReader";
 import MobileShell from "./mobile/MobileShell";
@@ -170,6 +172,7 @@ const Layout = () => {
     { path: "/app/captures", label: captureText(t, "captureNavLabel"), icon: Inbox, badge: captureBadgeText(pendingCaptures ?? 0) },
     { path: "/app/accounts", label: t.accounts, icon: Wallet },
     { path: "/app/cash-flow", label: cashFlowText(t, "cashFlowNavLabel"), icon: TrendingUp },
+    { path: "/app/month-close", label: monthCloseText(t, "monthCloseNavLabel"), icon: ClipboardCheck },
     { path: "/app/income", label: incomeText(t, "incomeNavLabel"), icon: Briefcase },
     { path: "/app/credit-cards", label: `${t.creditCards}`, icon: CreditCard },
     { path: "/app/people", label: t.peoplePage || "Pessoas", icon: Users },

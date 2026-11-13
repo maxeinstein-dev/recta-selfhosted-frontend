@@ -1,11 +1,9 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Circle, Clock, Loader2 } from 'lucide-react';
-import { useI18n } from '../../context/I18nContext';
 import { useCurrency } from '../../context/CurrencyContext';
-import { useToastContext } from '../../context/ToastContext';
-import { useConfirmReceipt } from '../../hooks/useConfirmReceipt';
-import { useBillActions, useBillsCashFlow, useBillsRecurrences, usePaidMonthExpenses } from '../../hooks/api/useBillsChecklist';
+import { useBillPayments } from '../../hooks/useBillPayments';
+import { useBillsCashFlow, useBillsRecurrences, usePaidMonthExpenses } from '../../hooks/api/useBillsChecklist';
 import { formatCurrency } from '../../utils/format';
 import { allEvents, monthLabel, shortDate } from '../../utils/cashFlow';
 import {
@@ -18,7 +16,6 @@ import {
   billsProgress,
   billsTotalCents,
   dayNumber,
-  earlyPaymentDay,
   filterBills,
   monthEnd,
   monthStart,
@@ -26,11 +23,8 @@ import {
   paidIds,
   recurrenceMap,
   type Bill,
-  type BillAction,
 } from '../../utils/billsChecklist';
-import { billsText, type BillsTextKey } from '../../utils/billsChecklistTexts';
-import { EarlyDiscountNotice, usePayNow } from '../cashflow/EarlyDiscountBits';
-import { useKeepNow } from '../goals/KeepNow';
+import { EarlyDiscountNotice } from '../cashflow/EarlyDiscountBits';
 import { reserveText } from '../../utils/savingsGoalsPlan';
 
 const CARD_CLS = 'rounded-lg border border-gray-200 dark:border-gray-800 bg-white dark:bg-gray-900 p-3';
@@ -49,22 +43,13 @@ export interface BillsChecklistProps {
  * answer, with a due-day filter, the total, the "N of M paid" counter and a control to mark each one as paid.
  */
 export default function BillsChecklist({ householdId, accountId }: BillsChecklistProps) {
-  const { t } = useI18n();
-  const tx = (key: BillsTextKey, vars?: Record<string, string | number>) => billsText(t, key, vars);
   const { baseCurrency } = useCurrency();
-  const { success, error: showError, info } = useToastContext();
   const navigate = useNavigate();
-  const confirmReceipt = useConfirmReceipt();
-  const { payPending, generateOccurrence } = useBillActions();
-  const pay = usePayNow();
-  // "Guardar" lines: record the contribution (no entry, the account balance does not change); 409 asks first
-  const keepNow = useKeepNow({ successText: () => tx('billsReserveDoneToast') });
+  // Paying (pending entry, occurrence, pay-next) is shared with the mobile Início: see hooks/useBillPayments
+  const payments = useBillPayments();
+  const { tx, busyKey, doneKeys, markedIds } = payments;
 
   const [filter, setFilter] = useState<string>(FILTER_ALL);
-  const [busyKey, setBusyKey] = useState<string | null>(null);
-  // Lines just marked (hidden until the answer catches up) and the transactions they became (for the counter)
-  const [doneKeys, setDoneKeys] = useState<ReadonlySet<string>>(new Set());
-  const [markedIds, setMarkedIds] = useState<ReadonlySet<string>>(new Set());
 
   const query = useBillsCashFlow({ householdId, accountId });
   const data = query.data;
@@ -87,86 +72,6 @@ export default function BillsChecklist({ householdId, accountId }: BillsChecklis
 
   const currency = data?.currency ?? baseCurrency;
   const noun = (count: number) => tx(count === 1 ? 'billsNounOne' : 'billsNounMany');
-
-  const markDone = (bill: Bill, transactionId: string | null) => {
-    setDoneKeys((prev) => new Set(prev).add(bill.key));
-    if (transactionId) setMarkedIds((prev) => new Set(prev).add(transactionId));
-  };
-
-  const mark = async (bill: Bill, action: BillAction) => {
-    if (action.type === 'reserve') {
-      setBusyKey(bill.key);
-      try {
-        const ok = await keepNow.keep({ goalId: action.goalId, name: reserveText(bill.description, null), date: action.date });
-        if (ok) markDone(bill, null);
-      } finally {
-        setBusyKey(null);
-      }
-      return;
-    }
-    if (action.type === 'payNext') {
-      // Not generated yet and with a discount: the route creates the occurrence already paid (discounted until the limit)
-      // and moves the recurrence on, so the job does not generate another one at the due date.
-      setBusyKey(bill.key);
-      try {
-        const id = await pay.payNow(action.recurringId);
-        if (id) markDone(bill, id);
-      } finally {
-        setBusyKey(null);
-      }
-      return;
-    }
-    if (action.type !== 'pay' && action.type !== 'execute') return;
-    setBusyKey(bill.key);
-    // A bill not due yet is paid today, never on its future due day
-    const early = today ? earlyPaymentDay(bill.dueDate, today) : null;
-    try {
-      if (action.type === 'pay') {
-        if (action.confirm) {
-          // An estimated value is confirmed with the real amount and day, in the dialog the app already has
-          confirmReceipt.request({ id: bill.sourceId, type: 'EXPENSE', amount: bill.amountCents / 100, date: early ?? bill.dueDate, paid: false, description: bill.description });
-          return;
-        }
-        await payPending(bill.sourceId, early);
-        markDone(bill, bill.sourceId);
-        success(tx('billsPaidToast'));
-        return;
-      }
-      // The occurrence is generated once by the route (paid at once, or pending to be confirmed when its value is an estimate)
-      // Generated pending when the value is an estimate (confirmed next) or when it must be moved to today first
-      const result = await generateOccurrence(bill.sourceId, !action.confirm && !early);
-      const created = result.transaction;
-      if (created.paid) {
-        if (result.skipped) info(tx('billsAlreadyGenerated'));
-        else {
-          markDone(bill, created.id);
-          success(tx('billsPaidToast'));
-        }
-        return;
-      }
-      if (action.confirm) {
-        confirmReceipt.request({
-          id: created.id,
-          type: 'EXPENSE',
-          amount: Number(created.amount),
-          date: early ?? String(created.date).slice(0, 10),
-          paid: false,
-          recurringTransactionId: created.recurringTransactionId,
-          description: created.description,
-        });
-        info(tx('billsConfirmValueToast'));
-        return;
-      }
-      // Pending still (not due yet, or the month already held a pending occurrence): pay that one, on today when early
-      await payPending(created.id, early);
-      markDone(bill, created.id);
-      success(tx('billsPaidToast'));
-    } catch {
-      showError(tx('billsMarkError'));
-    } finally {
-      setBusyKey(null);
-    }
-  };
 
   const goToInvoice = (bill: Bill) => {
     const params = new URLSearchParams({ card: bill.sourceId });
@@ -240,9 +145,9 @@ export default function BillsChecklist({ householdId, accountId }: BillsChecklis
                       {action.type === 'pay' || action.type === 'execute' || action.type === 'payNext' || action.type === 'reserve' ? (
                         <button
                           type="button"
-                          disabled={busyKey !== null || pay.busy || keepNow.busy}
+                          disabled={payments.busy}
                           aria-label={action.type === 'reserve' ? tx('billsMarkReserveDone', { name }) : tx('billsMarkPaid', { name })}
-                          onClick={() => void mark(bill, action)}
+                          onClick={() => void payments.mark(bill, action, today)}
                           className="flex h-11 w-11 items-center justify-center rounded-full text-gray-400 hover:text-emerald-600 disabled:opacity-60 dark:text-gray-500 dark:hover:text-emerald-400"
                         >
                           {busyKey === bill.key ? <Loader2 className="h-6 w-6 animate-spin" aria-label={tx('billsMarking')} /> : <Circle className="h-6 w-6" aria-hidden="true" />}
@@ -297,8 +202,7 @@ export default function BillsChecklist({ householdId, accountId }: BillsChecklis
     <section aria-label={tx('billsTitle')} className={`${CARD_CLS} space-y-3`}>
       <h2 className="text-sm font-medium text-gray-900 dark:text-white">{tx('billsTitle')}</h2>
       {body}
-      {confirmReceipt.dialog}
-      {keepNow.dialog}
+      {payments.dialog}
     </section>
   );
 }

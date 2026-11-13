@@ -36,6 +36,7 @@ const Settings = lazy(() => import('./pages/Settings'));
 const Captures = lazy(() => import('./pages/Captures'));
 const CashFlow = lazy(() => import('./pages/CashFlow'));
 const MonthClose = lazy(() => import('./pages/MonthClose'));
+const NetWorth = lazy(() => import('./pages/NetWorth'));
 const Income = lazy(() => import('./pages/Income'));
 const IncomeDetail = lazy(() => import('./pages/IncomeDetail'));
 const IncomeSimulator = lazy(() => import('./pages/IncomeSimulator'));
@@ -225,6 +226,7 @@ function AppRoutes() {
             <Route path="accounts" element={<Accounts />} />
             <Route path="cash-flow" element={<CashFlow />} />
             <Route path="month-close" element={<MonthClose />} />
+            <Route path="net-worth" element={<NetWorth />} />
             <Route path="income" element={<Income />} />
             <Route path="income/simulator" element={<IncomeSimulator />} />
             <Route path="income/calendar" element={<IncomeCalendar />} />

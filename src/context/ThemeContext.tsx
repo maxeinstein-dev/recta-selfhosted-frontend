@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode, useRef } from 'react';
 import { useAuth } from './AuthContext';
 import { useUser, useUpdateUserPreferences } from '../hooks/api/useUsers';
+import { resolveTheme, followsSystem, THEME_CHOSEN_KEY, THEME_STORAGE_KEY } from '../utils/themeChoice';
 
 export type Theme = 'light' | 'dark';
 
@@ -24,29 +25,21 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
   const updatePreferences = useUpdateUserPreferences();
   
   // Inicializar tema e aplicar imediatamente no HTML
-  const getInitialTheme = (): Theme => {
+  // Escolha por aparelho (utils/themeChoice): sem escolha feita neste aparelho, segue o sistema.
+  const readDeviceTheme = (): Theme => {
     if (typeof window === 'undefined') return 'light';
-    
-    const saved = localStorage.getItem('theme') as Theme;
-    if (saved === 'dark' || saved === 'light') {
-      // Aplicar imediatamente no HTML antes do React renderizar
-      const root = document.documentElement;
-      if (saved === 'dark') {
-        root.classList.add('dark');
-      } else {
-        root.classList.remove('dark');
-      }
-      return saved;
-    }
-    
-    // Verificar preferência do sistema
-    if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
-      document.documentElement.classList.add('dark');
-      return 'dark';
-    }
-    
-    document.documentElement.classList.remove('dark');
-    return 'light';
+    return resolveTheme({
+      chosen: localStorage.getItem(THEME_CHOSEN_KEY) === '1',
+      saved: localStorage.getItem(THEME_STORAGE_KEY),
+      systemDark: window.matchMedia('(prefers-color-scheme: dark)').matches,
+    });
+  };
+
+  const getInitialTheme = (): Theme => {
+    const next = readDeviceTheme();
+    // Aplicar imediatamente no HTML antes do React renderizar
+    document.documentElement.classList.toggle('dark', next === 'dark');
+    return next;
   };
 
   const [theme, setThemeState] = useState<Theme>(getInitialTheme);
@@ -67,17 +60,31 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     }
   }, [theme]);
 
+  // Sem escolha neste aparelho, o tema acompanha o sistema quando ele muda (utils/themeChoice).
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const mql = window.matchMedia('(prefers-color-scheme: dark)');
+    const onSystemChange = () => {
+      if (!followsSystem(localStorage.getItem(THEME_CHOSEN_KEY) === '1')) return;
+      const next = readDeviceTheme();
+      setThemeState(next);
+      document.documentElement.classList.toggle('dark', next === 'dark');
+    };
+    mql.addEventListener('change', onSystemChange);
+    return () => mql.removeEventListener('change', onSystemChange);
+  }, []);
+
   // Carregar preferências do backend quando o usuário fizer login (apenas uma vez)
   useEffect(() => {
     if (!currentUser || userLoading) {
       if (!currentUser) {
-        // Se não estiver logado, resetar flag e usa localStorage como fallback
+        // Se não estiver logado, resetar flag e usa o tema deste aparelho como fallback
         hasLoadedFromBackend.current = false;
-        const saved = localStorage.getItem('theme') as Theme;
-        if (saved && saved !== theme) {
-          setThemeState(saved);
+        const next = readDeviceTheme();
+        if (next !== theme) {
+          setThemeState(next);
           const root = document.documentElement;
-          if (saved === 'dark') {
+          if (next === 'dark') {
             root.classList.add('dark');
           } else {
             root.classList.remove('dark');
@@ -90,27 +97,8 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
 
     // Só carregar do backend uma vez quando o usuário fizer login
     if (!hasLoadedFromBackend.current) {
-      if (user?.theme) {
-        const backendTheme = user.theme as Theme;
-        // Só atualizar se for diferente do valor atual
-        if (backendTheme !== theme) {
-          // Marcar que estamos atualizando do backend para evitar loop
-          isUpdatingFromBackend.current = true;
-          lastSavedTheme.current = backendTheme;
-          setThemeState(backendTheme);
-          localStorage.setItem('theme', backendTheme);
-          const root = document.documentElement;
-          if (backendTheme === 'dark') {
-            root.classList.add('dark');
-          } else {
-            root.classList.remove('dark');
-          }
-          // Resetar flag após um pequeno delay
-          setTimeout(() => {
-            isUpdatingFromBackend.current = false;
-          }, 100);
-        }
-      }
+      // O tema salvo no perfil não é aplicado: ele é um padrão 'light' para todas as contas e não diz o que
+      // a pessoa escolheu. A escolha vale por aparelho (utils/themeChoice), então o perfil não muda o tema aqui.
       // Marcar como carregado mesmo se não houver tema no backend
       hasLoadedFromBackend.current = true;
     }
@@ -153,6 +141,7 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
     
     setThemeState(newTheme);
     localStorage.setItem('theme', newTheme);
+    localStorage.setItem(THEME_CHOSEN_KEY, '1');
     
     // Marcar que não veio do backend para evitar conflitos
     hasLoadedFromBackend.current = true;
@@ -185,7 +174,8 @@ export const ThemeProvider: React.FC<ThemeProviderProps> = ({ children }) => {
       
       // Salvar imediatamente no localStorage
       localStorage.setItem('theme', newTheme);
-      
+      localStorage.setItem(THEME_CHOSEN_KEY, '1');
+
       // Marcar que não veio do backend para evitar conflitos
       hasLoadedFromBackend.current = true;
       

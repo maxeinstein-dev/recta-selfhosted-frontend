@@ -196,11 +196,13 @@
     <script>
       // Aplicar tema antes do React renderizar para evitar flash
       (function() {
+        // Escolha por aparelho: só vale se este aparelho já escolheu; senão, segue o sistema (utils/themeChoice).
         const saved = localStorage.getItem('theme');
+        const chosen = localStorage.getItem('theme-chosen') === '1';
         const root = document.documentElement;
-        if (saved === 'dark') {
+        if (chosen && saved === 'dark') {
           root.classList.add('dark');
-        } else if (saved === 'light') {
+        } else if (chosen && saved === 'light') {
           root.classList.remove('dark');
         } else if (window.matchMedia('(prefers-color-scheme: dark)').matches) {
           root.classList.add('dark');

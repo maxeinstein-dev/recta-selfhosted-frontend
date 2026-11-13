@@ -1810,5 +1810,7 @@
   "cashFlowMarkReserveDoneFor": "Mark {name} as done",
   "billsSourceReserve": "Keep",
   "billsMarkReserveDone": "Mark {name} as done",
-  "billsReserveDoneToast": "Contribution recorded. The account balance does not change; only the free money."
+  "billsReserveDoneToast": "Contribution recorded. The account balance does not change; only the free money.",
+  "incomeSplit": "Where the income goes",
+  "incomeSplitDescription": "Spending by group, income left from the expected income, and housing against 30%"
 }

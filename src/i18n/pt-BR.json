@@ -1826,5 +1826,7 @@
   "cashFlowMarkReserveDoneFor": "Marcar {name} como feito",
   "billsSourceReserve": "Guardar",
   "billsMarkReserveDone": "Marcar {name} como feito",
-  "billsReserveDoneToast": "Aporte registrado. O saldo da conta não muda; só o livre."
+  "billsReserveDoneToast": "Aporte registrado. O saldo da conta não muda; só o livre.",
+  "incomeSplit": "Para onde vai a renda",
+  "incomeSplitDescription": "Gasto por grupo, quanto fica livre da renda esperada e moradia contra 30%"
 }

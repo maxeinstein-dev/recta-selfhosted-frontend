@@ -15,6 +15,7 @@ export { BudgetVsRealizedWidget } from './BudgetVsRealizedWidget';
 export { FixedVsVariableWidget } from './FixedVsVariableWidget';
 export { DailyCashFlowWidget } from './DailyCashFlowWidget';
 export { SpendingHeatmapWidget } from './SpendingHeatmapWidget';
+export { IncomeSplitWidget } from './IncomeSplitWidget';
 export * from './WidgetSkeletons';
 
 

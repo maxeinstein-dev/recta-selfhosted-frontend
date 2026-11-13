@@ -20,6 +20,7 @@ const getWidgetLabels = (t: any): Record<WidgetId, string> => ({
   fixedVsVariable: t.fixedVsVariable,
   dailyCashFlow: t.dailyCashFlow,
   spendingHeatmap: t.spendingByDayOfMonth || 'Gastos por Dia do Mês',
+  incomeSplit: t.incomeSplit || 'Para onde vai a renda',
 });
 
 const getWidgetDescriptions = (t: any): Record<WidgetId, string> => ({
@@ -35,6 +36,7 @@ const getWidgetDescriptions = (t: any): Record<WidgetId, string> => ({
   fixedVsVariable: t.fixedVsVariableDescription || '',
   dailyCashFlow: t.dailyCashFlowDescription || '',
   spendingHeatmap: t.spendingByDayOfMonthDescription || 'Visualize seus gastos diários em um heatmap estilo GitHub',
+  incomeSplit: t.incomeSplitDescription || 'Gasto por grupo, quanto fica livre da renda esperada e moradia contra 30%',
 });
 
 // Error Boundary para capturar erros nos previews

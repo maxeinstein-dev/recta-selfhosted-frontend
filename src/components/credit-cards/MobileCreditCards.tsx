@@ -15,6 +15,7 @@ import {
   type CommitmentRow,
 } from '../../utils/cardCommitment';
 import { cardCommitmentText, type CardCommitmentTextKey } from '../../utils/cardCommitmentTexts';
+import { installmentsLeftLine } from '../../utils/creditVsDebit';
 import { monthLabelPt } from '../../utils/mobileShell';
 import {
   approxPrefix,
@@ -540,6 +541,7 @@ function CommitmentSection({ householdId, accountId, baseCurrency }: { household
   const rows = useMemo(() => buildCommitmentRows(query.data), [query.data]);
   const state = commitmentState(rows);
   const summary = useMemo(() => summarizeCommitment(rows), [rows]);
+  const left = installmentsLeftLine(query.data?.installments);
   const rise = useMemo(() => firstRiseRow(rows), [rows]);
   const heights = columnHeights(rows.map((row) => row.total));
   const selected: CommitmentRow | undefined = rows.find((row) => row.month === selectedMonth);
@@ -659,6 +661,11 @@ function CommitmentSection({ householdId, accountId, baseCurrency }: { household
             )}
             {summary.heaviestLabel && (
               <p className="mt-2 text-xs text-rc-ink2">{tx('cardCommitHeaviestMonth', { month: summary.heaviestLabel })}</p>
+            )}
+            {left && (
+              <p data-testid="installments-left" className="mt-2 text-sm text-rc-ink">
+                {tx(left.one ? 'cardCommitInstallmentsLeftOne' : 'cardCommitInstallmentsLeft', { amount: money(left.cents / 100, baseCurrency), count: left.count, month: left.lastLabel })}
+              </p>
             )}
           </>
         )}

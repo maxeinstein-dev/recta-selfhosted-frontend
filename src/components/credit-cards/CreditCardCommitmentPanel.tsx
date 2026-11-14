@@ -15,6 +15,7 @@ import {
   type CommitmentRow,
 } from '../../utils/cardCommitment';
 import { cardCommitmentText, type CardCommitmentTextKey } from '../../utils/cardCommitmentTexts';
+import { installmentsLeftLine } from '../../utils/creditVsDebit';
 
 interface CreditCardCommitmentPanelProps {
   householdId?: string;
@@ -45,6 +46,7 @@ export default function CreditCardCommitmentPanel({ householdId, accountId, base
   const summary = useMemo(() => summarizeCommitment(rows), [rows]);
   const state = commitmentState(rows);
   const riseRow = useMemo(() => firstRiseRow(rows), [rows]);
+  const left = installmentsLeftLine(query.data?.installments);
   const money = (value: number) => formatCurrency(value, baseCurrency);
 
   if (!accountId || !householdId) return null;
@@ -88,6 +90,12 @@ export default function CreditCardCommitmentPanel({ householdId, accountId, base
             )}
           </div>
         </div>
+
+        {left && (
+          <p data-testid="installments-left" className="pt-3 text-sm font-light text-gray-700 dark:text-gray-200">
+            {tx(left.one ? 'cardCommitInstallmentsLeftOne' : 'cardCommitInstallmentsLeft', { amount: money(left.cents / 100), count: left.count, month: left.lastLabel })}
+          </p>
+        )}
 
         <ul className="divide-y divide-gray-100 dark:divide-gray-800">
           {rows.map((row) => (

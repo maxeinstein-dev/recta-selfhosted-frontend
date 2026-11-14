@@ -13,6 +13,8 @@ export const CARD_COMMITMENT_TEXTS_PT = {
   cardCommitShareOfIncome: '{share} da renda esperada',
   cardCommitNoIncome: 'Sem renda prevista neste mês',
   cardCommitHeaviestMonth: 'Mês mais pesado: {month}',
+  cardCommitInstallmentsLeft: 'Faltam {amount} em {count} compras parceladas, até {month}.',
+  cardCommitInstallmentsLeftOne: 'Faltam {amount} de 1 compra parcelada, até {month}.',
 
   cardCommitInstallments: 'Parcelas',
   cardCommitRecurrences: 'Recorrências lançadas',

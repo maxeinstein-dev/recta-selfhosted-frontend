@@ -1249,6 +1249,8 @@
   "cardCommitShareOfIncome": "{share} of expected income",
   "cardCommitNoIncome": "No income expected this month",
   "cardCommitHeaviestMonth": "Heaviest month: {month}",
+  "cardCommitInstallmentsLeft": "{amount} left in {count} installment purchases, until {month}.",
+  "cardCommitInstallmentsLeftOne": "{amount} left in 1 installment purchase, until {month}.",
   "cardCommitInstallments": "Installments",
   "cardCommitRecurrences": "Recurring charges posted",
   "cardCommitPurchases": "Purchases",

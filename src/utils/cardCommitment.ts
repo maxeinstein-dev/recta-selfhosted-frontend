@@ -1,3 +1,5 @@
+import type { InstallmentsLeft } from './creditVsDebit';
+
 /**
  * Pure logic of the card commitment panel: the types of GET /transactions/credit-cards/:accountId/commitment, the month
  * choices, the rows of the table (cents, bars, heaviest month, months above the expected income), the summary and the
@@ -51,6 +53,8 @@ export interface CardCommitmentResponse {
   accountId: string;
   months: CardCommitmentMonth[];
   totals: CardCommitmentTotals;
+  /** What is still owed in installments over every unpaid invoice (absent on an older backend). */
+  installments?: InstallmentsLeft;
 }
 
 /** The route accepts 1 to 12 months; the screen offers these three. */

@@ -3,6 +3,7 @@ import { AlertTriangle, Info } from 'lucide-react';
 import { PageHeader } from '../components/PageHeader';
 import CashFlowChart from '../components/cashflow/CashFlowChart';
 import MobileCashFlow from '../components/cashflow/MobileCashFlow';
+import SpendableCard from '../components/cashflow/SpendableCard';
 import BillsChecklist from '../components/bills/BillsChecklist';
 import { EarlyDiscountNotice, PayNowButton, usePayNow } from '../components/cashflow/EarlyDiscountBits';
 import { ReserveDoneButton, useKeepNow } from '../components/goals/KeepNow';
@@ -295,6 +296,8 @@ const CashFlow = () => {
       </div>
 
       <div className="max-w-2xl space-y-6">
+        {/* P07: at the very top, above the bills, for the account and period chosen above */}
+        <SpendableCard data={query.isError ? undefined : data} currency={currency} tx={tx} variant="web" />
         <BillsChecklist householdId={householdId ?? undefined} accountId={accountId || undefined} />
         {body}
       </div>

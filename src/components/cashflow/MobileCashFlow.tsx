@@ -1,6 +1,7 @@
 import { useMemo, type ReactNode } from 'react';
 import { AlertTriangle, Info } from 'lucide-react';
 import CashFlowChart from './CashFlowChart';
+import SpendableCard from './SpendableCard';
 import { formatCurrency } from '../../utils/format';
 import {
   CASH_FLOW_PERIODS,
@@ -117,6 +118,7 @@ export default function MobileCashFlow({
     const negativeBalance = negativeDate ? pointByDate.get(negativeDate)?.balance ?? 0 : 0;
     body = (
       <div className="space-y-4">
+        <SpendableCard data={data} currency={currency} tx={tx} variant="shell" />
         <dl className="grid grid-cols-2 gap-3">
           <div className={CARD}>
             <dt className={LABEL}>{tx('cashFlowLowestBalance')}</dt>

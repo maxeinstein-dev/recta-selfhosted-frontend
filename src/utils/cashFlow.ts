@@ -54,6 +54,10 @@ export interface CashFlowSummary {
   eventCount: number;
   estimatedCount: number;
   overdueCount: number;
+  /** First day after today with money coming in; null when none falls in the period; absent on an older backend. */
+  nextIncome?: { date: string; amount: number; description: string } | null;
+  /** Lowest FREE balance from today to that day, never negative; null without a next income; absent on an older backend. */
+  spendableUntilNextIncome?: { amount: number; lowestDate: string; balance: 'free' } | null;
 }
 
 export interface CashFlowUnassignedInvoice {

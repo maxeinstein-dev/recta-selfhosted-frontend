@@ -20,6 +20,15 @@ export const CASH_FLOW_TEXTS_PT = {
   cashFlowNegativeWarning: 'A conta fica negativa em {date}. Os eventos desse dia estão na lista abaixo.',
   cashFlowEndBalance: 'Saldo em {date}',
 
+  // "Pode gastar até DD/MM" (P07): menor saldo livre até a próxima entrada; nunca dizer "sobra".
+  cashFlowSpendableTitle: 'Pode gastar até {date}',
+  cashFlowSpendableTitleNoIncome: 'Pode gastar até a próxima entrada',
+  cashFlowSpendableDetail: 'Menor saldo livre até lá, em {lowest}. Entrada prevista: {description}, {amount}.',
+  cashFlowSpendableZero: 'O saldo livre chega a zero ou menos antes da entrada de {date} ({description}, {amount}). O pior dia é {lowest}.',
+  cashFlowSpendableNoIncome: 'Nenhuma entrada prevista nos próximos {days} dias.',
+  cashFlowSpendableToday: 'hoje',
+  cashFlowSpendableNote: 'Conta só o que já se sabe: fica de fora o guardado nas metas e o gasto do dia a dia.',
+
   // Aviso do celular: só fatos calculados, sem sugestão do que fazer (lote R4).
   cashFlowMissingAmount: 'faltam {amount}',
   cashFlowWarnNegativeFrom: 'A conta fica negativa em {date}.',

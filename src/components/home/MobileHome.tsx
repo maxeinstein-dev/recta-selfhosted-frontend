@@ -8,6 +8,8 @@ import { useAccounts } from '../../hooks/api/useAccounts';
 import { useCapturesCount } from '../../hooks/api/useCaptures';
 import { useDashboardOverview, useTransactions } from '../../hooks/api/useTransactions';
 import { useCashFlow } from '../../hooks/api/useCashFlow';
+import SpendableCard from '../cashflow/SpendableCard';
+import { cashFlowText } from '../../utils/cashFlowTexts';
 import { useBillsCashFlow, useBillsRecurrences, usePaidMonthExpenses } from '../../hooks/api/useBillsChecklist';
 import { useBillPayments } from '../../hooks/useBillPayments';
 import { formatCurrency } from '../../utils/format';
@@ -202,6 +204,9 @@ export default function MobileHome() {
           </div>
         )}
       </section>
+
+      {/* P07: its own card, apart from the big number (that one is the month's leftover) */}
+      <SpendableCard data={data} currency={currency} tx={(key, vars) => cashFlowText(null, key, vars)} variant="shell" testId="home-spendable" />
 
       {strips.map((strip) => (
         <button

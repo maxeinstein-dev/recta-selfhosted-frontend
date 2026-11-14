@@ -147,6 +147,13 @@ export interface Translations {
   cashFlowNoNegativeDay?: string;
   cashFlowNegativeWarning?: string;
   cashFlowEndBalance?: string;
+  cashFlowSpendableTitle?: string;
+  cashFlowSpendableTitleNoIncome?: string;
+  cashFlowSpendableDetail?: string;
+  cashFlowSpendableZero?: string;
+  cashFlowSpendableNoIncome?: string;
+  cashFlowSpendableToday?: string;
+  cashFlowSpendableNote?: string;
   cashFlowChartTitle?: string;
   cashFlowChartLabel?: string;
   cashFlowZeroLine?: string;
